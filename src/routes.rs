@@ -116,18 +116,6 @@ mod tests {
     }
 
     #[test]
-    fn optional_catch_all_maps_to_double_wildcard() {
-        let p = Path::new("shop/[[...rest]]/page.tsx");
-        assert_eq!(path_to_route_pattern(p), "/shop/**");
-    }
-
-    #[test]
-    fn parallel_route_slots_are_skipped() {
-        let p = Path::new("@modal/settings/page.tsx");
-        assert_eq!(path_to_route_pattern(p), "/settings");
-    }
-
-    #[test]
     fn static_nested_path() {
         let p = Path::new("communities/page.tsx");
         assert_eq!(path_to_route_pattern(p), "/communities");

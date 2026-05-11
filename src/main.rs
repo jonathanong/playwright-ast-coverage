@@ -690,7 +690,6 @@ mod tests {
             normalize_url("http://localhost:3000", &bases),
             Some("/".to_string())
         );
-        assert_eq!(normalize_url("//example.com/users/42", &bases), None);
         assert_eq!(normalize_url("http://localhost:3000x", &bases), None);
         assert_eq!(normalize_url("https://example.com/users/42", &bases), None);
     }

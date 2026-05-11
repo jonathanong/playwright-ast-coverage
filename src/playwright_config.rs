@@ -527,32 +527,6 @@ export default {
     }
 
     #[test]
-    fn ignores_config_keys_inside_comments_and_strings() {
-        let source = r#"
-const example = "testDir: './wrong', testMatch: '**/*.wrong.ts'";
-/*
-projects: [
-  { testDir: './wrong-project', testMatch: 'wrong-project.ts' },
-]
-*/
-export default {
-  testDir: './tests',
-  testMatch: [
-    '**/*.spec.ts',
-    // '**/*.commented.ts',
-  ],
-  projects: [
-    { name: 'chromium', testMatch: '**/*.pw.ts' },
-  ],
-};
-"#;
-        let parsed = parse(source, Path::new("/repo")).unwrap();
-        assert_eq!(parsed.projects.len(), 1);
-        assert_eq!(parsed.projects[0].test_dir, "./tests");
-        assert_eq!(parsed.projects[0].test_match, vec!["**/*.pw.ts"]);
-    }
-
-    #[test]
     fn ignores_empty_optional_playwright_values() {
         let parsed = parse(
             "export default { use: { baseURL: , testIdAttribute: } }",

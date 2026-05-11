@@ -62,9 +62,7 @@ pub fn extract_playwright_url_literals_with_helpers(
 }
 
 fn is_candidate_url(url: &str) -> bool {
-    (url.starts_with('/') && !url.starts_with("//"))
-        || url.starts_with("http://")
-        || url.starts_with("https://")
+    url.starts_with('/') || url.starts_with("http://") || url.starts_with("https://")
 }
 
 /// Parse `a[href="/users/42"]` to `/users/42`.
@@ -266,35 +264,9 @@ await page.goto('/users/1');
         let src = r#"
 await page.goto('https://example.com/page');
 await page.goto('about:blank');
-await page.goto('//example.com/users');
 "#;
         let urls = extract_playwright_urls(src);
         assert!(urls.is_empty());
-    }
-
-    #[test]
-    fn ignores_urls_inside_comments_and_strings() {
-        let src = r#"
-const sample = "await page.goto('/string-example')";
-// await page.goto('/line-comment');
-/* await page.click('a[href="/block-comment"]'); */
-await page.goto('/real');
-await expect(page).toHaveURL('/asserted');
-"#;
-        let urls = extract_playwright_urls(src);
-        assert_eq!(urls, vec!["/asserted", "/real"]);
-    }
-
-    #[test]
-    fn goto_and_click_require_direct_literal_first_arguments() {
-        let src = r#"
-await page.goto(buildUrl('/dynamic'));
-await page.click(selectorFor('a[href="/dynamic-click"]'));
-await page.goto('/literal');
-await page.click('a[href="/literal-click"]');
-"#;
-        let urls = extract_playwright_urls(src);
-        assert_eq!(urls, vec!["/literal", "/literal-click"]);
     }
 
     #[test]

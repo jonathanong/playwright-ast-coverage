@@ -461,20 +461,6 @@ mod tests {
     }
 
     #[test]
-    fn ignores_app_selectors_inside_comments() {
-        let source = r#"
-// <button data-testid="commented-line" />
-/*
-<button data-testid="commented-block" />
-*/
-<button data-testid="real" />
-"#;
-        let selectors = extract_app_selectors(Path::new("app/page.tsx"), source, &attrs());
-        let values: Vec<String> = selectors.iter().map(AppSelector::display_value).collect();
-        assert_eq!(values, vec!["real"]);
-    }
-
-    #[test]
     fn collect_app_selectors_reads_source_files_and_skips_build_dirs() {
         let dir = tempfile::TempDir::new().unwrap();
         std::fs::create_dir_all(dir.path().join("node_modules/pkg")).unwrap();
@@ -528,21 +514,6 @@ await page.getByTestId(/^account-/);
         assert!(selectors
             .iter()
             .any(|selector| selector.selector == "getByTestId(/^account-/)"));
-    }
-
-    #[test]
-    fn ignores_playwright_selectors_inside_comments() {
-        let source = r#"
-// await page.getByTestId('commented-line').click();
-/*
-await page.locator('[data-testid="commented-block"]').click();
-*/
-await page.getByTestId('real').click();
-"#;
-        let selectors =
-            extract_playwright_selectors(source, &attrs(), &["data-testid".to_string()]);
-        assert_eq!(selectors.len(), 1);
-        assert_eq!(selectors[0].selector, "getByTestId(real)");
     }
 
     #[test]

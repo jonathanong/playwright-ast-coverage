@@ -162,6 +162,41 @@ fn navigation_helpers_cover_routes() {
 }
 
 #[test]
+fn scanner_edge_cases_are_covered_from_fixture() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("scanner-edge-cases"))
+        .arg("--json")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""uncoveredRoutes": 0"#))
+        .stdout(predicate::str::contains(r#""uncoveredSelectors": 0"#))
+        .stdout(predicate::str::contains(r#""route": "/docs/*""#))
+        .stdout(predicate::str::contains(r#""route": "/shop/**""#))
+        .stdout(predicate::str::contains(r#""route": "/settings""#))
+        .stdout(predicate::str::contains("string-example").not())
+        .stdout(predicate::str::contains("line-comment").not())
+        .stdout(predicate::str::contains("commented-line").not())
+        .stdout(predicate::str::contains("//example.com/external").not());
+}
+
+#[test]
+fn duplicate_slash_empty_segments_do_not_cover_dynamic_routes() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("empty-segment-route"))
+        .arg("--json")
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains(r#""uncoveredRoutes": 1"#))
+        .stdout(predicate::str::contains(
+            r#""route": "/users/:id/settings""#,
+        ));
+}
+
+#[test]
 fn selector_roots_and_excludes_are_configurable() {
     Command::cargo_bin("playwright-ast-coverage")
         .unwrap()

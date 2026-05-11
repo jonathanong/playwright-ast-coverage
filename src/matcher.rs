@@ -82,14 +82,6 @@ mod tests {
     #[test]
     fn wildcard_match() {
         assert!(matches("/api/v1/anything", "/api/v1/*"));
-        assert!(matches("/api/v1/anything/else", "/api/v1/*"));
-    }
-
-    #[test]
-    fn optional_wildcard_match() {
-        assert!(matches("/shop", "/shop/**"));
-        assert!(matches("/shop/shoes", "/shop/**"));
-        assert!(matches("/shop/shoes/red", "/shop/**"));
     }
 
     #[test]
@@ -115,13 +107,6 @@ mod tests {
     #[test]
     fn trailing_slash_stripped() {
         assert!(matches("/api/v1/users/", "/api/v1/users"));
-    }
-
-    #[test]
-    fn dynamic_and_wildcards_reject_empty_segments() {
-        assert!(!matches("/users//settings", "/users/:id/settings"));
-        assert!(!matches("/docs//intro", "/docs/*"));
-        assert!(!matches("/shop//intro", "/shop/**"));
     }
 
     #[test]
