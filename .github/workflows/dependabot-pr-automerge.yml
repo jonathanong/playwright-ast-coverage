@@ -59,6 +59,10 @@ jobs:
               return [...latestStateByUser.values()].includes('APPROVED');
             }
 
+            function errorMessage(error) {
+              return error instanceof Error ? error.message : String(error);
+            }
+
             core.info(`Evaluating PR #${pr.number} (${pr.title})`);
 
             if (pr.draft) {
@@ -82,12 +86,21 @@ jobs:
               core.info('Approval already present');
             } else {
               core.info('Approving PR');
-              await github.rest.pulls.createReview({
-                owner,
-                repo,
-                pull_number: pr.number,
-                event: 'APPROVE',
-              });
+              try {
+                await github.rest.pulls.createReview({
+                  owner,
+                  repo,
+                  pull_number: pr.number,
+                  event: 'APPROVE',
+                });
+              } catch (error) {
+                core.warning(
+                  'Could not approve PR with GITHUB_TOKEN: '
+                  + `${errorMessage(error)}. If approvals are required, enable `
+                  + '"Allow GitHub Actions to create and approve pull requests" '
+                  + 'in the repository Actions settings.'
+                );
+              }
             }
 
             const { data: freshPr } = await github.rest.pulls.get({
@@ -102,14 +115,22 @@ jobs:
             }
 
             core.info('Enabling auto-merge');
-            await github.graphql(`
-              mutation($pullRequestId: ID!) {
-                enablePullRequestAutoMerge(input: {
-                  pullRequestId: $pullRequestId,
-                  mergeMethod: SQUASH
-                }) {
-                  pullRequest { autoMergeRequest { enabledAt } }
+            try {
+              await github.graphql(`
+                mutation($pullRequestId: ID!) {
+                  enablePullRequestAutoMerge(input: {
+                    pullRequestId: $pullRequestId,
+                    mergeMethod: SQUASH
+                  }) {
+                    pullRequest { autoMergeRequest { enabledAt } }
+                  }
                 }
-              }
-            `, { pullRequestId: freshPr.node_id });
-            core.info('Done: auto-merge enabled');
+              `, { pullRequestId: freshPr.node_id });
+              core.info('Done: auto-merge enabled');
+            } catch (error) {
+              core.warning(
+                'Could not enable auto-merge: '
+                + `${errorMessage(error)}. Confirm repository auto-merge is `
+                + 'enabled and squash merging is allowed.'
+              );
+            }
