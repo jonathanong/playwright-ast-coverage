@@ -3,10 +3,21 @@ use anyhow::Result;
 use regex::Regex;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 #[cfg(test)]
 use walkdir::WalkDir;
 
 const SOURCE_EXTS: &[&str] = &["ts", "tsx", "js", "jsx"];
+
+pub struct SelectorRegexes {
+    app_attributes: Vec<AttributeRegex>,
+    playwright_attributes: Vec<AttributeRegex>,
+}
+
+struct AttributeRegex {
+    attribute: String,
+    regex: Regex,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct AppSelector {
@@ -44,6 +55,25 @@ enum SelectorMatcher {
     Suffix(String),
     Contains(String),
     Regex(String),
+}
+
+pub fn compile_selector_regexes(attributes: &[String]) -> SelectorRegexes {
+    SelectorRegexes {
+        app_attributes: attributes
+            .iter()
+            .map(|attribute| AttributeRegex {
+                attribute: attribute.clone(),
+                regex: app_selector_regex(attribute),
+            })
+            .collect(),
+        playwright_attributes: attributes
+            .iter()
+            .map(|attribute| AttributeRegex {
+                attribute: attribute.clone(),
+                regex: playwright_selector_regex(attribute),
+            })
+            .collect(),
+    }
 }
 
 impl AppSelector {
@@ -207,19 +237,24 @@ pub fn collect_app_selectors(
     }
 }
 
+#[cfg(test)]
 pub fn extract_app_selectors(path: &Path, source: &str, attributes: &[String]) -> Vec<AppSelector> {
+    let regexes = compile_selector_regexes(attributes);
+    extract_app_selectors_with_regexes(path, source, &regexes)
+}
+
+pub fn extract_app_selectors_with_regexes(
+    path: &Path,
+    source: &str,
+    regexes: &SelectorRegexes,
+) -> Vec<AppSelector> {
     let mut selectors = BTreeSet::new();
-    for attribute in attributes {
-        let pattern = format!(
-            r#"{}\s*=\s*(?:"([^"]*)"|'([^']*)'|\{{\s*"([^"]*)"\s*\}}|\{{\s*'([^']*)'\s*\}}|\{{\s*`([^`]*)`\s*\}}|\{{([^}}]*)\}})"#,
-            regex::escape(attribute)
-        );
-        let regex = Regex::new(&pattern).expect("valid app selector regex");
-        for captures in regex.captures_iter(source) {
+    for attribute in &regexes.app_attributes {
+        for captures in attribute.regex.captures_iter(source) {
             let value = app_selector_value(&captures);
             selectors.insert(AppSelector {
                 file: path.to_path_buf(),
-                attribute: attribute.clone(),
+                attribute: attribute.attribute.clone(),
                 value,
             });
         }
@@ -227,13 +262,23 @@ pub fn extract_app_selectors(path: &Path, source: &str, attributes: &[String]) -
     selectors.into_iter().collect()
 }
 
+#[cfg(test)]
 pub fn extract_playwright_selectors(
     source: &str,
     selector_attributes: &[String],
     test_id_attributes: &[String],
 ) -> Vec<PlaywrightSelector> {
+    let regexes = compile_selector_regexes(selector_attributes);
+    extract_playwright_selectors_with_regexes(source, &regexes, test_id_attributes)
+}
+
+pub fn extract_playwright_selectors_with_regexes(
+    source: &str,
+    regexes: &SelectorRegexes,
+    test_id_attributes: &[String],
+) -> Vec<PlaywrightSelector> {
     let mut selectors = BTreeSet::new();
-    extract_css_attribute_selectors(source, selector_attributes, &mut selectors);
+    extract_css_attribute_selectors(source, &regexes.playwright_attributes, &mut selectors);
     extract_get_by_test_id_selectors(source, test_id_attributes, &mut selectors);
     selectors.into_iter().collect()
 }
@@ -255,20 +300,15 @@ fn app_selector_value(captures: &regex::Captures<'_>) -> AppSelectorValue {
 
 fn extract_css_attribute_selectors(
     source: &str,
-    attributes: &[String],
+    attributes: &[AttributeRegex],
     selectors: &mut BTreeSet<PlaywrightSelector>,
 ) {
     for attribute in attributes {
-        let pattern = format!(
-            r#"\[\s*{}\s*(=|\^=|\$=|\*=)\s*(?:"([^"]+)"|'([^']+)')\s*\]"#,
-            regex::escape(attribute)
-        );
-        let regex = Regex::new(&pattern).expect("valid Playwright selector regex");
-        for captures in regex.captures_iter(source) {
+        for captures in attribute.regex.captures_iter(source) {
             let op = captures.get(1).expect("operator capture").as_str();
             let value = first_capture(&captures, &[2, 3]).expect("value capture");
             selectors.insert(PlaywrightSelector {
-                attribute: attribute.clone(),
+                attribute: attribute.attribute.clone(),
                 selector: captures
                     .get(0)
                     .expect("selector capture")
@@ -285,9 +325,7 @@ fn extract_get_by_test_id_selectors(
     attributes: &[String],
     selectors: &mut BTreeSet<PlaywrightSelector>,
 ) {
-    let string_regex = Regex::new(r#"\.getByTestId\s*\(\s*(?:'([^']+)'|"([^"]+)"|`([^`]+)`)"#)
-        .expect("valid getByTestId string regex");
-    for captures in string_regex.captures_iter(source) {
+    for captures in get_by_test_id_string_regex().captures_iter(source) {
         let value = first_capture(&captures, &[1, 2, 3]).expect("value capture");
         for attribute in attributes {
             selectors.insert(PlaywrightSelector {
@@ -298,9 +336,7 @@ fn extract_get_by_test_id_selectors(
         }
     }
 
-    let regex_regex = Regex::new(r#"\.getByTestId\s*\(\s*/((?:\\.|[^/])*)/[a-z]*"#)
-        .expect("valid getByTestId regex regex");
-    for captures in regex_regex.captures_iter(source) {
+    for captures in get_by_test_id_regex_regex().captures_iter(source) {
         let value = captures.get(1).expect("regex capture").as_str();
         for attribute in attributes {
             selectors.insert(PlaywrightSelector {
@@ -310,6 +346,38 @@ fn extract_get_by_test_id_selectors(
             });
         }
     }
+}
+
+fn app_selector_regex(attribute: &str) -> Regex {
+    let pattern = format!(
+        r#"{}\s*=\s*(?:"([^"]*)"|'([^']*)'|\{{\s*"([^"]*)"\s*\}}|\{{\s*'([^']*)'\s*\}}|\{{\s*`([^`]*)`\s*\}}|\{{([^}}]*)\}})"#,
+        regex::escape(attribute)
+    );
+    Regex::new(&pattern).expect("valid app selector regex")
+}
+
+fn playwright_selector_regex(attribute: &str) -> Regex {
+    let pattern = format!(
+        r#"\[\s*{}\s*(=|\^=|\$=|\*=)\s*(?:"([^"]+)"|'([^']+)')\s*\]"#,
+        regex::escape(attribute)
+    );
+    Regex::new(&pattern).expect("valid Playwright selector regex")
+}
+
+fn get_by_test_id_string_regex() -> &'static Regex {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    REGEX.get_or_init(|| {
+        Regex::new(r#"\.getByTestId\s*\(\s*(?:'([^']+)'|"([^"]+)"|`([^`]+)`)"#)
+            .expect("valid getByTestId string regex")
+    })
+}
+
+fn get_by_test_id_regex_regex() -> &'static Regex {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    REGEX.get_or_init(|| {
+        Regex::new(r#"\.getByTestId\s*\(\s*/((?:\\.|[^/])*)/[a-z]*"#)
+            .expect("valid getByTestId regex regex")
+    })
 }
 
 fn matcher_for_operator(operator: &str, value: &str) -> SelectorMatcher {
