@@ -1,4 +1,5 @@
 mod config;
+mod js_scan;
 mod matcher;
 mod playwright_config;
 mod playwright_urls;
@@ -593,6 +594,10 @@ fn print_edges_text(report: &EdgeReport) {
 }
 
 fn normalize_url(raw: &str, base_urls: &[String]) -> Option<String> {
+    if raw.starts_with("//") {
+        return None;
+    }
+
     if raw.starts_with('/') {
         return Some(raw.to_string());
     }
@@ -685,6 +690,7 @@ mod tests {
             normalize_url("http://localhost:3000", &bases),
             Some("/".to_string())
         );
+        assert_eq!(normalize_url("//example.com/users/42", &bases), None);
         assert_eq!(normalize_url("http://localhost:3000x", &bases), None);
         assert_eq!(normalize_url("https://example.com/users/42", &bases), None);
     }

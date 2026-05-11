@@ -56,7 +56,12 @@ pub fn path_to_route_pattern(relative: &Path) -> String {
         };
         let segment = segment.to_str().unwrap_or("");
 
-        if segment.starts_with('(') && segment.ends_with(')') {
+        if segment.starts_with('@') || (segment.starts_with('(') && segment.ends_with(')')) {
+            continue;
+        }
+
+        if segment.starts_with("[[...") && segment.ends_with("]]") {
+            segments.push("**".to_string());
             continue;
         }
 
@@ -108,6 +113,18 @@ mod tests {
     fn catch_all_maps_to_wildcard() {
         let p = Path::new("[...rest]/page.tsx");
         assert_eq!(path_to_route_pattern(p), "/*");
+    }
+
+    #[test]
+    fn optional_catch_all_maps_to_double_wildcard() {
+        let p = Path::new("shop/[[...rest]]/page.tsx");
+        assert_eq!(path_to_route_pattern(p), "/shop/**");
+    }
+
+    #[test]
+    fn parallel_route_slots_are_skipped() {
+        let p = Path::new("@modal/settings/page.tsx");
+        assert_eq!(path_to_route_pattern(p), "/settings");
     }
 
     #[test]

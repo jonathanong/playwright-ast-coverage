@@ -4,8 +4,9 @@
 /// - strip query and fragment,
 /// - strip trailing slash unless the reference is `/`.
 ///
-/// Pattern segments beginning with `:` match one segment. A `*` segment also
-/// matches one segment.
+/// Pattern segments beginning with `:` match one segment. A final `*` segment
+/// matches one or more segments. A final `**` segment matches zero or more
+/// segments.
 pub fn matches(reference: &str, defined_pattern: &str) -> bool {
     let ref_path = reference
         .split('?')
@@ -21,23 +22,47 @@ pub fn matches(reference: &str, defined_pattern: &str) -> bool {
         ref_path
     };
 
-    let ref_segs: Vec<&str> = ref_path.split('/').collect();
-    let def_segs: Vec<&str> = defined_pattern.split('/').collect();
+    let ref_segs = segments(ref_path);
+    let def_segs = segments(defined_pattern);
 
-    if ref_segs.len() != def_segs.len() {
-        return false;
-    }
-
-    for (ref_seg, def_seg) in ref_segs.iter().zip(def_segs.iter()) {
-        if def_seg.starts_with(':') || *def_seg == "*" {
-            continue;
+    for (index, def_seg) in def_segs.iter().enumerate() {
+        let is_last = index + 1 == def_segs.len();
+        if *def_seg == "**" && is_last {
+            return ref_segs[index..].iter().all(|segment| !segment.is_empty());
         }
-        if ref_seg != def_seg {
+
+        if *def_seg == "*" && is_last {
+            return ref_segs.len() > index
+                && ref_segs[index..].iter().all(|segment| !segment.is_empty());
+        }
+
+        let Some(ref_seg) = ref_segs.get(index) else {
+            return false;
+        };
+        if !segment_matches(ref_seg, def_seg) {
             return false;
         }
     }
 
-    true
+    ref_segs.len() == def_segs.len()
+}
+
+fn segments(path: &str) -> Vec<&str> {
+    if path == "/" || path.is_empty() {
+        Vec::new()
+    } else {
+        path.strip_prefix('/').unwrap_or(path).split('/').collect()
+    }
+}
+
+fn segment_matches(reference: &str, defined_pattern: &str) -> bool {
+    if reference.is_empty() {
+        return false;
+    }
+    if defined_pattern.starts_with(':') || defined_pattern == "*" {
+        return true;
+    }
+    reference == defined_pattern
 }
 
 #[cfg(test)]
@@ -57,6 +82,14 @@ mod tests {
     #[test]
     fn wildcard_match() {
         assert!(matches("/api/v1/anything", "/api/v1/*"));
+        assert!(matches("/api/v1/anything/else", "/api/v1/*"));
+    }
+
+    #[test]
+    fn optional_wildcard_match() {
+        assert!(matches("/shop", "/shop/**"));
+        assert!(matches("/shop/shoes", "/shop/**"));
+        assert!(matches("/shop/shoes/red", "/shop/**"));
     }
 
     #[test]
@@ -82,6 +115,13 @@ mod tests {
     #[test]
     fn trailing_slash_stripped() {
         assert!(matches("/api/v1/users/", "/api/v1/users"));
+    }
+
+    #[test]
+    fn dynamic_and_wildcards_reject_empty_segments() {
+        assert!(!matches("/users//settings", "/users/:id/settings"));
+        assert!(!matches("/docs//intro", "/docs/*"));
+        assert!(!matches("/shop//intro", "/shop/**"));
     }
 
     #[test]

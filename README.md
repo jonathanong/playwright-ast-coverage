@@ -192,17 +192,20 @@ Routes are derived from files named `page.ts`, `page.tsx`, `page.js`, or
 | `settings/page.tsx` | `/settings` |
 | `users/[id]/page.tsx` | `/users/:id` |
 | `(admin)/settings/page.tsx` | `/settings` |
-| `[...rest]/page.tsx` | `/*` |
+| `docs/[...rest]/page.tsx` | `/docs/*` |
+| `shop/[[...rest]]/page.tsx` | `/shop/**` |
+| `@modal/settings/page.tsx` | `/settings` |
 
 Route matching rules:
 
 - Literal segments must match exactly.
 - `:name` matches one path segment.
-- `*` matches one path segment.
+- A final `*` matches one or more path segments.
+- A final `**` matches zero or more path segments.
 - Queries, fragments, and a trailing slash on non-root URLs are ignored before
   matching.
-- Segment counts must match. `/*` matches `/anything`, but it does not match
-  `/a/b`.
+- Dynamic and wildcard segments do not match empty path segments from duplicate
+  slashes.
 - `ignoreRoutes` entries are compared to derived route patterns, not concrete
   visited URLs. For `users/[id]/page.tsx`, use `/users/:id` rather than
   `/users/42`.
@@ -227,10 +230,13 @@ await testHelpers.openPath(page, '/settings');
 ```
 
 - String literals can use single quotes, double quotes, or backticks.
-- Candidate URLs must start with `/`, `http://`, or `https://`.
+- Candidate URLs must start with `/`, `http://`, or `https://`; protocol-relative
+  URLs such as `//example.com/path` are treated as external and ignored.
 - Absolute URLs only count when they start with a literal Playwright `baseURL`;
   the base is stripped before route matching.
 - External absolute URLs without a matching `baseURL` are ignored.
+- `page.goto(...)` only contributes a URL when the first argument is a string or
+  template literal.
 - `page.click(...)` only contributes a URL when the selector contains an
   `href="..."` or `href='...'` value.
 - `.toHaveURL(...)` and configured `navigationHelpers` use the first URL-like

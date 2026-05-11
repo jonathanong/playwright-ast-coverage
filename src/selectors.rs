@@ -1,3 +1,4 @@
+use crate::js_scan;
 #[cfg(test)]
 use anyhow::Result;
 use regex::Regex;
@@ -248,9 +249,10 @@ pub fn extract_app_selectors_with_regexes(
     source: &str,
     regexes: &SelectorRegexes,
 ) -> Vec<AppSelector> {
+    let source = js_scan::mask_comments(source);
     let mut selectors = BTreeSet::new();
     for attribute in &regexes.app_attributes {
-        for captures in attribute.regex.captures_iter(source) {
+        for captures in attribute.regex.captures_iter(&source) {
             let value = app_selector_value(&captures);
             selectors.insert(AppSelector {
                 file: path.to_path_buf(),
@@ -277,9 +279,10 @@ pub fn extract_playwright_selectors_with_regexes(
     regexes: &SelectorRegexes,
     test_id_attributes: &[String],
 ) -> Vec<PlaywrightSelector> {
+    let source = js_scan::mask_comments(source);
     let mut selectors = BTreeSet::new();
-    extract_css_attribute_selectors(source, &regexes.playwright_attributes, &mut selectors);
-    extract_get_by_test_id_selectors(source, test_id_attributes, &mut selectors);
+    extract_css_attribute_selectors(&source, &regexes.playwright_attributes, &mut selectors);
+    extract_get_by_test_id_selectors(&source, test_id_attributes, &mut selectors);
     selectors.into_iter().collect()
 }
 
@@ -458,6 +461,20 @@ mod tests {
     }
 
     #[test]
+    fn ignores_app_selectors_inside_comments() {
+        let source = r#"
+// <button data-testid="commented-line" />
+/*
+<button data-testid="commented-block" />
+*/
+<button data-testid="real" />
+"#;
+        let selectors = extract_app_selectors(Path::new("app/page.tsx"), source, &attrs());
+        let values: Vec<String> = selectors.iter().map(AppSelector::display_value).collect();
+        assert_eq!(values, vec!["real"]);
+    }
+
+    #[test]
     fn collect_app_selectors_reads_source_files_and_skips_build_dirs() {
         let dir = tempfile::TempDir::new().unwrap();
         std::fs::create_dir_all(dir.path().join("node_modules/pkg")).unwrap();
@@ -511,6 +528,21 @@ await page.getByTestId(/^account-/);
         assert!(selectors
             .iter()
             .any(|selector| selector.selector == "getByTestId(/^account-/)"));
+    }
+
+    #[test]
+    fn ignores_playwright_selectors_inside_comments() {
+        let source = r#"
+// await page.getByTestId('commented-line').click();
+/*
+await page.locator('[data-testid="commented-block"]').click();
+*/
+await page.getByTestId('real').click();
+"#;
+        let selectors =
+            extract_playwright_selectors(source, &attrs(), &["data-testid".to_string()]);
+        assert_eq!(selectors.len(), 1);
+        assert_eq!(selectors[0].selector, "getByTestId(real)");
     }
 
     #[test]

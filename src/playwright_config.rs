@@ -1,3 +1,4 @@
+use crate::js_scan;
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
@@ -229,10 +230,12 @@ fn without_projects_value(source: &str) -> String {
 }
 
 fn property_value_span(source: &str, key: &str) -> Option<(usize, usize)> {
-    let bytes = source.as_bytes();
+    let key_mask = js_scan::mask_comments_and_strings(source);
+    let value_mask = js_scan::mask_comments(source);
+    let bytes = key_mask.as_bytes();
     let mut offset = 0;
 
-    while let Some(relative) = source[offset..].find(key) {
+    while let Some(relative) = key_mask[offset..].find(key) {
         let start = offset + relative;
         let before_ok = start == 0 || !is_ident(bytes[start - 1]);
         let after_key = start + key.len();
@@ -248,7 +251,7 @@ fn property_value_span(source: &str, key: &str) -> Option<(usize, usize)> {
         }
         if i < bytes.len() && bytes[i] == b':' {
             let value_start = i + 1;
-            let value_end = find_value_end(source, value_start);
+            let value_end = find_value_end(&value_mask, value_start);
             return Some((value_start, value_end));
         }
         offset = after_key;
@@ -355,12 +358,13 @@ fn parse_string_or_array(value: &str) -> Result<Vec<String>> {
 }
 
 fn collect_strings(source: &str) -> Result<Vec<String>> {
+    let source = js_scan::mask_comments(source);
     let bytes = source.as_bytes();
     let mut strings = Vec::new();
     let mut i = 0;
     while i < bytes.len() {
         if matches!(bytes[i], b'\'' | b'"' | b'`') {
-            let Some(end) = find_string_end(source, i) else {
+            let Some(end) = find_string_end(&source, i) else {
                 anyhow::bail!("unterminated string literal");
             };
             strings.push(source[i + 1..end].to_string());
@@ -520,6 +524,32 @@ export default {
         assert_eq!(parsed.projects[0].test_dir, "./tests");
         assert_eq!(parsed.projects[0].base_url, None);
         assert_eq!(parsed.projects[0].test_id_attribute, "data-testid");
+    }
+
+    #[test]
+    fn ignores_config_keys_inside_comments_and_strings() {
+        let source = r#"
+const example = "testDir: './wrong', testMatch: '**/*.wrong.ts'";
+/*
+projects: [
+  { testDir: './wrong-project', testMatch: 'wrong-project.ts' },
+]
+*/
+export default {
+  testDir: './tests',
+  testMatch: [
+    '**/*.spec.ts',
+    // '**/*.commented.ts',
+  ],
+  projects: [
+    { name: 'chromium', testMatch: '**/*.pw.ts' },
+  ],
+};
+"#;
+        let parsed = parse(source, Path::new("/repo")).unwrap();
+        assert_eq!(parsed.projects.len(), 1);
+        assert_eq!(parsed.projects[0].test_dir, "./tests");
+        assert_eq!(parsed.projects[0].test_match, vec!["**/*.pw.ts"]);
     }
 
     #[test]
