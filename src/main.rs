@@ -115,6 +115,27 @@ struct Analysis {
     edges: EdgeReport,
 }
 
+struct RouteTarget {
+    route_file: String,
+    pattern: String,
+}
+
+struct AppSelectorTarget<'a> {
+    selector: &'a selectors::AppSelector,
+    app_file: String,
+    value: String,
+}
+
+struct TestAnalysisContext<'a> {
+    root: &'a Path,
+    route_targets: &'a [RouteTarget],
+    app_selector_targets: &'a [AppSelectorTarget<'a>],
+    navigation_helpers: &'a [String],
+    base_urls: &'a [String],
+    test_id_attributes: &'a [String],
+    selector_regexes: &'a selectors::SelectorRegexes,
+}
+
 type SelectorCoverageKey = (String, String, String);
 type CoverageLinks = (BTreeSet<String>, BTreeSet<String>);
 
@@ -183,30 +204,29 @@ fn analyze(root: &Path, settings: &Settings) -> Result<Analysis> {
     let test_files = discover_test_files(root, settings, &playwright)?;
     let base_urls = playwright.base_urls();
     let test_id_attributes = playwright.test_id_attributes();
+    let selector_regexes = selectors::compile_selector_regexes(&settings.selector_attributes);
     let app_selectors = if settings.selector_attributes.is_empty() {
         Vec::new()
     } else {
-        collect_app_selectors(root, settings)?
+        collect_app_selectors(root, settings, &selector_regexes)?
+    };
+    let route_targets = route_targets(root, &routes);
+    let app_selector_targets = app_selector_targets(root, &app_selectors);
+    let test_analysis = TestAnalysisContext {
+        root,
+        route_targets: &route_targets,
+        app_selector_targets: &app_selector_targets,
+        navigation_helpers: &settings.navigation_helpers,
+        base_urls: &base_urls,
+        test_id_attributes: &test_id_attributes,
+        selector_regexes: &selector_regexes,
     };
 
     let edge_batches: Vec<Vec<Edge>> = test_files
         .par_iter()
-        .map(|test_file| {
-            analyze_test_file(
-                root,
-                test_file,
-                &routes,
-                &app_selectors,
-                settings,
-                &base_urls,
-                &test_id_attributes,
-            )
-        })
+        .map(|test_file| analyze_test_file(test_file, &test_analysis))
         .collect::<Result<_>>()?;
-    let mut edges = BTreeSet::new();
-    for batch in edge_batches {
-        edges.extend(batch);
-    }
+    let edges: BTreeSet<Edge> = edge_batches.into_iter().flatten().collect();
 
     let edge_report = EdgeReport {
         edges: edges.into_iter().collect(),
@@ -218,31 +238,23 @@ fn analyze(root: &Path, settings: &Settings) -> Result<Analysis> {
     })
 }
 
-fn analyze_test_file(
-    root: &Path,
-    test_file: &Path,
-    routes: &[Route],
-    app_selectors: &[selectors::AppSelector],
-    settings: &Settings,
-    base_urls: &[String],
-    test_id_attributes: &[String],
-) -> Result<Vec<Edge>> {
+fn analyze_test_file(test_file: &Path, context: &TestAnalysisContext<'_>) -> Result<Vec<Edge>> {
     let source = std::fs::read_to_string(test_file)?;
-    let test_file = relative_string(root, test_file);
+    let rel_test_file = relative_string(context.root, test_file);
     let mut edges = Vec::new();
 
     for raw_url in playwright_urls::extract_playwright_url_literals_with_helpers(
         &source,
-        &settings.navigation_helpers,
+        context.navigation_helpers,
     ) {
-        let Some(url) = normalize_url(&raw_url, base_urls) else {
+        let Some(url) = normalize_url(&raw_url, context.base_urls) else {
             continue;
         };
-        for route in routes {
+        for route in context.route_targets {
             if matcher::matches(&url, &route.pattern) {
                 edges.push(Edge::Route {
-                    test_file: test_file.clone(),
-                    route_file: relative_string(root, &route.file),
+                    test_file: rel_test_file.clone(),
+                    route_file: route.route_file.clone(),
                     route: route.pattern.clone(),
                     url: url.clone(),
                 });
@@ -250,20 +262,23 @@ fn analyze_test_file(
         }
     }
 
-    if !app_selectors.is_empty() {
-        let playwright_selectors = selectors::extract_playwright_selectors(
+    if !context.app_selector_targets.is_empty() {
+        let playwright_selectors = selectors::extract_playwright_selectors_with_regexes(
             &source,
-            &settings.selector_attributes,
-            test_id_attributes,
+            context.selector_regexes,
+            context.test_id_attributes,
         );
-        for app_selector in app_selectors {
+        for app_selector in context.app_selector_targets {
             for playwright_selector in &playwright_selectors {
-                if app_selector.matches_playwright(playwright_selector) {
+                if app_selector
+                    .selector
+                    .matches_playwright(playwright_selector)
+                {
                     edges.push(Edge::Selector {
-                        test_file: test_file.clone(),
-                        app_file: relative_string(root, &app_selector.file),
-                        attribute: app_selector.attribute.clone(),
-                        value: app_selector.display_value(),
+                        test_file: rel_test_file.clone(),
+                        app_file: app_selector.app_file.clone(),
+                        attribute: app_selector.selector.attribute.clone(),
+                        value: app_selector.value.clone(),
                         selector: playwright_selector.selector.clone(),
                     });
                 }
@@ -274,7 +289,35 @@ fn analyze_test_file(
     Ok(edges)
 }
 
-fn collect_app_selectors(root: &Path, settings: &Settings) -> Result<Vec<selectors::AppSelector>> {
+fn route_targets(root: &Path, routes: &[Route]) -> Vec<RouteTarget> {
+    routes
+        .iter()
+        .map(|route| RouteTarget {
+            route_file: relative_string(root, &route.file),
+            pattern: route.pattern.clone(),
+        })
+        .collect()
+}
+
+fn app_selector_targets<'a>(
+    root: &Path,
+    app_selectors: &'a [selectors::AppSelector],
+) -> Vec<AppSelectorTarget<'a>> {
+    app_selectors
+        .iter()
+        .map(|selector| AppSelectorTarget {
+            selector,
+            app_file: relative_string(root, &selector.file),
+            value: selector.display_value(),
+        })
+        .collect()
+}
+
+fn collect_app_selectors(
+    root: &Path,
+    settings: &Settings,
+    selector_regexes: &selectors::SelectorRegexes,
+) -> Result<Vec<selectors::AppSelector>> {
     let include = build_globset(&settings.selector_include)?;
     let exclude = build_globset(&settings.selector_exclude)?;
     let include_all = settings.selector_include.is_empty();
@@ -284,10 +327,10 @@ fn collect_app_selectors(root: &Path, settings: &Settings) -> Result<Vec<selecto
         .par_iter()
         .map(|path| {
             let source = std::fs::read_to_string(path)?;
-            Ok(selectors::extract_app_selectors(
+            Ok(selectors::extract_app_selectors_with_regexes(
                 path,
                 &source,
-                &settings.selector_attributes,
+                selector_regexes,
             ))
         })
         .collect::<Result<_>>()?;
@@ -715,7 +758,8 @@ mod tests {
             selector_exclude: vec![],
         };
 
-        let selectors = collect_app_selectors(dir.path(), &settings).unwrap();
+        let selector_regexes = selectors::compile_selector_regexes(&settings.selector_attributes);
+        let selectors = collect_app_selectors(dir.path(), &settings, &selector_regexes).unwrap();
         assert_eq!(selectors.len(), 1);
         assert_eq!(selectors[0].display_value(), "save");
     }
