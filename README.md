@@ -60,7 +60,7 @@ CLI options:
 | Option | Default | Description |
 | --- | --- | --- |
 | `--root <ROOT>` | `.` | Repository or package root to analyze. Relative paths are resolved from the current working directory. |
-| `--config <CONFIG>` | `.playwright-ast-coverage.yaml` under `--root`, when present | YAML config file. Relative paths are resolved from `--root`. Passing this option makes a missing config file an error. |
+| `--config <CONFIG>` | `.playwright-ast-coverage.yaml` under `--root`, when present | YAML config file. Relative paths are resolved from `--root`. Passing a missing file is an error. |
 | `--playwright-config <PLAYWRIGHT_CONFIG>` | First existing `playwright.config.ts`, `.mts`, `.cts`, `.js`, `.mjs`, or `.cjs` under `--root` | Playwright config file. Relative paths are resolved from `--root`. This overrides `playwrightConfig` in the YAML config. Passing a missing file is an error. |
 | `--mode <MODE>` | `coverage` | `coverage` prints coverage and exits `1` when routes or selectors are uncovered. `edges` prints detected test-to-app links and always exits `0` when analysis succeeds. |
 | `--json` | `false` | Emit pretty-printed JSON instead of text output. |
@@ -203,7 +203,8 @@ Route matching rules:
   matching.
 - Segment counts must match. `/*` matches `/anything`, but it does not match
   `/a/b`.
-- `ignoreRoutes` uses these same rules, so `/users/:id` ignores
+- `ignoreRoutes` entries are compared to derived route patterns, not concrete
+  visited URLs. For `users/[id]/page.tsx`, use `/users/:id` rather than
   `/users/42`.
 
 ### URL Patterns
