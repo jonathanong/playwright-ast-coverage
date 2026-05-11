@@ -1,0 +1,39 @@
+max-files-changed: 100
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/**"
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Cargo.toml"
+          - "Cargo.lock"
+          - ".github/dependabot.yml"
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.md"
+          - "LICENSE"
+
+rust:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Cargo.toml"
+          - "Cargo.lock"
+          - "src/**/*.rs"
+          - "tests/**/*.rs"
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "tests/**"
+
+configuration:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".playwright-ast-coverage.yaml"
+          - "*.config.*"
+          - "**/*.config.*"

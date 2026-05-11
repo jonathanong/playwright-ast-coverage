@@ -1,0 +1,3 @@
+frontendRoot: packages/web/app
+testInclude:
+  - tests/e2e/**/*.ts
