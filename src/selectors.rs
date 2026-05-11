@@ -429,6 +429,7 @@ fn is_skipped_dir(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{fixture_path, fixture_source};
 
     fn attrs() -> Vec<String> {
         vec!["data-testid".to_string(), "data-pw".to_string()]
@@ -436,12 +437,8 @@ mod tests {
 
     #[test]
     fn extracts_static_jsx_selectors() {
-        let source = r#"
-<button data-testid="save" />
-<button data-pw={'publish'} />
-<button data-testid={'delete'} />
-"#;
-        let selectors = extract_app_selectors(Path::new("app/page.tsx"), source, &attrs());
+        let source = fixture_source(&["selectors", "static-jsx.tsx"]);
+        let selectors = extract_app_selectors(Path::new("app/page.tsx"), &source, &attrs());
         let mut values: Vec<String> = selectors.iter().map(AppSelector::display_value).collect();
         values.sort();
         assert_eq!(values, vec!["delete", "publish", "save"]);
@@ -449,11 +446,8 @@ mod tests {
 
     #[test]
     fn extracts_template_and_unsupported_jsx_selectors() {
-        let source = r#"
-<article data-testid={`user-${id}`} />
-<button data-pw={id} />
-"#;
-        let selectors = extract_app_selectors(Path::new("app/page.tsx"), source, &attrs());
+        let source = fixture_source(&["selectors", "template-and-unsupported.tsx"]);
+        let selectors = extract_app_selectors(Path::new("app/page.tsx"), &source, &attrs());
         assert!(selectors
             .iter()
             .any(|selector| selector.display_value() == "user-${id}"));
@@ -462,40 +456,20 @@ mod tests {
 
     #[test]
     fn collect_app_selectors_reads_source_files_and_skips_build_dirs() {
-        let dir = tempfile::TempDir::new().unwrap();
-        std::fs::create_dir_all(dir.path().join("node_modules/pkg")).unwrap();
-        std::fs::write(dir.path().join("page.tsx"), r#"<div data-testid="ok" />"#).unwrap();
-        std::fs::write(
-            dir.path().join("style.css"),
-            r#"[data-testid="ignored"] {}"#,
-        )
-        .unwrap();
-        std::fs::write(
-            dir.path().join("node_modules/pkg/page.tsx"),
-            r#"<div data-testid="ignored" />"#,
-        )
-        .unwrap();
-
-        let selectors = collect_app_selectors(dir.path(), &attrs()).unwrap();
+        let root = fixture_path(&["selectors", "collect-app"]);
+        let selectors = collect_app_selectors(&root, &attrs()).unwrap();
         assert_eq!(selectors.len(), 1);
         assert_eq!(selectors[0].display_value(), "ok");
-        assert!(collect_app_selectors(&dir.path().join("missing"), &attrs())
+        assert!(collect_app_selectors(&root.join("missing"), &attrs())
             .unwrap()
             .is_empty());
     }
 
     #[test]
     fn extracts_playwright_css_and_test_id_selectors() {
-        let source = r#"
-await page.getByTestId('save').click();
-await page.locator("[data-testid^='user-']").click();
-await page.click('[data-pw$="button"]');
-await page.locator('[data-pw*="nav"]');
-await page.locator('[data-pw="exact"]');
-await page.getByTestId(/^account-/);
-"#;
+        let source = fixture_source(&["selectors", "playwright-css-and-testid.ts"]);
         let selectors =
-            extract_playwright_selectors(source, &attrs(), &["data-testid".to_string()]);
+            extract_playwright_selectors(&source, &attrs(), &["data-testid".to_string()]);
         assert!(selectors
             .iter()
             .any(|selector| selector.selector == "getByTestId(save)"));
@@ -533,14 +507,9 @@ await page.getByTestId(/^account-/);
             attribute: "data-testid".to_string(),
             value: AppSelectorValue::Exact("save-button".to_string()),
         };
+        let source = fixture_source(&["selectors", "exact-operator-matchers.ts"]);
         let selectors = extract_playwright_selectors(
-            r#"
-page.locator('[data-testid="save-button"]');
-page.locator('[data-testid^="save"]');
-page.locator('[data-testid$="button"]');
-page.locator('[data-testid*="ve-bu"]');
-page.getByTestId(/^save-/);
-"#,
+            &source,
             &["data-testid".to_string()],
             &["data-testid".to_string()],
         );
@@ -556,14 +525,9 @@ page.getByTestId(/^save-/);
             attribute: "data-testid".to_string(),
             value: AppSelectorValue::Template(TemplatePattern::new("user-${id}-button").unwrap()),
         };
+        let source = fixture_source(&["selectors", "template-matchers.ts"]);
         let selectors = extract_playwright_selectors(
-            r#"
-page.locator('[data-testid="user-123-button"]');
-page.locator('[data-testid^="user-"]');
-page.locator('[data-testid$="-button"]');
-page.locator('[data-testid*="user-"]');
-page.getByTestId(/^user-/);
-"#,
+            &source,
             &["data-testid".to_string()],
             &["data-testid".to_string()],
         );
@@ -579,15 +543,9 @@ page.getByTestId(/^user-/);
             attribute: "data-testid".to_string(),
             value: AppSelectorValue::Exact("save".to_string()),
         };
-        let selectors = extract_playwright_selectors(
-            r#"
-page.locator('[data-pw="save"]');
-page.locator('[data-testid="cancel"]');
-page.getByTestId(/[invalid/);
-"#,
-            &attrs(),
-            &["data-testid".to_string()],
-        );
+        let source = fixture_source(&["selectors", "mismatched.ts"]);
+        let selectors =
+            extract_playwright_selectors(&source, &attrs(), &["data-testid".to_string()]);
         assert!(selectors
             .iter()
             .all(|selector| !app.matches_playwright(selector)));

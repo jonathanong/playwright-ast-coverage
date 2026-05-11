@@ -88,8 +88,7 @@ pub fn path_to_route_pattern(relative: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use tempfile::TempDir;
+    use crate::test_support::fixture_path;
 
     #[test]
     fn root_page_maps_to_slash() {
@@ -123,13 +122,7 @@ mod tests {
 
     #[test]
     fn collect_frontend_routes_finds_pages() {
-        let dir = TempDir::new().unwrap();
-        write(dir.path().join("communities/page.tsx"));
-        write(dir.path().join("communities/[slug]/page.tsx"));
-        write(dir.path().join("user/[id]/page.tsx"));
-        write(dir.path().join("components/nav.tsx"));
-
-        let routes: Vec<String> = collect_routes(dir.path())
+        let routes: Vec<String> = collect_routes(&fixture_path(&["routes", "collect"]))
             .unwrap()
             .into_iter()
             .map(|route| route.pattern)
@@ -141,18 +134,14 @@ mod tests {
 
     #[test]
     fn collect_frontend_routes_sorts_duplicate_patterns_by_file() {
-        let dir = TempDir::new().unwrap();
-        write(dir.path().join("same/page.tsx"));
-        write(dir.path().join("same/page.jsx"));
-        let routes = collect_routes(dir.path()).unwrap();
+        let routes = collect_routes(&fixture_path(&["routes", "sort-duplicates"])).unwrap();
         assert_eq!(routes[0].pattern, "/same");
         assert!(routes[0].file <= routes[1].file);
     }
 
     #[test]
     fn collect_frontend_routes_missing_root_returns_empty() {
-        let dir = TempDir::new().unwrap();
-        let routes = collect_routes(&dir.path().join("missing")).unwrap();
+        let routes = collect_routes(&fixture_path(&["routes", "missing"])).unwrap();
         assert!(routes.is_empty());
     }
 
@@ -160,10 +149,5 @@ mod tests {
     fn absolute_path_components_are_ignored() {
         let p = Path::new("/communities/page.tsx");
         assert_eq!(path_to_route_pattern(p), "/communities");
-    }
-
-    fn write(path: PathBuf) {
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, "").unwrap();
     }
 }
