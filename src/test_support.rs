@@ -1,13 +1,9 @@
 use std::path::PathBuf;
 
 pub fn fixture_path(parts: &[&str]) -> PathBuf {
-    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("fixtures")
-        .join("unit");
-    for part in parts {
-        path.push(part);
-    }
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.extend(["tests", "fixtures", "unit"]);
+    path.extend(parts);
     path
 }
 
