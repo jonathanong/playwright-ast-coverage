@@ -343,9 +343,7 @@ struct PlaywrightSelectorVisitor<'a, 'r> {
 
 impl<'a> oxc_ast_visit::Visit<'a> for PlaywrightSelectorVisitor<'a, '_> {
     fn visit_call_expression(&mut self, call: &oxc_ast::ast::CallExpression<'a>) {
-        if ast::expression_path(&call.callee).is_some_and(|parts| {
-            parts.len() >= 2 && parts.last().is_some_and(|last| last == "getByTestId")
-        }) {
+        if callee_is_static_member_named(&call.callee, "getByTestId") {
             extract_get_by_test_id_call(
                 call,
                 self.source,
@@ -439,6 +437,16 @@ fn extract_css_attribute_selectors(
                 matcher: matcher_for_operator(op, value),
             });
         }
+    }
+}
+
+fn callee_is_static_member_named(callee: &oxc_ast::ast::Expression<'_>, method: &str) -> bool {
+    match callee {
+        oxc_ast::ast::Expression::StaticMemberExpression(member) => member.property.name == method,
+        oxc_ast::ast::Expression::ParenthesizedExpression(parenthesized) => {
+            callee_is_static_member_named(&parenthesized.expression, method)
+        }
+        _ => false,
     }
 }
 
@@ -615,6 +623,21 @@ mod tests {
         assert!(selectors
             .iter()
             .any(|selector| selector.selector == "getByTestId(publish)"));
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == "getByTestId(wrapped-callee)"));
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == "getByTestId(computed-receiver)"));
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == "getByTestId(call-receiver)"));
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == "getByTestId(optional-receiver)"));
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == "getByTestId(optional-call)"));
         assert!(selectors
             .iter()
             .any(|selector| selector.selector == r#"[data-testid="save"]"#));
