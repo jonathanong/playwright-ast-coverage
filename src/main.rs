@@ -251,11 +251,27 @@ fn analyze_test_file(test_file: &Path, context: &TestAnalysisContext<'_>) -> Res
     let rel_test_file = relative_string(context.root, test_file);
     let mut edges = Vec::new();
 
-    for raw_url in playwright_urls::extract_playwright_url_literals_from_path(
-        test_file,
-        &source,
-        context.navigation_helpers,
-    )? {
+    let (raw_urls, playwright_selectors) =
+        ast::with_program(test_file, &source, |program, source| {
+            let raw_urls = playwright_urls::extract_playwright_url_literals_from_program(
+                program,
+                source,
+                context.navigation_helpers,
+            );
+            let playwright_selectors = if context.app_selector_targets.is_empty() {
+                Vec::new()
+            } else {
+                selectors::extract_playwright_selectors_from_program(
+                    program,
+                    source,
+                    context.selector_regexes,
+                    context.test_id_attributes,
+                )
+            };
+            (raw_urls, playwright_selectors)
+        })?;
+
+    for raw_url in raw_urls {
         let Some(url) = normalize_url(&raw_url, context.base_urls) else {
             continue;
         };
@@ -272,13 +288,6 @@ fn analyze_test_file(test_file: &Path, context: &TestAnalysisContext<'_>) -> Res
     }
 
     if !context.app_selector_targets.is_empty() {
-        let playwright_selectors = selectors::extract_playwright_selectors_with_regexes(
-            test_file,
-            &source,
-            context.selector_regexes,
-            context.test_id_attributes,
-        )
-        .expect("test source already parsed while extracting Playwright URLs");
         for app_selector in context.app_selector_targets {
             for playwright_selector in &playwright_selectors {
                 if app_selector

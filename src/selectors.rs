@@ -276,6 +276,7 @@ pub fn extract_playwright_selectors(
     .expect("fixture should parse")
 }
 
+#[cfg(test)]
 pub fn extract_playwright_selectors_with_regexes(
     path: &Path,
     source: &str,
@@ -283,15 +284,24 @@ pub fn extract_playwright_selectors_with_regexes(
     test_id_attributes: &[String],
 ) -> anyhow::Result<Vec<PlaywrightSelector>> {
     ast::with_program(path, source, |program, source| {
-        let mut visitor = PlaywrightSelectorVisitor {
-            source,
-            regexes,
-            test_id_attributes,
-            selectors: BTreeSet::new(),
-        };
-        visitor.visit_program(program);
-        visitor.selectors.into_iter().collect()
+        extract_playwright_selectors_from_program(program, source, regexes, test_id_attributes)
     })
+}
+
+pub fn extract_playwright_selectors_from_program(
+    program: &oxc_ast::ast::Program<'_>,
+    source: &str,
+    regexes: &SelectorRegexes,
+    test_id_attributes: &[String],
+) -> Vec<PlaywrightSelector> {
+    let mut visitor = PlaywrightSelectorVisitor {
+        source,
+        regexes,
+        test_id_attributes,
+        selectors: BTreeSet::new(),
+    };
+    visitor.visit_program(program);
+    visitor.selectors.into_iter().collect()
 }
 
 struct AppSelectorVisitor<'a, 'r> {
@@ -333,10 +343,9 @@ struct PlaywrightSelectorVisitor<'a, 'r> {
 
 impl<'a> oxc_ast_visit::Visit<'a> for PlaywrightSelectorVisitor<'a, '_> {
     fn visit_call_expression(&mut self, call: &oxc_ast::ast::CallExpression<'a>) {
-        if ast::expression_path(&call.callee)
-            .and_then(|parts| parts.last().cloned())
-            .is_some_and(|last| last == "getByTestId")
-        {
+        if ast::expression_path(&call.callee).is_some_and(|parts| {
+            parts.len() >= 2 && parts.last().is_some_and(|last| last == "getByTestId")
+        }) {
             extract_get_by_test_id_call(
                 call,
                 self.source,

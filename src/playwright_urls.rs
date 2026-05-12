@@ -1,8 +1,10 @@
 use crate::ast;
+#[cfg(test)]
 use anyhow::Result;
-use oxc_ast::ast::{Argument, CallExpression};
+use oxc_ast::ast::{Argument, CallExpression, Program};
 use oxc_ast_visit::{walk, Visit};
 use std::collections::BTreeSet;
+#[cfg(test)]
 use std::path::Path;
 
 /// Extract local URL string literals navigated to in a Playwright test file.
@@ -23,20 +25,29 @@ pub fn extract_playwright_url_literals_with_helpers(
         .expect("fixture should parse")
 }
 
+#[cfg(test)]
 pub fn extract_playwright_url_literals_from_path(
     path: &Path,
     source: &str,
     navigation_helpers: &[String],
 ) -> Result<Vec<String>> {
     ast::with_program(path, source, |program, source| {
-        let mut visitor = UrlVisitor {
-            source,
-            navigation_helpers,
-            urls: BTreeSet::new(),
-        };
-        visitor.visit_program(program);
-        visitor.urls.into_iter().collect()
+        extract_playwright_url_literals_from_program(program, source, navigation_helpers)
     })
+}
+
+pub fn extract_playwright_url_literals_from_program(
+    program: &Program<'_>,
+    source: &str,
+    navigation_helpers: &[String],
+) -> Vec<String> {
+    let mut visitor = UrlVisitor {
+        source,
+        navigation_helpers,
+        urls: BTreeSet::new(),
+    };
+    visitor.visit_program(program);
+    visitor.urls.into_iter().collect()
 }
 
 fn is_candidate_url(url: &str) -> bool {
@@ -72,7 +83,7 @@ impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
         let callee = ast::expression_path(&call.callee);
         let callee_name = callee.as_deref().map(|parts| parts.join("."));
 
-        if callee_ends_with(&callee, "goto") {
+        if callee_is_member_named(&call.callee, "goto") {
             if let Some(url) = call
                 .arguments
                 .first()
@@ -82,7 +93,7 @@ impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
                     self.urls.insert(url);
                 }
             }
-        } else if callee_ends_with(&callee, "click") {
+        } else if callee_is_member_named(&call.callee, "click") {
             if let Some(selector) = call
                 .arguments
                 .first()
@@ -92,7 +103,7 @@ impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
                     self.urls.insert(url);
                 }
             }
-        } else if callee_ends_with(&callee, "toHaveURL")
+        } else if callee_is_member_named(&call.callee, "toHaveURL")
             || callee_name
                 .as_deref()
                 .is_some_and(|name| self.navigation_helpers.iter().any(|helper| helper == name))
@@ -106,11 +117,11 @@ impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
     }
 }
 
-fn callee_ends_with(callee: &Option<Vec<String>>, method: &str) -> bool {
-    callee
-        .as_ref()
-        .and_then(|parts| parts.last())
-        .is_some_and(|last| last == method)
+fn callee_is_member_named(callee: &oxc_ast::ast::Expression<'_>, method: &str) -> bool {
+    match callee {
+        oxc_ast::ast::Expression::StaticMemberExpression(member) => member.property.name == method,
+        _ => false,
+    }
 }
 
 fn first_candidate_literal(arguments: &[Argument<'_>], source: &str) -> Option<String> {
@@ -251,5 +262,12 @@ mod tests {
         let src = fixture_source(&["playwright_urls", "parenthesized-callee.ts"]);
         let urls = extract_playwright_urls(&src);
         assert_eq!(urls, vec!["/settings"]);
+    }
+
+    #[test]
+    fn bare_builtin_callees_are_ignored() {
+        let src = fixture_source(&["playwright_urls", "bare-callees.ts"]);
+        let urls = extract_playwright_urls(&src);
+        assert!(urls.is_empty());
     }
 }
