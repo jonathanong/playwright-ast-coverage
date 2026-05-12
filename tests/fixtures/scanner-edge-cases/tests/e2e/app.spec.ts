@@ -19,5 +19,3 @@ test('covers scanner edge cases', async ({ page }) => {
   // await page.getByTestId('commented-line').click();
   /* await page.locator('[data-testid="commented-block"]').click(); */
 });
-
-/* unfinished static-analysis comment

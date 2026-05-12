@@ -1,0 +1,1 @@
+(page).goto('/settings');

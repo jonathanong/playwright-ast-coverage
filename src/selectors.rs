@@ -1,17 +1,18 @@
-use crate::js_scan;
+use crate::ast;
 #[cfg(test)]
 use anyhow::Result;
+use oxc_ast_visit::Visit;
+use oxc_span::GetSpan;
 use regex::Regex;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 #[cfg(test)]
 use walkdir::WalkDir;
 
-const SOURCE_EXTS: &[&str] = &["ts", "tsx", "js", "jsx"];
+const SOURCE_EXTS: &[&str] = &["ts", "tsx", "js", "jsx", "mts", "cts", "mjs", "cjs"];
 
 pub struct SelectorRegexes {
-    app_attributes: Vec<AttributeRegex>,
+    app_attributes: Vec<String>,
     playwright_attributes: Vec<AttributeRegex>,
 }
 
@@ -60,13 +61,7 @@ enum SelectorMatcher {
 
 pub fn compile_selector_regexes(attributes: &[String]) -> SelectorRegexes {
     SelectorRegexes {
-        app_attributes: attributes
-            .iter()
-            .map(|attribute| AttributeRegex {
-                attribute: attribute.clone(),
-                regex: app_selector_regex(attribute),
-            })
-            .collect(),
+        app_attributes: attributes.to_vec(),
         playwright_attributes: attributes
             .iter()
             .map(|attribute| AttributeRegex {
@@ -230,7 +225,7 @@ pub fn collect_app_selectors(
                 continue;
             }
             let source = std::fs::read_to_string(path)?;
-            selectors.extend(extract_app_selectors(path, &source, attributes));
+            selectors.extend(extract_app_selectors(path, &source, attributes)?);
         }
         Ok(selectors.into_iter().collect())
     } else {
@@ -239,7 +234,11 @@ pub fn collect_app_selectors(
 }
 
 #[cfg(test)]
-pub fn extract_app_selectors(path: &Path, source: &str, attributes: &[String]) -> Vec<AppSelector> {
+pub fn extract_app_selectors(
+    path: &Path,
+    source: &str,
+    attributes: &[String],
+) -> Result<Vec<AppSelector>> {
     let regexes = compile_selector_regexes(attributes);
     extract_app_selectors_with_regexes(path, source, &regexes)
 }
@@ -248,20 +247,17 @@ pub fn extract_app_selectors_with_regexes(
     path: &Path,
     source: &str,
     regexes: &SelectorRegexes,
-) -> Vec<AppSelector> {
-    let source = js_scan::mask_comments(source);
-    let mut selectors = BTreeSet::new();
-    for attribute in &regexes.app_attributes {
-        for captures in attribute.regex.captures_iter(&source) {
-            let value = app_selector_value(&captures);
-            selectors.insert(AppSelector {
-                file: path.to_path_buf(),
-                attribute: attribute.attribute.clone(),
-                value,
-            });
-        }
-    }
-    selectors.into_iter().collect()
+) -> anyhow::Result<Vec<AppSelector>> {
+    ast::with_program(path, source, |program, source| {
+        let mut visitor = AppSelectorVisitor {
+            path,
+            source,
+            attributes: &regexes.app_attributes,
+            selectors: BTreeSet::new(),
+        };
+        visitor.visit_program(program);
+        visitor.selectors.into_iter().collect()
+    })
 }
 
 #[cfg(test)]
@@ -271,34 +267,155 @@ pub fn extract_playwright_selectors(
     test_id_attributes: &[String],
 ) -> Vec<PlaywrightSelector> {
     let regexes = compile_selector_regexes(selector_attributes);
-    extract_playwright_selectors_with_regexes(source, &regexes, test_id_attributes)
+    extract_playwright_selectors_with_regexes(
+        Path::new("fixture.ts"),
+        source,
+        &regexes,
+        test_id_attributes,
+    )
+    .expect("fixture should parse")
 }
 
+#[cfg(test)]
 pub fn extract_playwright_selectors_with_regexes(
+    path: &Path,
+    source: &str,
+    regexes: &SelectorRegexes,
+    test_id_attributes: &[String],
+) -> anyhow::Result<Vec<PlaywrightSelector>> {
+    ast::with_program(path, source, |program, source| {
+        extract_playwright_selectors_from_program(program, source, regexes, test_id_attributes)
+    })
+}
+
+pub fn extract_playwright_selectors_from_program(
+    program: &oxc_ast::ast::Program<'_>,
     source: &str,
     regexes: &SelectorRegexes,
     test_id_attributes: &[String],
 ) -> Vec<PlaywrightSelector> {
-    let source = js_scan::mask_comments(source);
-    let mut selectors = BTreeSet::new();
-    extract_css_attribute_selectors(&source, &regexes.playwright_attributes, &mut selectors);
-    extract_get_by_test_id_selectors(&source, test_id_attributes, &mut selectors);
-    selectors.into_iter().collect()
+    let mut visitor = PlaywrightSelectorVisitor {
+        source,
+        regexes,
+        test_id_attributes,
+        selectors: BTreeSet::new(),
+    };
+    visitor.visit_program(program);
+    visitor.selectors.into_iter().collect()
 }
 
-fn app_selector_value(captures: &regex::Captures<'_>) -> AppSelectorValue {
-    if let Some(value) = first_capture(captures, &[1, 2, 3, 4]) {
-        return AppSelectorValue::Exact(value.to_string());
+struct AppSelectorVisitor<'a, 'r> {
+    path: &'r Path,
+    source: &'a str,
+    attributes: &'r [String],
+    selectors: BTreeSet<AppSelector>,
+}
+
+impl<'a> oxc_ast_visit::Visit<'a> for AppSelectorVisitor<'a, '_> {
+    fn visit_jsx_attribute(&mut self, attribute: &oxc_ast::ast::JSXAttribute<'a>) {
+        let Some(name) = jsx_attribute_name(&attribute.name) else {
+            oxc_ast_visit::walk::walk_jsx_attribute(self, attribute);
+            return;
+        };
+        if !self.attributes.iter().any(|attribute| attribute == name) {
+            oxc_ast_visit::walk::walk_jsx_attribute(self, attribute);
+            return;
+        }
+
+        if let Some(value) = app_selector_value(attribute.value.as_ref(), self.source) {
+            self.selectors.insert(AppSelector {
+                file: self.path.to_path_buf(),
+                attribute: name.to_string(),
+                value,
+            });
+        }
+
+        oxc_ast_visit::walk::walk_jsx_attribute(self, attribute);
     }
-    if let Some(value) = captures.get(5).map(|capture| capture.as_str()) {
-        return TemplatePattern::new(value)
-            .map(AppSelectorValue::Template)
-            .unwrap_or_else(|| AppSelectorValue::Unsupported(value.to_string()));
+}
+
+struct PlaywrightSelectorVisitor<'a, 'r> {
+    source: &'a str,
+    regexes: &'r SelectorRegexes,
+    test_id_attributes: &'r [String],
+    selectors: BTreeSet<PlaywrightSelector>,
+}
+
+impl<'a> oxc_ast_visit::Visit<'a> for PlaywrightSelectorVisitor<'a, '_> {
+    fn visit_call_expression(&mut self, call: &oxc_ast::ast::CallExpression<'a>) {
+        if callee_is_static_member_named(&call.callee, "getByTestId") {
+            extract_get_by_test_id_call(
+                call,
+                self.source,
+                self.test_id_attributes,
+                &mut self.selectors,
+            );
+        }
+
+        oxc_ast_visit::walk::walk_call_expression(self, call);
     }
-    captures
-        .get(6)
-        .map(|capture| AppSelectorValue::Unsupported(capture.as_str().trim().to_string()))
-        .unwrap_or_else(|| AppSelectorValue::Unsupported(String::new()))
+
+    fn visit_string_literal(&mut self, literal: &oxc_ast::ast::StringLiteral<'a>) {
+        extract_css_attribute_selectors(
+            literal.value.as_str(),
+            &self.regexes.playwright_attributes,
+            &mut self.selectors,
+        );
+    }
+
+    fn visit_template_literal(&mut self, template: &oxc_ast::ast::TemplateLiteral<'a>) {
+        let value = ast::template_literal_text(template, self.source);
+        extract_css_attribute_selectors(
+            &value,
+            &self.regexes.playwright_attributes,
+            &mut self.selectors,
+        );
+        oxc_ast_visit::walk::walk_template_literal(self, template);
+    }
+}
+
+fn jsx_attribute_name<'a>(name: &'a oxc_ast::ast::JSXAttributeName<'a>) -> Option<&'a str> {
+    match name {
+        oxc_ast::ast::JSXAttributeName::Identifier(identifier) => Some(identifier.name.as_str()),
+        _ => None,
+    }
+}
+
+fn app_selector_value(
+    value: Option<&oxc_ast::ast::JSXAttributeValue<'_>>,
+    source: &str,
+) -> Option<AppSelectorValue> {
+    match value? {
+        oxc_ast::ast::JSXAttributeValue::StringLiteral(literal) => {
+            Some(AppSelectorValue::Exact(literal.value.to_string()))
+        }
+        oxc_ast::ast::JSXAttributeValue::ExpressionContainer(container) => {
+            jsx_expression_value(&container.expression, source)
+        }
+        _ => None,
+    }
+}
+
+fn jsx_expression_value(
+    expression: &oxc_ast::ast::JSXExpression<'_>,
+    source: &str,
+) -> Option<AppSelectorValue> {
+    match expression {
+        oxc_ast::ast::JSXExpression::StringLiteral(literal) => {
+            Some(AppSelectorValue::Exact(literal.value.to_string()))
+        }
+        oxc_ast::ast::JSXExpression::TemplateLiteral(template) => {
+            let raw = ast::template_literal_text(template, source);
+            Some(
+                TemplatePattern::new(&raw)
+                    .map(AppSelectorValue::Template)
+                    .unwrap_or_else(|| AppSelectorValue::Unsupported(raw)),
+            )
+        }
+        _ => Some(AppSelectorValue::Unsupported(
+            ast::span_text(source, expression.span()).trim().to_string(),
+        )),
+    }
 }
 
 fn extract_css_attribute_selectors(
@@ -323,40 +440,52 @@ fn extract_css_attribute_selectors(
     }
 }
 
-fn extract_get_by_test_id_selectors(
+fn callee_is_static_member_named(callee: &oxc_ast::ast::Expression<'_>, method: &str) -> bool {
+    match callee {
+        oxc_ast::ast::Expression::StaticMemberExpression(member) => member.property.name == method,
+        oxc_ast::ast::Expression::ParenthesizedExpression(parenthesized) => {
+            callee_is_static_member_named(&parenthesized.expression, method)
+        }
+        _ => false,
+    }
+}
+
+fn extract_get_by_test_id_call(
+    call: &oxc_ast::ast::CallExpression<'_>,
     source: &str,
     attributes: &[String],
     selectors: &mut BTreeSet<PlaywrightSelector>,
 ) {
-    for captures in get_by_test_id_string_regex().captures_iter(source) {
-        let value = first_capture(&captures, &[1, 2, 3]).expect("value capture");
-        for attribute in attributes {
-            selectors.insert(PlaywrightSelector {
-                attribute: attribute.clone(),
-                selector: format!("getByTestId({value})"),
-                matcher: SelectorMatcher::Exact(value.to_string()),
-            });
-        }
-    }
+    let Some(argument) = call.arguments.first() else {
+        return;
+    };
 
-    for captures in get_by_test_id_regex_regex().captures_iter(source) {
-        let value = captures.get(1).expect("regex capture").as_str();
-        for attribute in attributes {
-            selectors.insert(PlaywrightSelector {
-                attribute: attribute.clone(),
-                selector: format!("getByTestId(/{value}/)"),
-                matcher: SelectorMatcher::Regex(value.to_string()),
-            });
+    let matcher = match argument {
+        oxc_ast::ast::Argument::StringLiteral(literal) => Some((
+            literal.value.to_string(),
+            SelectorMatcher::Exact(literal.value.to_string()),
+        )),
+        oxc_ast::ast::Argument::TemplateLiteral(template) => {
+            let value = ast::template_literal_text(template, source);
+            Some((value.clone(), SelectorMatcher::Exact(value)))
         }
-    }
-}
+        oxc_ast::ast::Argument::RegExpLiteral(regex) => {
+            let value = regex.regex.pattern.text.to_string();
+            Some((format!("/{value}/"), SelectorMatcher::Regex(value)))
+        }
+        _ => None,
+    };
 
-fn app_selector_regex(attribute: &str) -> Regex {
-    let pattern = format!(
-        r#"{}\s*=\s*(?:"([^"]*)"|'([^']*)'|\{{\s*"([^"]*)"\s*\}}|\{{\s*'([^']*)'\s*\}}|\{{\s*`([^`]*)`\s*\}}|\{{([^}}]*)\}})"#,
-        regex::escape(attribute)
-    );
-    Regex::new(&pattern).expect("valid app selector regex")
+    let Some((display, matcher)) = matcher else {
+        return;
+    };
+    for attribute in attributes {
+        selectors.insert(PlaywrightSelector {
+            attribute: attribute.clone(),
+            selector: format!("getByTestId({display})"),
+            matcher: matcher.clone(),
+        });
+    }
 }
 
 fn playwright_selector_regex(attribute: &str) -> Regex {
@@ -365,22 +494,6 @@ fn playwright_selector_regex(attribute: &str) -> Regex {
         regex::escape(attribute)
     );
     Regex::new(&pattern).expect("valid Playwright selector regex")
-}
-
-fn get_by_test_id_string_regex() -> &'static Regex {
-    static REGEX: OnceLock<Regex> = OnceLock::new();
-    REGEX.get_or_init(|| {
-        Regex::new(r#"\.getByTestId\s*\(\s*(?:'([^']+)'|"([^"]+)"|`([^`]+)`)"#)
-            .expect("valid getByTestId string regex")
-    })
-}
-
-fn get_by_test_id_regex_regex() -> &'static Regex {
-    static REGEX: OnceLock<Regex> = OnceLock::new();
-    REGEX.get_or_init(|| {
-        Regex::new(r#"\.getByTestId\s*\(\s*/((?:\\.|[^/])*)/[a-z]*"#)
-            .expect("valid getByTestId regex regex")
-    })
 }
 
 fn matcher_for_operator(operator: &str, value: &str) -> SelectorMatcher {
@@ -438,7 +551,8 @@ mod tests {
     #[test]
     fn extracts_static_jsx_selectors() {
         let source = fixture_source(&["selectors", "static-jsx.tsx"]);
-        let selectors = extract_app_selectors(Path::new("app/page.tsx"), &source, &attrs());
+        let selectors =
+            extract_app_selectors(Path::new("app/page.tsx"), &source, &attrs()).unwrap();
         let mut values: Vec<String> = selectors.iter().map(AppSelector::display_value).collect();
         values.sort();
         assert_eq!(values, vec!["delete", "publish", "save"]);
@@ -447,7 +561,8 @@ mod tests {
     #[test]
     fn extracts_template_and_unsupported_jsx_selectors() {
         let source = fixture_source(&["selectors", "template-and-unsupported.tsx"]);
-        let selectors = extract_app_selectors(Path::new("app/page.tsx"), &source, &attrs());
+        let selectors =
+            extract_app_selectors(Path::new("app/page.tsx"), &source, &attrs()).unwrap();
         assert!(selectors
             .iter()
             .any(|selector| selector.display_value() == "user-${id}"));
@@ -491,9 +606,48 @@ mod tests {
     }
 
     #[test]
+    fn selector_parser_handles_ast_edge_shapes() {
+        let source = fixture_source(&["selectors", "edge-jsx.tsx"]);
+        let selectors =
+            extract_app_selectors(Path::new("app/page.tsx"), &source, &attrs()).unwrap();
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.display_value() == "save"));
+
+        let source = fixture_source(&["selectors", "edge-playwright.ts"]);
+        let selectors =
+            extract_playwright_selectors(&source, &attrs(), &["data-testid".to_string()]);
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == "getByTestId(save)"));
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == "getByTestId(publish)"));
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == "getByTestId(wrapped-callee)"));
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == "getByTestId(computed-receiver)"));
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == "getByTestId(call-receiver)"));
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == "getByTestId(optional-receiver)"));
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == "getByTestId(optional-call)"));
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == r#"[data-testid="save"]"#));
+    }
+
+    #[test]
     fn custom_test_id_attribute_maps_get_by_test_id() {
+        let source = fixture_source(&["selectors", "custom-testid.ts"]);
         let selectors = extract_playwright_selectors(
-            "await page.getByTestId(\"save\");",
+            &source,
             &["data-test".to_string()],
             &["data-test".to_string()],
         );
@@ -553,13 +707,14 @@ mod tests {
 
     #[test]
     fn unsupported_dynamic_values_never_match() {
+        let source = fixture_source(&["selectors", "unsupported-dynamic.ts"]);
         let app = AppSelector {
             file: PathBuf::from("app/page.tsx"),
             attribute: "data-testid".to_string(),
             value: AppSelectorValue::Unsupported("id".to_string()),
         };
         let selectors = extract_playwright_selectors(
-            "page.getByTestId('anything');",
+            &source,
             &["data-testid".to_string()],
             &["data-testid".to_string()],
         );
@@ -586,15 +741,6 @@ mod tests {
         assert!(!pattern.matches_exact("user-1-link"));
         assert!(!pattern.matches_exact("user-1"));
         assert!(!pattern.matches_exact("user-button"));
-    }
-
-    #[test]
-    fn app_selector_value_falls_back_without_value_captures() {
-        let captures = Regex::new("x").unwrap().captures("x").unwrap();
-        assert_eq!(
-            app_selector_value(&captures),
-            AppSelectorValue::Unsupported(String::new())
-        );
     }
 
     #[test]
