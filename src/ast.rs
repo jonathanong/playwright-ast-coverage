@@ -36,7 +36,14 @@ pub fn span_text(source: &str, span: Span) -> &str {
 pub fn template_literal_text(template: &TemplateLiteral<'_>, source: &str) -> String {
     let mut text = String::new();
     for (index, quasi) in template.quasis.iter().enumerate() {
-        text.push_str(quasi.value.raw.as_str());
+        text.push_str(
+            quasi
+                .value
+                .cooked
+                .as_ref()
+                .unwrap_or(&quasi.value.raw)
+                .as_str(),
+        );
         if let Some(expression) = template.expressions.get(index) {
             text.push_str("${");
             text.push_str(span_text(source, expression.span()));

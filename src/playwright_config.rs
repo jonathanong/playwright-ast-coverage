@@ -5,7 +5,7 @@ use oxc_ast::ast::{
     ExportDefaultDeclarationKind, Expression, ObjectExpression, ObjectPropertyKind, Program,
     PropertyKey, Statement,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 const DEFAULT_TEST_MATCH: &[&str] = &[
@@ -132,12 +132,13 @@ fn parse_program(
     source: &str,
     config_dir: &Path,
 ) -> Result<PlaywrightConfig> {
+    let bindings = top_level_object_bindings(program);
     let Some(root_object) = default_export_object(program) else {
         return Ok(PlaywrightConfig {
             projects: vec![merge_project(config_dir, &ParsedOptions::default(), None)],
         });
     };
-    let root_options = parse_options(root_object, source)?;
+    let root_options = parse_options(root_object, source, &bindings)?;
     let project_objects = project_objects(root_object);
 
     if project_objects.is_empty() {
@@ -151,7 +152,7 @@ fn parse_program(
         projects.push(merge_project(
             config_dir,
             &root_options,
-            Some(parse_options(project_object, source)?),
+            Some(parse_options(project_object, source, &bindings)?),
         ));
     }
 
@@ -184,8 +185,15 @@ fn merge_project(
     }
 }
 
-fn parse_options(object: &ObjectExpression<'_>, source: &str) -> Result<ParsedOptions> {
-    let use_object = property_expression(object, "use").and_then(expression_object);
+fn parse_options(
+    object: &ObjectExpression<'_>,
+    source: &str,
+    bindings: &BTreeMap<String, &Expression<'_>>,
+) -> Result<ParsedOptions> {
+    let use_object = property_expression(object, "use").and_then(|value| {
+        let mut seen = BTreeSet::new();
+        expression_config_object(value, bindings, &mut seen)
+    });
 
     Ok(ParsedOptions {
         test_dir: property_expression(object, "testDir")
@@ -267,15 +275,19 @@ fn export_config_object<'a>(
 ) -> Option<&'a ObjectExpression<'a>> {
     match export {
         ExportDefaultDeclarationKind::ObjectExpression(object) => Some(object),
-        ExportDefaultDeclarationKind::CallExpression(call) => call
-            .arguments
-            .first()
-            .and_then(|argument| argument_config_object(argument, bindings)),
-        ExportDefaultDeclarationKind::Identifier(identifier) => bindings
-            .get(identifier.name.as_str())
-            .and_then(|expression| expression_config_object(expression, bindings)),
+        ExportDefaultDeclarationKind::CallExpression(call) => {
+            call.arguments.first().and_then(|argument| {
+                let mut seen = BTreeSet::new();
+                argument_config_object(argument, bindings, &mut seen)
+            })
+        }
+        ExportDefaultDeclarationKind::Identifier(identifier) => {
+            let mut seen = BTreeSet::new();
+            identifier_config_object(identifier.name.as_str(), bindings, &mut seen)
+        }
         ExportDefaultDeclarationKind::ParenthesizedExpression(parenthesized) => {
-            expression_config_object(&parenthesized.expression, bindings)
+            let mut seen = BTreeSet::new();
+            expression_config_object(&parenthesized.expression, bindings, &mut seen)
         }
         _ => None,
     }
@@ -297,7 +309,8 @@ fn commonjs_config_object<'a>(
     {
         return None;
     }
-    expression_config_object(&assignment.right, bindings)
+    let mut seen = BTreeSet::new();
+    expression_config_object(&assignment.right, bindings, &mut seen)
 }
 
 fn assignment_target_path(target: &AssignmentTarget<'_>) -> Option<Vec<String>> {
@@ -314,41 +327,54 @@ fn assignment_target_path(target: &AssignmentTarget<'_>) -> Option<Vec<String>> 
 fn argument_config_object<'a>(
     argument: &'a Argument<'a>,
     bindings: &BTreeMap<String, &'a Expression<'a>>,
+    seen: &mut BTreeSet<String>,
 ) -> Option<&'a ObjectExpression<'a>> {
     match argument {
         Argument::ObjectExpression(object) => Some(object),
-        Argument::Identifier(identifier) => bindings
-            .get(identifier.name.as_str())
-            .and_then(|expression| expression_config_object(expression, bindings)),
+        Argument::Identifier(identifier) => {
+            identifier_config_object(identifier.name.as_str(), bindings, seen)
+        }
         Argument::ParenthesizedExpression(parenthesized) => {
-            expression_config_object(&parenthesized.expression, bindings)
+            expression_config_object(&parenthesized.expression, bindings, seen)
         }
         _ => None,
     }
-}
-
-fn expression_object<'a>(expression: &'a Expression<'a>) -> Option<&'a ObjectExpression<'a>> {
-    expression_config_object(expression, &BTreeMap::new())
 }
 
 fn expression_config_object<'a>(
     expression: &'a Expression<'a>,
     bindings: &BTreeMap<String, &'a Expression<'a>>,
+    seen: &mut BTreeSet<String>,
 ) -> Option<&'a ObjectExpression<'a>> {
     match expression {
         Expression::ObjectExpression(object) => Some(object),
-        Expression::Identifier(identifier) => bindings
-            .get(identifier.name.as_str())
-            .and_then(|expression| expression_config_object(expression, bindings)),
+        Expression::Identifier(identifier) => {
+            identifier_config_object(identifier.name.as_str(), bindings, seen)
+        }
         Expression::CallExpression(call) => call
             .arguments
             .first()
-            .and_then(|argument| argument_config_object(argument, bindings)),
+            .and_then(|argument| argument_config_object(argument, bindings, seen)),
         Expression::ParenthesizedExpression(parenthesized) => {
-            expression_config_object(&parenthesized.expression, bindings)
+            expression_config_object(&parenthesized.expression, bindings, seen)
         }
         _ => None,
     }
+}
+
+fn identifier_config_object<'a>(
+    name: &str,
+    bindings: &BTreeMap<String, &'a Expression<'a>>,
+    seen: &mut BTreeSet<String>,
+) -> Option<&'a ObjectExpression<'a>> {
+    if !seen.insert(name.to_string()) {
+        return None;
+    }
+    let object = bindings
+        .get(name)
+        .and_then(|expression| expression_config_object(expression, bindings, seen));
+    seen.remove(name);
+    object
 }
 
 fn property_expression<'a>(
@@ -559,6 +585,33 @@ mod tests {
             parsed.projects[0].base_url.as_deref(),
             Some("http://localhost:5100")
         );
+    }
+
+    #[test]
+    fn resolves_identifier_backed_use_object() {
+        let source = fixture_source(&["playwright_config", "use-identifier.ts"]);
+        let parsed = parse(&source, Path::new("/repo")).unwrap();
+        assert_eq!(parsed.projects[0].test_dir, "./use-identifier-tests");
+        assert_eq!(
+            parsed.projects[0].base_url.as_deref(),
+            Some("http://localhost:6200")
+        );
+        assert_eq!(parsed.projects[0].test_id_attribute, "data-shared");
+    }
+
+    #[test]
+    fn cyclic_identifier_configs_fall_back_without_recursing() {
+        let source = fixture_source(&["playwright_config", "cyclic-config.ts"]);
+        let parsed = parse(&source, Path::new("/repo")).unwrap();
+        assert_eq!(parsed.projects[0].test_dir, ".");
+    }
+
+    #[test]
+    fn template_literals_use_cooked_text() {
+        let source = fixture_source(&["playwright_config", "cooked-template.ts"]);
+        let parsed = parse(&source, Path::new("/repo")).unwrap();
+        assert_eq!(parsed.projects[0].test_dir, r#"tests\e2e"#);
+        assert_eq!(parsed.projects[0].test_match, vec![r#"**\/*.spec.ts"#]);
     }
 
     #[test]
