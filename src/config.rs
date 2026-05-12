@@ -123,13 +123,12 @@ fn default_selector_attributes() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use tempfile::TempDir;
+    use crate::test_support::fixture_path;
 
     #[test]
     fn missing_default_config_uses_defaults() {
-        let dir = TempDir::new().unwrap();
-        let settings = load_settings(dir.path(), None, None).unwrap();
+        let root = fixture_path(&["config", "missing-default"]);
+        let settings = load_settings(&root, None, None).unwrap();
         assert_eq!(settings.frontend_root, "app");
         assert!(settings.playwright_config.is_none());
         assert_eq!(settings.selector_attributes, vec!["data-testid", "data-pw"]);
@@ -138,8 +137,8 @@ mod tests {
 
     #[test]
     fn explicit_missing_config_errors() {
-        let dir = TempDir::new().unwrap();
-        let err = load_settings(dir.path(), Some(Path::new("missing.yaml")), None)
+        let root = fixture_path(&["config", "missing-default"]);
+        let err = load_settings(&root, Some(Path::new("missing.yaml")), None)
             .err()
             .expect("expected missing config to fail");
         assert!(err.to_string().contains("config file does not exist"));
@@ -147,19 +146,8 @@ mod tests {
 
     #[test]
     fn reads_yaml_and_finds_default_playwright_config() {
-        let dir = TempDir::new().unwrap();
-        fs::write(
-            dir.path().join(".playwright-ast-coverage.yaml"),
-            "frontendRoot: web/app\ntestExclude: ['**/skip/**']\nnavigationHelpers: ['navigateTo']\nselectorRoots: ['web/components']\nselectorInclude: ['web/components/**/*.tsx']\nselectorExclude: ['**/*.test.tsx']\n",
-        )
-        .unwrap();
-        fs::write(
-            dir.path().join("playwright.config.mts"),
-            "export default {}",
-        )
-        .unwrap();
-
-        let settings = load_settings(dir.path(), None, None).unwrap();
+        let root = fixture_path(&["config", "full"]);
+        let settings = load_settings(&root, None, None).unwrap();
         assert_eq!(settings.frontend_root, "web/app");
         assert_eq!(settings.test_exclude, vec!["**/skip/**"]);
         assert_eq!(settings.navigation_helpers, vec!["navigateTo"]);
@@ -168,42 +156,32 @@ mod tests {
         assert_eq!(settings.selector_exclude, vec!["**/*.test.tsx"]);
         assert_eq!(
             settings.playwright_config,
-            Some(dir.path().join("playwright.config.mts"))
+            Some(root.join("playwright.config.mts"))
         );
     }
 
     #[test]
     fn yaml_playwright_config_path_is_resolved() {
-        let dir = TempDir::new().unwrap();
-        fs::write(
-            dir.path().join(".playwright-ast-coverage.yaml"),
-            "playwrightConfig: configs/playwright.config.ts\n",
-        )
-        .unwrap();
-        let settings = load_settings(dir.path(), None, None).unwrap();
+        let root = fixture_path(&["config", "yaml-playwright-config"]);
+        let settings = load_settings(&root, None, None).unwrap();
         assert_eq!(
             settings.playwright_config,
-            Some(dir.path().join("configs/playwright.config.ts"))
+            Some(root.join("configs/playwright.config.ts"))
         );
     }
 
     #[test]
     fn cli_playwright_config_absolute_path_is_preserved() {
-        let dir = TempDir::new().unwrap();
-        let config = dir.path().join("custom.config.ts");
-        let settings = load_settings(dir.path(), None, Some(&config)).unwrap();
+        let root = fixture_path(&["config", "missing-default"]);
+        let config = root.join("custom.config.ts");
+        let settings = load_settings(&root, None, Some(&config)).unwrap();
         assert_eq!(settings.playwright_config, Some(config));
     }
 
     #[test]
     fn invalid_yaml_errors() {
-        let dir = TempDir::new().unwrap();
-        fs::write(
-            dir.path().join(".playwright-ast-coverage.yaml"),
-            "frontendRoot: [",
-        )
-        .unwrap();
-        let err = load_settings(dir.path(), None, None)
+        let root = fixture_path(&["config", "invalid-yaml"]);
+        let err = load_settings(&root, None, None)
             .err()
             .expect("expected invalid YAML to fail");
         assert!(!err.to_string().is_empty());
@@ -211,36 +189,22 @@ mod tests {
 
     #[test]
     fn selector_attributes_can_be_custom_or_disabled() {
-        let dir = TempDir::new().unwrap();
-        fs::write(
-            dir.path().join(".playwright-ast-coverage.yaml"),
-            "selectorAttributes: ['data-test', 'data-test-id']\n",
-        )
-        .unwrap();
-        let settings = load_settings(dir.path(), None, None).unwrap();
+        let custom = fixture_path(&["config", "selector-attributes-custom"]);
+        let settings = load_settings(&custom, None, None).unwrap();
         assert_eq!(
             settings.selector_attributes,
             vec!["data-test", "data-test-id"]
         );
 
-        fs::write(
-            dir.path().join(".playwright-ast-coverage.yaml"),
-            "selectorAttributes: []\n",
-        )
-        .unwrap();
-        let settings = load_settings(dir.path(), None, None).unwrap();
+        let disabled = fixture_path(&["config", "selector-attributes-disabled"]);
+        let settings = load_settings(&disabled, None, None).unwrap();
         assert!(settings.selector_attributes.is_empty());
     }
 
     #[test]
     fn old_default_config_name_is_ignored() {
-        let dir = TempDir::new().unwrap();
-        fs::write(
-            dir.path().join(".playwright-path-coverage.yaml"),
-            "frontendRoot: ignored/app\n",
-        )
-        .unwrap();
-        let settings = load_settings(dir.path(), None, None).unwrap();
+        let root = fixture_path(&["config", "old-name"]);
+        let settings = load_settings(&root, None, None).unwrap();
         assert_eq!(settings.frontend_root, "app");
     }
 }

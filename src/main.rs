@@ -5,6 +5,8 @@ mod playwright_config;
 mod playwright_urls;
 mod routes;
 mod selectors;
+#[cfg(test)]
+mod test_support;
 
 #[cfg(not(test))]
 use anyhow::Context;
@@ -674,6 +676,7 @@ fn absolutize(path: &Path) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::fixture_path;
 
     #[test]
     fn normalize_url_handles_relative_absolute_base_and_external() {
@@ -728,33 +731,17 @@ mod tests {
 
     #[test]
     fn walk_files_returns_files_and_skips_configured_directories() {
-        let dir = tempfile::TempDir::new().unwrap();
-        std::fs::create_dir_all(dir.path().join("src")).unwrap();
-        std::fs::create_dir_all(dir.path().join("node_modules/pkg")).unwrap();
-        std::fs::write(dir.path().join("src/b.ts"), "").unwrap();
-        std::fs::write(dir.path().join("src/a.ts"), "").unwrap();
-        std::fs::write(dir.path().join("node_modules/pkg/app.ts"), "").unwrap();
-        let files: Vec<String> = walk_files(dir.path())
+        let root = fixture_path(&["main", "walk-files"]);
+        let files: Vec<String> = walk_files(&root)
             .into_iter()
-            .map(|path| relative_string(dir.path(), &path))
+            .map(|path| relative_string(&root, &path))
             .collect();
         assert_eq!(files, vec!["src/a.ts", "src/b.ts"]);
     }
 
     #[test]
     fn collect_app_selectors_skips_missing_roots_and_non_source_files() {
-        let dir = tempfile::TempDir::new().unwrap();
-        std::fs::create_dir_all(dir.path().join("web/app")).unwrap();
-        std::fs::write(
-            dir.path().join("web/app/page.tsx"),
-            r#"<button data-testid="save" />"#,
-        )
-        .unwrap();
-        std::fs::write(
-            dir.path().join("web/app/style.css"),
-            r#"[data-testid="ignored"] {}"#,
-        )
-        .unwrap();
+        let root = fixture_path(&["main", "selector-source"]);
         let settings = Settings {
             frontend_root: "web/app".to_string(),
             playwright_config: None,
@@ -769,7 +756,7 @@ mod tests {
         };
 
         let selector_regexes = selectors::compile_selector_regexes(&settings.selector_attributes);
-        let selectors = collect_app_selectors(dir.path(), &settings, &selector_regexes).unwrap();
+        let selectors = collect_app_selectors(&root, &settings, &selector_regexes).unwrap();
         assert_eq!(selectors.len(), 1);
         assert_eq!(selectors[0].display_value(), "save");
     }
@@ -932,19 +919,7 @@ mod tests {
 
     #[test]
     fn analyze_discovers_tests_and_builds_reports() {
-        let dir = tempfile::TempDir::new().unwrap();
-        std::fs::create_dir_all(dir.path().join("web/app")).unwrap();
-        std::fs::create_dir_all(dir.path().join("tests/e2e")).unwrap();
-        std::fs::write(
-            dir.path().join("web/app/page.tsx"),
-            r#"export default function Page() { return <main />; }"#,
-        )
-        .unwrap();
-        std::fs::write(
-            dir.path().join("tests/e2e/app.spec.ts"),
-            "import { test } from '@playwright/test'; test('home', async ({ page }) => { await page.goto('/'); });",
-        )
-        .unwrap();
+        let root = fixture_path(&["main", "analyze-basic"]);
         let settings = Settings {
             frontend_root: "web/app".to_string(),
             playwright_config: None,
@@ -958,7 +933,7 @@ mod tests {
             selector_exclude: vec![],
         };
 
-        let analysis = analyze(dir.path(), &settings).unwrap();
+        let analysis = analyze(&root, &settings).unwrap();
         assert_eq!(analysis.coverage.summary.covered_routes, 1);
         assert_eq!(analysis.edges.edges.len(), 1);
     }

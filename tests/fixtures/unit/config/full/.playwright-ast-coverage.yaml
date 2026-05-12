@@ -1,0 +1,6 @@
+frontendRoot: web/app
+testExclude: ['**/skip/**']
+navigationHelpers: ['navigateTo']
+selectorRoots: ['web/components']
+selectorInclude: ['web/components/**/*.tsx']
+selectorExclude: ['**/*.test.tsx']

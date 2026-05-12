@@ -449,35 +449,20 @@ fn split_top_level_objects(source: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{fixture_path, fixture_source};
 
     #[test]
     fn parses_test_dir_and_match() {
-        let source = r#"
-import { defineConfig } from '@playwright/test';
-export default defineConfig({
-  testDir: './tests/e2e',
-  testMatch: '**/*.spec.ts',
-});
-"#;
-        let parsed = parse(source, Path::new("/repo")).unwrap();
+        let source = fixture_source(&["playwright_config", "test-dir-and-match.ts"]);
+        let parsed = parse(&source, Path::new("/repo")).unwrap();
         assert_eq!(parsed.projects[0].test_dir, "./tests/e2e");
         assert_eq!(parsed.projects[0].test_match, vec!["**/*.spec.ts"]);
     }
 
     #[test]
     fn parses_projects_with_inheritance() {
-        let source = r#"
-export default defineConfig({
-  testDir: './tests',
-  testIgnore: ['**/skip/**'],
-  use: { baseURL: 'http://localhost:3000', testIdAttribute: 'data-pw' },
-  projects: [
-    { name: 'chromium', testMatch: '**/*.spec.ts' },
-    { name: 'webkit', testDir: './e2e', testMatch: ['**/*.pw.ts'], use: { testIdAttribute: 'data-test' } },
-  ],
-});
-"#;
-        let parsed = parse(source, Path::new("/repo")).unwrap();
+        let source = fixture_source(&["playwright_config", "projects-with-inheritance.ts"]);
+        let parsed = parse(&source, Path::new("/repo")).unwrap();
         assert_eq!(parsed.projects.len(), 2);
         assert_eq!(parsed.projects[0].test_dir, "./tests");
         assert_eq!(parsed.projects[0].test_ignore, vec!["**/skip/**"]);
@@ -494,14 +479,8 @@ export default defineConfig({
 
     #[test]
     fn parses_top_level_base_url_and_string_ignore() {
-        let source = r#"
-export default {
-  baseURL: 'http://localhost:5173',
-  testIgnore: '**/skip/**',
-  testIdAttribute: 'data-test-id',
-};
-"#;
-        let parsed = parse(source, Path::new("/repo")).unwrap();
+        let source = fixture_source(&["playwright_config", "top-level-base-url.ts"]);
+        let parsed = parse(&source, Path::new("/repo")).unwrap();
         assert_eq!(
             parsed.projects[0].base_url.as_deref(),
             Some("http://localhost:5173")
@@ -512,15 +491,8 @@ export default {
 
     #[test]
     fn ignores_non_literal_optional_playwright_values() {
-        let source = r#"
-const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3000';
-const TEST_ID = process.env.TEST_ID ?? 'data-pw';
-export default {
-  testDir: './tests',
-  use: { baseURL: BASE_URL, testIdAttribute: TEST_ID },
-};
-"#;
-        let parsed = parse(source, Path::new("/repo")).unwrap();
+        let source = fixture_source(&["playwright_config", "nonliteral-optional-values.ts"]);
+        let parsed = parse(&source, Path::new("/repo")).unwrap();
         assert_eq!(parsed.projects[0].test_dir, "./tests");
         assert_eq!(parsed.projects[0].base_url, None);
         assert_eq!(parsed.projects[0].test_id_attribute, "data-testid");
@@ -556,18 +528,16 @@ export default {
 
     #[test]
     fn load_existing_config_reads_and_parses() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let config = dir.path().join("playwright.config.ts");
-        std::fs::write(&config, "export default { testDir: './tests' }").unwrap();
-
-        let parsed = load(dir.path(), Some(&config)).unwrap();
+        let dir = fixture_path(&["playwright_config", "load-existing"]);
+        let config = dir.join("playwright.config.ts");
+        let parsed = load(&dir, Some(&config)).unwrap();
         assert_eq!(parsed.projects[0].test_dir, "./tests");
     }
 
     #[test]
     fn load_directory_config_path_returns_read_error() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let err = load(dir.path(), Some(dir.path()))
+        let dir = fixture_path(&["playwright_config", "load-existing"]);
+        let err = load(&dir, Some(&dir))
             .err()
             .expect("expected directory config path to fail");
         assert!(!err.to_string().is_empty());
@@ -617,8 +587,8 @@ export default {
 
     #[test]
     fn parse_accepts_spaced_property_and_escaped_string() {
-        let source = r#"export default { testDir   : "tests\\e2e", testMatch: ["**/*.spec.ts"] }"#;
-        let parsed = parse(source, Path::new("/repo")).unwrap();
+        let source = fixture_source(&["playwright_config", "spaced-property.ts"]);
+        let parsed = parse(&source, Path::new("/repo")).unwrap();
         assert_eq!(parsed.projects[0].test_dir, r#"tests\\e2e"#);
     }
 
@@ -678,12 +648,8 @@ export default {
 
     #[test]
     fn root_options_ignore_project_values() {
-        let source = r#"
-export default {
-  projects: [{ testDir: './project-tests', testMatch: '**/*.project.ts' }],
-};
-"#;
-        let parsed = parse(source, Path::new("/repo")).unwrap();
+        let source = fixture_source(&["playwright_config", "project-values-only.ts"]);
+        let parsed = parse(&source, Path::new("/repo")).unwrap();
         assert_eq!(parsed.projects[0].test_dir, "./project-tests");
         assert_eq!(parsed.projects[0].test_match, vec!["**/*.project.ts"]);
     }
