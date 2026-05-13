@@ -58,7 +58,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: ${{ env.CODECOV_TOKEN != '' }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ env.CODECOV_TOKEN }}
           files: target/llvm-cov/lcov.info,packages/eslint-plugin-playwright-ast-coverage/coverage/lcov.info
