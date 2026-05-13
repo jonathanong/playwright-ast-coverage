@@ -54,7 +54,7 @@ pub fn test_callback_status(call: &CallExpression<'_>) -> Option<TestStatus> {
     }
 
     if is_skip_path(&path) {
-        return Some(skip_call_status(call).unwrap_or(TestStatus::Skipped));
+        return Some(skip_call_status(call).unwrap_or(TestStatus::Active));
     }
 
     Some(TestStatus::Active)
@@ -168,7 +168,8 @@ impl<'a> Visit<'a> for AnnotationVisitor {
             }
         } else {
             if let Some(status) = annotation_status_for_call(call) {
-                self.annotations.insert(self.status.merge(status));
+                self.annotations
+                    .insert(merge_annotation_status(self.status, status));
             }
             walk::walk_call_expression(self, call);
         }
@@ -183,5 +184,13 @@ impl<'a> Visit<'a> for AnnotationVisitor {
             self.visit_statement(alternate);
         }
         self.status = previous;
+    }
+}
+
+fn merge_annotation_status(context: TestStatus, annotation: TestStatus) -> TestStatus {
+    if context == TestStatus::Conditional && annotation == TestStatus::Skipped {
+        TestStatus::Conditional
+    } else {
+        context.merge(annotation)
     }
 }

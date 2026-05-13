@@ -392,6 +392,15 @@ mod tests {
                 test.skip(browserName === 'webkit', 'conditional');
                 await page.goto('/conditional-annotation');
             });
+            test('conditional skip annotation', async ({ page }) => {
+                if (process.env.SKIP_E2E) {
+                    test.skip();
+                }
+                await page.goto('/conditional-skip-call');
+            });
+            test.skip(false, 'skip false', async ({ page }) => {
+                await page.goto('/skip-false');
+            });
             test('active', async ({ page }) => {
                 await page.goto('/active');
             });
@@ -410,7 +419,12 @@ mod tests {
                     "/conditional-annotation".to_string(),
                     TestStatus::Conditional
                 ),
+                (
+                    "/conditional-skip-call".to_string(),
+                    TestStatus::Conditional
+                ),
                 ("/conditional-wrapper".to_string(), TestStatus::Conditional),
+                ("/skip-false".to_string(), TestStatus::Active),
                 ("/skip-if".to_string(), TestStatus::Conditional),
                 ("/skipped".to_string(), TestStatus::Skipped),
             ]
