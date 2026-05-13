@@ -127,8 +127,14 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: Check JavaScript formatting
+        run: npm run fmt:js:check
+
       - name: Run Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run Oxlint
+        run: npm run lint:js
 
       - name: Run Rust tests
         run: cargo test --all-features

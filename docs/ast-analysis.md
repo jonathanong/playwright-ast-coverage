@@ -4,6 +4,9 @@
 TypeScript, JSX, and TSX source. It does not run tests or execute project code.
 Only static forms described here are detected.
 
+For CLI flags and output shapes, see [CLI Reference](cli-reference.md). For
+agent workflow guidance, see [Agent Guide](agent-guide.md).
+
 ## Playwright Config
 
 The tool parses root-level `playwright*.config.*` files discovered under
@@ -13,14 +16,14 @@ The tool parses root-level `playwright*.config.*` files discovered under
 Supported config shapes:
 
 ```ts
-export default { testDir: './tests' }
-export default defineConfig({ testDir: './tests' })
+export default { testDir: "./tests" };
+export default defineConfig({ testDir: "./tests" });
 
-const config = { testDir: './tests' }
-export default config
+const config = { testDir: "./tests" };
+export default config;
 
-module.exports = { testDir: './tests' }
-module.exports = defineConfig({ testDir: './tests' })
+module.exports = { testDir: "./tests" };
+module.exports = defineConfig({ testDir: "./tests" });
 ```
 
 It can follow top-level object bindings used as the exported config, the
@@ -54,10 +57,10 @@ Route groups like `(admin)` and parallel route segments like `@modal` are
 ignored when building route patterns. Dynamic segments map as follows:
 
 | App Router segment | Route pattern segment |
-| --- | --- |
-| `[id]` | `:id` |
-| `[...rest]` | `*` |
-| `[[...rest]]` | `**` |
+| ------------------ | --------------------- |
+| `[id]`             | `:id`                 |
+| `[...rest]`        | `*`                   |
+| `[[...rest]]`      | `**`                  |
 
 ## Test URL Detection
 
@@ -67,15 +70,15 @@ matches a route pattern.
 Detected AST forms:
 
 ```ts
-await page.goto('/users/42');
+await page.goto("/users/42");
 await page.goto("http://localhost:3000/users/42");
 await page.goto(`/users/${id}`);
 await page.click('a[href="/settings"]');
 await page.click(`a[href='/settings']`);
-await expect(page).toHaveURL('/settings');
+await expect(page).toHaveURL("/settings");
 await expect(page).toHaveURL(new RegExp(`/users/${id}`));
-await navigateTo(page, '/settings');
-await testHelpers.openPath(page, '/settings');
+await navigateTo(page, "/settings");
+await testHelpers.openPath(page, "/settings");
 ```
 
 Detection rules:
@@ -144,7 +147,7 @@ are reported with `unsupportedDynamic: true` and never count as covered.
 Detected `getByTestId(...)` forms:
 
 ```ts
-await page.getByTestId('save').click();
+await page.getByTestId("save").click();
 await page.getByTestId("save").click();
 await page.getByTestId(`save`).click();
 await page.getByTestId(/^user-/).click();

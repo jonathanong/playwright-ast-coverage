@@ -2,44 +2,49 @@
   "name": "playwright-ast-coverage",
   "version": "0.1.3",
   "description": "Static Playwright AST coverage for Next.js App Router routes",
+  "homepage": "https://github.com/jonathanong/playwright-ast-coverage#readme",
+  "bugs": {
+    "url": "https://github.com/jonathanong/playwright-ast-coverage/issues"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/jonathanong/playwright-ast-coverage.git"
   },
-  "homepage": "https://github.com/jonathanong/playwright-ast-coverage#readme",
-  "bugs": {
-    "url": "https://github.com/jonathanong/playwright-ast-coverage/issues"
-  },
   "bin": {
     "playwright-ast-coverage": "bin/playwright-ast-coverage.js"
   },
-  "files": [
-    "bin/",
-    "scripts/install.js",
-    "README.md",
-    "LICENSE"
-  ],
   "workspaces": [
     "packages/eslint-plugin-playwright-ast-coverage"
   ],
-  "scripts": {
-    "postinstall": "node scripts/install.js",
-    "test": "node --test scripts/*.test.js && npm test --workspace eslint-plugin-playwright-ast-coverage",
-    "pack:check": "npm pack --dry-run"
-  },
-  "engines": {
-    "node": ">=18"
-  },
+  "files": [
+    "bin/",
+    "scripts/install.js",
+    "scripts/install/",
+    "README.md",
+    "LICENSE"
+  ],
   "publishConfig": {
     "access": "public"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install.js",
+    "test": "vitest run --coverage",
+    "fmt:js": "oxfmt --write bin scripts packages/eslint-plugin-playwright-ast-coverage/src packages/eslint-plugin-playwright-ast-coverage/test vitest.config.js",
+    "fmt:js:check": "oxfmt --check bin scripts packages/eslint-plugin-playwright-ast-coverage/src packages/eslint-plugin-playwright-ast-coverage/test vitest.config.js",
+    "lint:js": "oxlint bin scripts packages/eslint-plugin-playwright-ast-coverage/src packages/eslint-plugin-playwright-ast-coverage/test vitest.config.js",
+    "pack:check": "npm pack --dry-run"
   },
   "devDependencies": {
     "@emnapi/core": "^1.10.0",
     "@emnapi/runtime": "^1.10.0",
     "@vitest/coverage-v8": "^4.1.6",
     "eslint": "^10.3.0",
+    "oxfmt": "^0.49.0",
     "oxlint": "^1.64.0",
     "vitest": "^4.1.6"
+  },
+  "engines": {
+    "node": "^20.19.0 || ^22.13.0 || >=24"
   }
 }
