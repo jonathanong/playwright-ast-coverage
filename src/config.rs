@@ -1,6 +1,7 @@
 use anyhow::Result;
 use jsonc_parser::ParseOptions;
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 const CONFIG_FILE_STEM: &str = ".playwright-ast-coverage";
@@ -19,6 +20,7 @@ struct FileConfig {
     ignore_routes: Vec<String>,
     navigation_helpers: Vec<String>,
     selector_attributes: Option<Vec<String>>,
+    component_selector_attributes: BTreeMap<String, String>,
     selector_roots: Option<Vec<String>>,
     selector_include: Vec<String>,
     selector_exclude: Vec<String>,
@@ -41,6 +43,7 @@ pub struct Settings {
     pub ignore_routes: Vec<String>,
     pub navigation_helpers: Vec<String>,
     pub selector_attributes: Vec<String>,
+    pub component_selector_attributes: BTreeMap<String, String>,
     pub selector_roots: Vec<String>,
     pub selector_include: Vec<String>,
     pub selector_exclude: Vec<String>,
@@ -86,6 +89,7 @@ pub fn load_settings(
         selector_attributes: file_config
             .selector_attributes
             .unwrap_or_else(default_selector_attributes),
+        component_selector_attributes: file_config.component_selector_attributes,
         selector_roots,
         selector_include: file_config.selector_include,
         selector_exclude: file_config.selector_exclude,
@@ -232,6 +236,7 @@ mod tests {
         assert_eq!(settings.frontend_root, "app");
         assert!(settings.playwright_configs.is_empty());
         assert_eq!(settings.selector_attributes, vec!["data-testid", "data-pw"]);
+        assert!(settings.component_selector_attributes.is_empty());
         assert_eq!(settings.selector_roots, vec!["app"]);
     }
 
@@ -372,10 +377,18 @@ mod tests {
             settings.selector_attributes,
             vec!["data-test", "data-test-id"]
         );
+        assert_eq!(
+            settings
+                .component_selector_attributes
+                .get("dataTest")
+                .map(String::as_str),
+            Some("data-test")
+        );
 
         let disabled = fixture_path(&["config", "selector-attributes-disabled"]);
         let settings = load_settings(&disabled, None, &[], None).unwrap();
         assert!(settings.selector_attributes.is_empty());
+        assert!(settings.component_selector_attributes.is_empty());
     }
 
     #[test]

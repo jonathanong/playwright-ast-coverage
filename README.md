@@ -112,6 +112,8 @@ navigationHelpers:
 selectorAttributes:
   - data-testid
   - data-pw
+componentSelectorAttributes:
+  dataPw: data-pw
 selectorRoots:
   - web/app
   - web/components
@@ -168,7 +170,8 @@ At a high level, the tool checks:
   under `frontendRoot`.
 - Playwright test URLs from `page.goto(...)`, `page.click('a[href="..."]')`,
   `expect(page).toHaveURL(...)`, and configured navigation helper calls.
-- JSX selector attributes such as `data-testid` and `data-pw` from app source.
+- JSX selector attributes such as `data-testid` and `data-pw` from app source,
+  plus configured component props such as `dataPw` mapped to DOM attributes.
 - Playwright selector usage from `getByTestId(...)` and CSS attribute selectors
   passed to Playwright selector methods.
 - Skipped and conditional Playwright test context, with flags to require active

@@ -77,6 +77,8 @@ navigationHelpers:
 selectorAttributes:
   - data-testid
   - data-pw
+componentSelectorAttributes:
+  dataPw: data-pw
 selectorRoots:
   - web/app
   - web/components
@@ -95,7 +97,8 @@ selectorExclude:
 | `testExclude` | `[]` | Root-relative glob patterns for test files to ignore. Applied to `testInclude` discovery and also in addition to Playwright `testIgnore`. |
 | `ignoreRoutes` | `[]` | Route patterns that should count as covered even when no test URL matches them. Uses the same route matching rules as coverage. |
 | `navigationHelpers` | `[]` | Callee names for project navigation helpers. The first URL-like string literal inside each matching call is counted as a visited URL. Names can include dots, such as `testHelpers.openPath`. |
-| `selectorAttributes` | `["data-testid", "data-pw"]` | JSX attributes to collect from app source and CSS attribute selectors to detect in tests. Set to `[]` to disable selector coverage. |
+| `selectorAttributes` | `["data-testid", "data-pw"]` | JSX attributes to collect from app source and CSS attribute selectors to detect in tests. Set this and `componentSelectorAttributes` to empty values to disable selector coverage. |
+| `componentSelectorAttributes` | `{}` | Component prop names to collect from JSX component usage and report as DOM selector attributes, such as `{ dataPw: data-pw }`. Mapped DOM attributes are also detected in Playwright CSS selectors. |
 | `selectorRoots` | `[frontendRoot]` | Root-relative directories to scan for app selectors. Use this for shared component directories outside the App Router tree. Missing roots are skipped. |
 | `selectorInclude` | `[]` | Root-relative glob patterns for app selector source files. When empty, all source files under `selectorRoots` are included before excludes. |
 | `selectorExclude` | `[]` | Root-relative glob patterns for app selector source files to ignore. Useful for unit tests, stories, and generated files. |

@@ -319,8 +319,13 @@ fn analyze_with_policy(
         settings.project.as_deref(),
     )?;
     let test_files = discover_test_files(root, settings, &playwright)?;
-    let selector_regexes = selectors::compile_selector_regexes(&settings.selector_attributes);
-    let app_selectors = if settings.selector_attributes.is_empty() {
+    let selector_regexes = selectors::compile_selector_regexes(
+        &settings.selector_attributes,
+        &settings.component_selector_attributes,
+    );
+    let app_selectors = if settings.selector_attributes.is_empty()
+        && settings.component_selector_attributes.is_empty()
+    {
         Vec::new()
     } else {
         collect_app_selectors(root, settings, &selector_regexes)?
@@ -1179,6 +1184,7 @@ mod tests {
                 }
             "#,
             &["data-testid".to_string(), "data-pw".to_string()],
+            &BTreeMap::new(),
         )
         .unwrap();
         let targets = app_selector_targets(root, &app_selectors);
@@ -1240,12 +1246,16 @@ mod tests {
             ignore_routes: vec![],
             navigation_helpers: vec![],
             selector_attributes: vec!["data-testid".to_string()],
+            component_selector_attributes: BTreeMap::new(),
             selector_roots: vec!["missing".to_string(), "web/app".to_string()],
             selector_include: vec![],
             selector_exclude: vec![],
         };
 
-        let selector_regexes = selectors::compile_selector_regexes(&settings.selector_attributes);
+        let selector_regexes = selectors::compile_selector_regexes(
+            &settings.selector_attributes,
+            &settings.component_selector_attributes,
+        );
         let selectors = collect_app_selectors(&root, &settings, &selector_regexes).unwrap();
         assert_eq!(selectors.len(), 1);
         assert_eq!(selectors[0].display_value(), "save");
@@ -1273,6 +1283,7 @@ mod tests {
             ignore_routes: vec![],
             navigation_helpers: vec![],
             selector_attributes: vec!["data-testid".to_string(), "data-pw".to_string()],
+            component_selector_attributes: BTreeMap::new(),
             selector_roots: vec!["web/app".to_string()],
             selector_include: vec![],
             selector_exclude: vec![],
@@ -1299,6 +1310,7 @@ mod tests {
             ignore_routes: vec![],
             navigation_helpers: vec![],
             selector_attributes: vec!["data-testid".to_string()],
+            component_selector_attributes: BTreeMap::new(),
             selector_roots: vec!["web/app".to_string()],
             selector_include: vec![],
             selector_exclude: vec![],
@@ -1338,6 +1350,7 @@ mod tests {
             ignore_routes: vec![],
             navigation_helpers: vec![],
             selector_attributes: vec!["data-testid".to_string()],
+            component_selector_attributes: BTreeMap::new(),
             selector_roots: vec!["web/app".to_string()],
             selector_include: vec![],
             selector_exclude: vec![],
@@ -1372,6 +1385,7 @@ mod tests {
             ignore_routes: vec![],
             navigation_helpers: vec![],
             selector_attributes: vec!["data-testid".to_string()],
+            component_selector_attributes: BTreeMap::new(),
             selector_roots: vec!["web/app".to_string()],
             selector_include: vec![],
             selector_exclude: vec![],
@@ -1403,6 +1417,7 @@ mod tests {
             ignore_routes: vec![],
             navigation_helpers: vec![],
             selector_attributes: vec!["data-testid".to_string()],
+            component_selector_attributes: BTreeMap::new(),
             selector_roots: vec!["web/app".to_string()],
             selector_include: vec![],
             selector_exclude: vec![],
@@ -1424,6 +1439,7 @@ mod tests {
             ignore_routes: vec![],
             navigation_helpers: vec![],
             selector_attributes: vec![],
+            component_selector_attributes: BTreeMap::new(),
             selector_roots: vec!["web/app".to_string()],
             selector_include: vec![],
             selector_exclude: vec![],
@@ -1446,6 +1462,7 @@ mod tests {
             ignore_routes: vec![],
             navigation_helpers: vec![],
             selector_attributes: vec![],
+            component_selector_attributes: BTreeMap::new(),
             selector_roots: vec!["web/app".to_string()],
             selector_include: vec![],
             selector_exclude: vec![],
@@ -1489,6 +1506,7 @@ mod tests {
             ignore_routes: vec![],
             navigation_helpers: vec![],
             selector_attributes: vec![],
+            component_selector_attributes: BTreeMap::new(),
             selector_roots: vec!["web/app".to_string()],
             selector_include: vec![],
             selector_exclude: vec![],
@@ -1521,6 +1539,7 @@ mod tests {
             ignore_routes: vec![],
             navigation_helpers: vec![],
             selector_attributes: vec![],
+            component_selector_attributes: BTreeMap::new(),
             selector_roots: vec!["web/app".to_string()],
             selector_include: vec![],
             selector_exclude: vec![],
@@ -1539,11 +1558,15 @@ mod tests {
             ignore_routes: vec![],
             navigation_helpers: vec![],
             selector_attributes: vec!["data-testid".to_string()],
+            component_selector_attributes: BTreeMap::new(),
             selector_roots: vec!["web/app".to_string()],
             selector_include: vec![],
             selector_exclude: vec![],
         };
-        let selector_regexes = selectors::compile_selector_regexes(&settings.selector_attributes);
+        let selector_regexes = selectors::compile_selector_regexes(
+            &settings.selector_attributes,
+            &settings.component_selector_attributes,
+        );
         let err = collect_app_selectors(&root, &settings, &selector_regexes)
             .err()
             .unwrap();

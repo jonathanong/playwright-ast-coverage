@@ -119,6 +119,19 @@ Supported JSX forms for configured `selectorAttributes`:
 <button data-testid={id} />
 ```
 
+Configured `componentSelectorAttributes` collect props from component JSX and
+report them as the mapped DOM attribute:
+
+```tsx
+// componentSelectorAttributes: { dataPw: data-pw }
+<SaveButton dataPw="save" />
+<UI.Button dataPw="publish" />
+```
+
+Lowercase intrinsic elements do not use component mappings, so
+`<button dataPw="save" />` is ignored unless `dataPw` is also listed in
+`selectorAttributes`.
+
 Quoted string values and quoted expression values are exact selectors. Template
 literals with at least one static part are fuzzy selectors, so `user-${id}` can
 be covered by a test selector such as `user-42`.
@@ -152,9 +165,9 @@ await page.locator('[data-testid$="-button"]').click();
 await page.locator('[data-testid*="nav"]').click();
 ```
 
-CSS attribute selectors are detected for configured `selectorAttributes` only.
-Supported operators are exact (`=`), prefix (`^=`), suffix (`$=`), and contains
-(`*=`).
+CSS attribute selectors are detected for configured `selectorAttributes` and
+mapped DOM attributes from `componentSelectorAttributes`. Supported operators
+are exact (`=`), prefix (`^=`), suffix (`$=`), and contains (`*=`).
 
 The selector string must appear as a string or template literal argument to a
 known Playwright selector method. Supported methods include `locator`, `click`,

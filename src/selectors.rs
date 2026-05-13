@@ -5,7 +5,7 @@ use oxc_ast_visit::Visit;
 use oxc_span::{GetSpan, Span};
 use oxc_syntax::scope::ScopeFlags;
 use regex::Regex;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 #[cfg(test)]
 use walkdir::WalkDir;
@@ -14,6 +14,7 @@ const SOURCE_EXTS: &[&str] = &["ts", "tsx", "js", "jsx", "mts", "cts", "mjs", "c
 
 pub struct SelectorRegexes {
     app_attributes: Vec<String>,
+    component_attributes: BTreeMap<String, String>,
     playwright_attributes: Vec<AttributeRegex>,
 }
 
@@ -63,10 +64,22 @@ enum SelectorMatcher {
     },
 }
 
-pub fn compile_selector_regexes(attributes: &[String]) -> SelectorRegexes {
+pub fn compile_selector_regexes(
+    attributes: &[String],
+    component_attributes: &BTreeMap<String, String>,
+) -> SelectorRegexes {
+    let mut playwright_attributes: Vec<_> = attributes
+        .iter()
+        .chain(component_attributes.values())
+        .cloned()
+        .collect();
+    playwright_attributes.sort();
+    playwright_attributes.dedup();
+
     SelectorRegexes {
         app_attributes: attributes.to_vec(),
-        playwright_attributes: attributes
+        component_attributes: component_attributes.clone(),
+        playwright_attributes: playwright_attributes
             .iter()
             .map(|attribute| AttributeRegex {
                 attribute: attribute.clone(),
@@ -256,6 +269,7 @@ pub fn collect_app_selectors(
     frontend_root: &Path,
     attributes: &[String],
 ) -> Result<Vec<AppSelector>> {
+    let component_attributes = BTreeMap::new();
     if frontend_root.exists() {
         let mut selectors = BTreeSet::new();
         for entry in WalkDir::new(frontend_root)
@@ -268,7 +282,12 @@ pub fn collect_app_selectors(
                 continue;
             }
             let source = std::fs::read_to_string(path)?;
-            selectors.extend(extract_app_selectors(path, &source, attributes)?);
+            selectors.extend(extract_app_selectors(
+                path,
+                &source,
+                attributes,
+                &component_attributes,
+            )?);
         }
         Ok(selectors.into_iter().collect())
     } else {
@@ -281,8 +300,9 @@ pub fn extract_app_selectors(
     path: &Path,
     source: &str,
     attributes: &[String],
+    component_attributes: &BTreeMap<String, String>,
 ) -> Result<Vec<AppSelector>> {
-    let regexes = compile_selector_regexes(attributes);
+    let regexes = compile_selector_regexes(attributes, component_attributes);
     extract_app_selectors_with_regexes(path, source, &regexes)
 }
 
@@ -297,6 +317,7 @@ pub fn extract_app_selectors_with_regexes(
             path,
             source,
             attributes: &regexes.app_attributes,
+            component_attributes: &regexes.component_attributes,
             scoped_static_identifier_defaults: &scoped_static_identifier_defaults,
             selectors: BTreeSet::new(),
         };
@@ -311,7 +332,8 @@ pub fn extract_playwright_selectors(
     selector_attributes: &[String],
     test_id_attributes: &[String],
 ) -> Vec<PlaywrightSelector> {
-    let regexes = compile_selector_regexes(selector_attributes);
+    let component_attributes = BTreeMap::new();
+    let regexes = compile_selector_regexes(selector_attributes, &component_attributes);
     extract_playwright_selectors_with_regexes(
         Path::new("fixture.ts"),
         source,
@@ -339,7 +361,8 @@ pub fn extract_playwright_selector_occurrences(
     selector_attributes: &[String],
     test_id_attributes: &[String],
 ) -> Vec<(String, playwright_tests::TestStatus)> {
-    let regexes = compile_selector_regexes(selector_attributes);
+    let component_attributes = BTreeMap::new();
+    let regexes = compile_selector_regexes(selector_attributes, &component_attributes);
     ast::with_program(Path::new("fixture.ts"), source, |program, source| {
         extract_playwright_selector_occurrences_from_program(
             program,
@@ -396,34 +419,69 @@ struct AppSelectorVisitor<'a, 'r> {
     path: &'r Path,
     source: &'a str,
     attributes: &'r [String],
+    component_attributes: &'r BTreeMap<String, String>,
     scoped_static_identifier_defaults: &'r [ScopedStaticIdentifierDefault],
     selectors: BTreeSet<AppSelector>,
 }
 
 impl<'a> oxc_ast_visit::Visit<'a> for AppSelectorVisitor<'a, '_> {
-    fn visit_jsx_attribute(&mut self, attribute: &oxc_ast::ast::JSXAttribute<'a>) {
-        let Some(name) = jsx_attribute_name(&attribute.name) else {
-            oxc_ast_visit::walk::walk_jsx_attribute(self, attribute);
-            return;
-        };
-        if !self.attributes.iter().any(|attribute| attribute == name) {
-            oxc_ast_visit::walk::walk_jsx_attribute(self, attribute);
-            return;
+    fn visit_jsx_opening_element(&mut self, element: &oxc_ast::ast::JSXOpeningElement<'a>) {
+        let component = is_component_jsx_element_name(&element.name);
+        for item in &element.attributes {
+            let oxc_ast::ast::JSXAttributeItem::Attribute(attribute) = item else {
+                continue;
+            };
+            let Some(name) = jsx_attribute_name(&attribute.name) else {
+                continue;
+            };
+            let Some(mapped_attribute) = self.mapped_attribute(name, component) else {
+                continue;
+            };
+
+            if let Some(value) = app_selector_value(
+                attribute.value.as_ref(),
+                self.source,
+                self.scoped_static_identifier_defaults,
+            ) {
+                self.selectors.insert(AppSelector {
+                    file: self.path.to_path_buf(),
+                    attribute: mapped_attribute.to_string(),
+                    value,
+                });
+            }
         }
 
-        if let Some(value) = app_selector_value(
-            attribute.value.as_ref(),
-            self.source,
-            self.scoped_static_identifier_defaults,
-        ) {
-            self.selectors.insert(AppSelector {
-                file: self.path.to_path_buf(),
-                attribute: name.to_string(),
-                value,
-            });
-        }
+        oxc_ast_visit::walk::walk_jsx_opening_element(self, element);
+    }
+}
 
-        oxc_ast_visit::walk::walk_jsx_attribute(self, attribute);
+impl AppSelectorVisitor<'_, '_> {
+    fn mapped_attribute<'a>(&'a self, name: &'a str, component: bool) -> Option<&'a str> {
+        if self.attributes.iter().any(|attribute| attribute == name) {
+            return Some(name);
+        }
+        if component {
+            return self.component_attributes.get(name).map(String::as_str);
+        }
+        None
+    }
+}
+
+fn is_component_jsx_element_name(name: &oxc_ast::ast::JSXElementName<'_>) -> bool {
+    match name {
+        oxc_ast::ast::JSXElementName::Identifier(identifier) => identifier
+            .name
+            .chars()
+            .next()
+            .is_some_and(|ch| !ch.is_ascii_lowercase()),
+        oxc_ast::ast::JSXElementName::IdentifierReference(identifier) => identifier
+            .name
+            .chars()
+            .next()
+            .is_some_and(|ch| !ch.is_ascii_lowercase()),
+        oxc_ast::ast::JSXElementName::MemberExpression(_) => true,
+        oxc_ast::ast::JSXElementName::NamespacedName(_)
+        | oxc_ast::ast::JSXElementName::ThisExpression(_) => false,
     }
 }
 
@@ -1111,11 +1169,20 @@ mod tests {
         vec!["data-testid".to_string(), "data-pw".to_string()]
     }
 
+    fn component_attrs() -> BTreeMap<String, String> {
+        BTreeMap::new()
+    }
+
     #[test]
     fn extracts_static_jsx_selectors() {
         let source = fixture_source(&["selectors", "static-jsx.tsx"]);
-        let selectors =
-            extract_app_selectors(Path::new("app/page.tsx"), &source, &attrs()).unwrap();
+        let selectors = extract_app_selectors(
+            Path::new("app/page.tsx"),
+            &source,
+            &attrs(),
+            &component_attrs(),
+        )
+        .unwrap();
         let mut values: Vec<String> = selectors.iter().map(AppSelector::display_value).collect();
         values.sort();
         assert_eq!(values, vec!["delete", "publish", "save"]);
@@ -1124,12 +1191,58 @@ mod tests {
     #[test]
     fn extracts_template_and_unsupported_jsx_selectors() {
         let source = fixture_source(&["selectors", "template-and-unsupported.tsx"]);
-        let selectors =
-            extract_app_selectors(Path::new("app/page.tsx"), &source, &attrs()).unwrap();
+        let selectors = extract_app_selectors(
+            Path::new("app/page.tsx"),
+            &source,
+            &attrs(),
+            &component_attrs(),
+        )
+        .unwrap();
         assert!(selectors
             .iter()
             .any(|selector| selector.display_value() == "user-${id}"));
         assert!(selectors.iter().any(AppSelector::unsupported_dynamic));
+    }
+
+    #[test]
+    fn maps_component_selector_attributes_to_dom_attributes() {
+        let mut component_attributes = BTreeMap::new();
+        component_attributes.insert("dataPw".to_string(), "data-pw".to_string());
+        let selectors = extract_app_selectors(
+            Path::new("app/page.tsx"),
+            r#"
+            export function Page() {
+                return <>
+                    <SaveButton dataPw="save" />
+                    <_SaveButton dataPw="private" />
+                    <$SaveButton dataPw="dollar" />
+                    <UI.Button dataPw="publish" />
+                    <button dataPw="ignored" />
+                    <custom-element dataPw="ignored-custom" />
+                    <SaveButton data-pw="legacy" />
+                    <SaveButton {...props} />
+                </>;
+            }
+            "#,
+            &attrs(),
+            &component_attributes,
+        )
+        .unwrap();
+
+        let values: BTreeSet<(String, String)> = selectors
+            .iter()
+            .map(|selector| (selector.attribute.clone(), selector.display_value()))
+            .collect();
+        assert_eq!(
+            values,
+            BTreeSet::from([
+                ("data-pw".to_string(), "legacy".to_string()),
+                ("data-pw".to_string(), "dollar".to_string()),
+                ("data-pw".to_string(), "publish".to_string()),
+                ("data-pw".to_string(), "private".to_string()),
+                ("data-pw".to_string(), "save".to_string()),
+            ])
+        );
     }
 
     #[test]
@@ -1222,6 +1335,7 @@ mod tests {
             }
             "#,
             &attrs(),
+            &component_attrs(),
         )
         .unwrap();
 
@@ -1259,6 +1373,9 @@ mod tests {
         assert!(collect_app_selectors(&root.join("missing"), &attrs())
             .unwrap()
             .is_empty());
+
+        let invalid = fixture_path(&["main", "invalid-selector-source", "web", "app"]);
+        assert!(collect_app_selectors(&invalid, &attrs()).is_err());
     }
 
     #[test]
@@ -1410,8 +1527,13 @@ mod tests {
     #[test]
     fn selector_parser_handles_ast_edge_shapes() {
         let source = fixture_source(&["selectors", "edge-jsx.tsx"]);
-        let selectors =
-            extract_app_selectors(Path::new("app/page.tsx"), &source, &attrs()).unwrap();
+        let selectors = extract_app_selectors(
+            Path::new("app/page.tsx"),
+            &source,
+            &attrs(),
+            &component_attrs(),
+        )
+        .unwrap();
         assert!(selectors
             .iter()
             .any(|selector| selector.display_value() == "save"));

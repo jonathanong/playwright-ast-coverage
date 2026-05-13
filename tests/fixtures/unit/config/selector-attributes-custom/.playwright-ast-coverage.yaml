@@ -1,1 +1,3 @@
 selectorAttributes: ['data-test', 'data-test-id']
+componentSelectorAttributes:
+  dataTest: data-test

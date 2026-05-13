@@ -676,6 +676,21 @@ fn selector_coverage_supports_custom_attributes() {
 }
 
 #[test]
+fn selector_coverage_supports_component_attribute_mapping() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("component-selector-attributes"))
+        .arg("--json")
+        .arg("check")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""attribute": "data-pw""#))
+        .stdout(predicate::str::contains(r#""value": "save""#))
+        .stdout(predicate::str::contains(r#""uncoveredSelectors": 0"#));
+}
+
+#[test]
 fn selector_coverage_can_be_disabled() {
     Command::cargo_bin("playwright-ast-coverage")
         .unwrap()
