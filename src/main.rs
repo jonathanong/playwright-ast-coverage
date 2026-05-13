@@ -465,21 +465,20 @@ fn discover_test_files(
     settings: &Settings,
     playwright: &playwright_config::PlaywrightConfig,
 ) -> Result<Vec<DiscoveredTestFile>> {
-    let all_contexts = test_project_contexts(playwright);
     if !settings.test_include.is_empty() {
         let include = build_globset(&settings.test_include)?;
         let exclude = build_globset(&settings.test_exclude)?;
-        return Ok(walk_files(root)
-            .into_iter()
-            .filter(|path| {
-                let rel = relative_string(root, path);
-                include.is_match(&rel) && !exclude.is_match(&rel)
-            })
-            .map(|path| DiscoveredTestFile {
+        let mut files = Vec::new();
+        for path in walk_files(root).into_iter().filter(|path| {
+            let rel = relative_string(root, path);
+            include.is_match(&rel) && !exclude.is_match(&rel)
+        }) {
+            files.push(DiscoveredTestFile {
+                contexts: matching_project_contexts(root, playwright, &path)?,
                 path,
-                contexts: all_contexts.clone(),
-            })
-            .collect());
+            });
+        }
+        return Ok(files);
     }
 
     let yaml_exclude = build_globset(&settings.test_exclude)?;
@@ -521,17 +520,29 @@ fn discover_test_files(
         .collect())
 }
 
-fn test_project_contexts(
+fn matching_project_contexts(
+    root: &Path,
     playwright: &playwright_config::PlaywrightConfig,
-) -> Vec<TestProjectContext> {
-    let mut contexts: Vec<TestProjectContext> = playwright
-        .projects
-        .iter()
-        .map(TestProjectContext::from_project)
-        .collect();
-    contexts.sort();
-    contexts.dedup();
-    contexts
+    path: &Path,
+) -> Result<Vec<TestProjectContext>> {
+    let rel_root = relative_string(root, path);
+    let mut contexts = BTreeSet::new();
+    for project in &playwright.projects {
+        let test_dir = project.test_dir(root);
+        if !path.starts_with(&test_dir) {
+            continue;
+        }
+
+        let rel_test = relative_string(&test_dir, path);
+        let abs = slash_path(path);
+        let ignore = build_globset(&project.test_ignore)?;
+        let ignored =
+            ignore.is_match(&rel_root) || ignore.is_match(&rel_test) || ignore.is_match(&abs);
+        if !ignored {
+            contexts.insert(TestProjectContext::from_project(project));
+        }
+    }
+    Ok(contexts.into_iter().collect())
 }
 
 fn build_coverage(

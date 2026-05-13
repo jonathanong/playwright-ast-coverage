@@ -1,4 +1,6 @@
 frontendRoot: web/app
+testInclude:
+  - tests/**/*.spec.ts
 selectorAttributes:
   - data-testid
   - data-pw

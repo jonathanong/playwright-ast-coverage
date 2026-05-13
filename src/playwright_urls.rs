@@ -102,7 +102,7 @@ impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
                     self.urls.insert(url);
                 }
             }
-        } else if callee_is_member_named(&call.callee, "toHaveURL") && !callee_has_not(&callee)
+        } else if (callee_is_member_named(&call.callee, "toHaveURL") && !callee_has_not(&callee))
             || callee_matches_navigation_helper(&callee, self.navigation_helpers)
         {
             if let Some(url) = first_candidate_literal(&call.arguments, self.source) {
