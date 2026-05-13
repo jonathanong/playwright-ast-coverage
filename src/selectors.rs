@@ -2,7 +2,8 @@ use crate::{ast, playwright_tests};
 #[cfg(test)]
 use anyhow::Result;
 use oxc_ast_visit::Visit;
-use oxc_span::GetSpan;
+use oxc_span::{GetSpan, Span};
+use oxc_syntax::scope::ScopeFlags;
 use regex::Regex;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -291,10 +292,12 @@ pub fn extract_app_selectors_with_regexes(
     regexes: &SelectorRegexes,
 ) -> anyhow::Result<Vec<AppSelector>> {
     ast::with_program(path, source, |program, source| {
+        let scoped_static_identifier_defaults = collect_scoped_static_identifier_defaults(program);
         let mut visitor = AppSelectorVisitor {
             path,
             source,
             attributes: &regexes.app_attributes,
+            scoped_static_identifier_defaults: &scoped_static_identifier_defaults,
             selectors: BTreeSet::new(),
         };
         visitor.visit_program(program);
@@ -393,6 +396,7 @@ struct AppSelectorVisitor<'a, 'r> {
     path: &'r Path,
     source: &'a str,
     attributes: &'r [String],
+    scoped_static_identifier_defaults: &'r [ScopedStaticIdentifierDefault],
     selectors: BTreeSet<AppSelector>,
 }
 
@@ -407,7 +411,11 @@ impl<'a> oxc_ast_visit::Visit<'a> for AppSelectorVisitor<'a, '_> {
             return;
         }
 
-        if let Some(value) = app_selector_value(attribute.value.as_ref(), self.source) {
+        if let Some(value) = app_selector_value(
+            attribute.value.as_ref(),
+            self.source,
+            self.scoped_static_identifier_defaults,
+        ) {
             self.selectors.insert(AppSelector {
                 file: self.path.to_path_buf(),
                 attribute: name.to_string(),
@@ -416,6 +424,50 @@ impl<'a> oxc_ast_visit::Visit<'a> for AppSelectorVisitor<'a, '_> {
         }
 
         oxc_ast_visit::walk::walk_jsx_attribute(self, attribute);
+    }
+}
+
+struct ScopedStaticIdentifierDefault {
+    name: String,
+    value: String,
+    scope: Span,
+}
+
+struct ScopedDefaultVisitor {
+    defaults: Vec<ScopedStaticIdentifierDefault>,
+}
+
+impl<'a> oxc_ast_visit::Visit<'a> for ScopedDefaultVisitor {
+    fn visit_function(&mut self, function: &oxc_ast::ast::Function<'a>, flags: ScopeFlags) {
+        if let Some(body) = &function.body {
+            self.collect_function_defaults(&function.params, body.span());
+        }
+        oxc_ast_visit::walk::walk_function(self, function, flags);
+    }
+
+    fn visit_arrow_function_expression(
+        &mut self,
+        arrow: &oxc_ast::ast::ArrowFunctionExpression<'a>,
+    ) {
+        self.collect_function_defaults(&arrow.params, arrow.body.span());
+        oxc_ast_visit::walk::walk_arrow_function_expression(self, arrow);
+    }
+}
+
+impl ScopedDefaultVisitor {
+    fn collect_function_defaults(
+        &mut self,
+        params: &oxc_ast::ast::FormalParameters<'_>,
+        scope: Span,
+    ) {
+        for param in &params.items {
+            collect_static_defaults_from_binding(
+                &param.pattern,
+                param.initializer.as_deref(),
+                scope,
+                &mut self.defaults,
+            );
+        }
     }
 }
 
@@ -548,14 +600,17 @@ fn jsx_attribute_name<'a>(name: &'a oxc_ast::ast::JSXAttributeName<'a>) -> Optio
 fn app_selector_value(
     value: Option<&oxc_ast::ast::JSXAttributeValue<'_>>,
     source: &str,
+    scoped_static_identifier_defaults: &[ScopedStaticIdentifierDefault],
 ) -> Option<AppSelectorValue> {
     match value? {
         oxc_ast::ast::JSXAttributeValue::StringLiteral(literal) => {
             Some(AppSelectorValue::Exact(literal.value.to_string()))
         }
-        oxc_ast::ast::JSXAttributeValue::ExpressionContainer(container) => {
-            jsx_expression_value(&container.expression, source)
-        }
+        oxc_ast::ast::JSXAttributeValue::ExpressionContainer(container) => jsx_expression_value(
+            &container.expression,
+            source,
+            scoped_static_identifier_defaults,
+        ),
         _ => None,
     }
 }
@@ -563,6 +618,7 @@ fn app_selector_value(
 fn jsx_expression_value(
     expression: &oxc_ast::ast::JSXExpression<'_>,
     source: &str,
+    scoped_static_identifier_defaults: &[ScopedStaticIdentifierDefault],
 ) -> Option<AppSelectorValue> {
     match expression {
         oxc_ast::ast::JSXExpression::StringLiteral(literal) => {
@@ -576,10 +632,301 @@ fn jsx_expression_value(
                     .unwrap_or_else(|| AppSelectorValue::Unsupported(raw)),
             )
         }
+        oxc_ast::ast::JSXExpression::Identifier(identifier) => Some(
+            scoped_static_default_for_identifier(
+                identifier.name.as_str(),
+                identifier.span(),
+                scoped_static_identifier_defaults,
+                source,
+            )
+            .map(AppSelectorValue::Exact)
+            .unwrap_or_else(|| AppSelectorValue::Unsupported(identifier.name.to_string())),
+        ),
         _ => Some(AppSelectorValue::Unsupported(
             ast::span_text(source, expression.span()).trim().to_string(),
         )),
     }
+}
+
+fn collect_scoped_static_identifier_defaults(
+    program: &oxc_ast::ast::Program<'_>,
+) -> Vec<ScopedStaticIdentifierDefault> {
+    let mut visitor = ScopedDefaultVisitor {
+        defaults: Vec::new(),
+    };
+    visitor.visit_program(program);
+    visitor.defaults
+}
+
+fn collect_static_defaults_from_binding(
+    pattern: &oxc_ast::ast::BindingPattern<'_>,
+    initializer: Option<&oxc_ast::ast::Expression<'_>>,
+    scope: Span,
+    defaults: &mut Vec<ScopedStaticIdentifierDefault>,
+) {
+    if let (Some(name), Some(value)) = (
+        binding_identifier_name(pattern),
+        initializer_string(initializer),
+    ) {
+        defaults.push(ScopedStaticIdentifierDefault { name, value, scope });
+    }
+
+    match pattern {
+        oxc_ast::ast::BindingPattern::AssignmentPattern(assignment) => {
+            if let (Some(name), Some(value)) = (
+                binding_identifier_name(&assignment.left),
+                expression_string(&assignment.right),
+            ) {
+                defaults.push(ScopedStaticIdentifierDefault { name, value, scope });
+            }
+            collect_static_defaults_from_binding(&assignment.left, None, scope, defaults);
+        }
+        oxc_ast::ast::BindingPattern::ObjectPattern(object) => {
+            for property in &object.properties {
+                collect_static_defaults_from_binding(&property.value, None, scope, defaults);
+            }
+        }
+        oxc_ast::ast::BindingPattern::ArrayPattern(array) => {
+            for element in array.elements.iter().flatten() {
+                collect_static_defaults_from_binding(element, None, scope, defaults);
+            }
+        }
+        oxc_ast::ast::BindingPattern::BindingIdentifier(_) => {}
+    }
+}
+
+fn binding_identifier_name(pattern: &oxc_ast::ast::BindingPattern<'_>) -> Option<String> {
+    match pattern {
+        oxc_ast::ast::BindingPattern::BindingIdentifier(identifier) => {
+            Some(identifier.name.to_string())
+        }
+        _ => None,
+    }
+}
+
+fn initializer_string(initializer: Option<&oxc_ast::ast::Expression<'_>>) -> Option<String> {
+    initializer.and_then(expression_string)
+}
+
+fn expression_string(expression: &oxc_ast::ast::Expression<'_>) -> Option<String> {
+    match expression {
+        oxc_ast::ast::Expression::StringLiteral(literal) => Some(literal.value.to_string()),
+        _ => None,
+    }
+}
+
+fn scoped_static_default_for_identifier(
+    name: &str,
+    span: Span,
+    defaults: &[ScopedStaticIdentifierDefault],
+    source: &str,
+) -> Option<String> {
+    defaults
+        .iter()
+        .filter(|default| {
+            default.name == name
+                && default.scope.start <= span.start
+                && span.end <= default.scope.end
+        })
+        .filter(|default| {
+            !identifier_may_be_shadowed_or_reassigned(name, span, default.scope, source)
+        })
+        .min_by_key(|default| default.scope.end - default.scope.start)
+        .map(|default| default.value.clone())
+}
+
+fn identifier_may_be_shadowed_or_reassigned(
+    name: &str,
+    span: Span,
+    scope: Span,
+    source: &str,
+) -> bool {
+    let start = scope.start as usize;
+    let end = span.start as usize;
+    let prefix = source.get(start..end).unwrap_or("");
+    let prefix = code_only_text(prefix);
+    let escaped = regex::escape(name);
+    let declaration = Regex::new(&format!(r"\b(?:const|let|var)\s+{escaped}\b"))
+        .expect("identifier declaration regex should compile");
+    let destructuring_declaration = Regex::new(&format!(
+        r"\b(?:const|let|var)\s+(?:\{{[^;]*\b{escaped}\b[^;]*\}}|\[[^;]*\b{escaped}\b[^;]*\])"
+    ))
+    .expect("identifier destructuring declaration regex should compile");
+    let destructuring_parameter = Regex::new(&format!(
+        r"\bfunction\b[^(]*\([^)]*(?:\{{[^)]*\b{escaped}\b[^)]*\}}|\[[^)]*\b{escaped}\b[^)]*\])"
+    ))
+    .expect("identifier destructuring parameter regex should compile");
+    has_identifier_reassignment(&prefix, name)
+        || declaration.is_match(&prefix)
+        || destructuring_declaration.is_match(&prefix)
+        || has_enclosing_shadow_binding(&prefix, &destructuring_parameter)
+}
+
+fn has_identifier_reassignment(source: &str, name: &str) -> bool {
+    let source = code_only_text(source);
+    for (index, _) in source.match_indices(name) {
+        let before = source[..index].chars().next_back();
+        let after_index = index + name.len();
+        let after = source[after_index..].chars().next();
+        if before.is_some_and(is_identifier_continue) || after.is_some_and(is_identifier_continue) {
+            continue;
+        }
+        let before = source[..index].trim_end();
+        if before.ends_with("++") || before.ends_with("--") {
+            return true;
+        }
+        let rest = source[after_index..].trim_start();
+        if rest.starts_with("++") || rest.starts_with("--") {
+            return true;
+        }
+        if [
+            "+=", "-=", "*=", "/=", "%=", "**=", "&&=", "||=", "??=", "<<=", ">>=", ">>>=",
+        ]
+        .iter()
+        .any(|operator| rest.starts_with(operator))
+        {
+            return true;
+        }
+        if let Some(after_equals) = rest.strip_prefix('=') {
+            if !after_equals.starts_with('=') && !after_equals.starts_with('>') {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn is_identifier_continue(ch: char) -> bool {
+    ch == '_' || ch == '$' || ch.is_ascii_alphanumeric()
+}
+
+fn has_enclosing_shadow_binding(prefix: &str, binding: &Regex) -> bool {
+    binding.find_iter(prefix).any(|matched| {
+        let rest = &prefix[matched.end()..];
+        let Some(block_start) = rest.find('{') else {
+            return false;
+        };
+        if rest[..block_start].contains(';') {
+            return false;
+        }
+        let mut depth = 0usize;
+        for ch in rest[block_start..].chars() {
+            match ch {
+                '{' => depth += 1,
+                '}' if depth <= 1 => return false,
+                '}' => depth -= 1,
+                _ => {}
+            }
+        }
+        depth > 0
+    })
+}
+
+fn code_only_text(source: &str) -> String {
+    let mut chars = source.chars().peekable();
+    let mut output = String::with_capacity(source.len());
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut in_template = false;
+    let mut in_line_comment = false;
+    let mut in_block_comment = false;
+    let mut escaped = false;
+    let mut template_expression_depth = 0usize;
+
+    while let Some(ch) = chars.next() {
+        if in_line_comment {
+            if ch == '\n' {
+                in_line_comment = false;
+                output.push(ch);
+            } else {
+                output.push(' ');
+            }
+            continue;
+        }
+        if in_block_comment {
+            if ch == '*' && chars.peek().is_some_and(|next| *next == '/') {
+                output.push(' ');
+                output.push(' ');
+                chars.next();
+                in_block_comment = false;
+            } else {
+                output.push(if ch == '\n' { '\n' } else { ' ' });
+            }
+            continue;
+        }
+        if escaped {
+            escaped = false;
+            output.push(' ');
+            continue;
+        }
+        if (in_single || in_double || in_template) && ch == '\\' {
+            escaped = true;
+            output.push(' ');
+            continue;
+        }
+        if template_expression_depth > 0 {
+            if ch == '{' {
+                template_expression_depth += 1;
+            } else if ch == '}' {
+                template_expression_depth -= 1;
+                if template_expression_depth == 0 {
+                    in_template = true;
+                    output.push(' ');
+                    continue;
+                }
+            }
+            output.push(ch);
+            continue;
+        }
+        if in_single {
+            in_single = ch != '\'';
+            output.push(' ');
+            continue;
+        }
+        if in_double {
+            in_double = ch != '"';
+            output.push(' ');
+            continue;
+        }
+        if in_template {
+            if ch == '$' && chars.peek().is_some_and(|next| *next == '{') {
+                output.push(' ');
+                output.push(' ');
+                chars.next();
+                in_template = false;
+                template_expression_depth = 1;
+            } else {
+                in_template = ch != '`';
+                output.push(' ');
+            }
+            continue;
+        }
+
+        if ch == '/' && chars.peek().is_some_and(|next| *next == '/') {
+            output.push(' ');
+            output.push(' ');
+            chars.next();
+            in_line_comment = true;
+        } else if ch == '/' && chars.peek().is_some_and(|next| *next == '*') {
+            output.push(' ');
+            output.push(' ');
+            chars.next();
+            in_block_comment = true;
+        } else if ch == '\'' {
+            output.push(' ');
+            in_single = true;
+        } else if ch == '"' {
+            output.push(' ');
+            in_double = true;
+        } else if ch == '`' {
+            output.push(' ');
+            in_template = true;
+        } else {
+            output.push(ch);
+        }
+    }
+
+    output
 }
 
 fn extract_css_attribute_selectors(
@@ -783,6 +1130,124 @@ mod tests {
             .iter()
             .any(|selector| selector.display_value() == "user-${id}"));
         assert!(selectors.iter().any(AppSelector::unsupported_dynamic));
+    }
+
+    #[test]
+    fn extracts_static_identifier_default_jsx_selectors() {
+        let selectors = extract_app_selectors(
+            Path::new("app/page.tsx"),
+            r#"
+            export function Link({ 'data-pw': dataPw = 'rss-feed-link' }) {
+                return <a data-pw={dataPw}>RSS</a>;
+            }
+
+            export function Button({ passThrough }) {
+                return (
+                    <>
+                        <button data-pw={passThrough}>Save</button>
+                        <button data-pw={1 + 1}>Count</button>
+                    </>
+                );
+            }
+
+            export function DynamicLink({ dataPw }) {
+                return <a data-pw={dataPw}>Dynamic</a>;
+            }
+
+            export const ArrowLink = ({ dataPw = 'arrow-link' }) => {
+                return <a data-pw={dataPw}>Arrow</a>;
+            };
+
+            export function DirectDefault(dataPw = 'direct-link') {
+                return <a data-pw={dataPw}>Direct</a>;
+            }
+
+            export function ArrayDefault([dataPw = 'array-link']) {
+                return <a data-pw={dataPw}>Array</a>;
+            }
+
+            export function NonStringDefault({ value = makeId() }) {
+                return <a data-pw={value}>Computed</a>;
+            }
+
+            export function NestedShadow({ dataPw = 'outer-link' }) {
+                function Inner({ dataPw }) {
+                    return <a data-pw={dataPw}>Inner</a>;
+                }
+                return <Inner />;
+            }
+
+            export function Reassigned({ reassigned = 'assigned-link' }) {
+                reassigned = makeId();
+                return <a data-pw={reassigned}>Assigned</a>;
+            }
+
+            export function CompoundReassigned({ compound = 'compound-link' }) {
+                compound += '-dynamic';
+                return <a data-pw={compound}>Compound</a>;
+            }
+
+            export function DestructuredShadow({ shadowed = 'shadowed-link' }, props) {
+                const { shadowed } = props;
+                return <a data-pw={shadowed}>Shadowed</a>;
+            }
+
+            export function CommentAndStringText({ dataPw = 'comment-safe-link' }) {
+                // dataPw = makeId();
+                const message = "dataPw = makeId();";
+                return <a data-pw={dataPw}>Comment safe</a>;
+            }
+
+            export function TemplateExpressionMutation({ mutated = 'template-mutation-link' }) {
+                const label = `${mutated = makeId()}`;
+                return <a data-pw={mutated}>Template mutation</a>;
+            }
+
+            export function EarlierHelperParam({ dataPw = 'helper-param-link' }) {
+                function helper(dataPw) {
+                    return dataPw;
+                }
+                const local = (dataPw) => dataPw;
+                return <a data-pw={dataPw}>{helper(local('x'))}</a>;
+            }
+
+            export function WithHelper({ dataPw = 'helper-link' }) {
+                const isReady = () => dataPw === 'helper-link';
+                return isReady() ? <a data-pw={dataPw}>Ready</a> : null;
+            }
+
+            export function ShortName({ id = 'short-link' }) {
+                const userId = makeId();
+                return <a data-pw={id}>Short</a>;
+            }
+            "#,
+            &attrs(),
+        )
+        .unwrap();
+
+        let mut values: Vec<String> = selectors.iter().map(AppSelector::display_value).collect();
+        values.sort();
+        assert_eq!(
+            values,
+            vec![
+                "array-link",
+                "arrow-link",
+                "comment-safe-link",
+                "direct-link",
+                "helper-link",
+                "helper-param-link",
+                "rss-feed-link",
+                "short-link",
+                "{1 + 1}",
+                "{compound}",
+                "{dataPw}",
+                "{mutated}",
+                "{passThrough}",
+                "{reassigned}",
+                "{shadowed}",
+                "{value}",
+            ]
+        );
     }
 
     #[test]
@@ -1119,6 +1584,69 @@ mod tests {
         assert!(!pattern.matches_exact("user-1-link"));
         assert!(!pattern.matches_exact("user-1"));
         assert!(!pattern.matches_exact("user-button"));
+    }
+
+    #[test]
+    fn identifier_reassignment_uses_identifier_boundaries_and_assignment_operator() {
+        assert!(has_identifier_reassignment("dataPw = makeId();", "dataPw"));
+        assert!(has_identifier_reassignment("dataPw += '-x';", "dataPw"));
+        assert!(has_identifier_reassignment(
+            "dataPw ??= makeId();",
+            "dataPw"
+        ));
+        assert!(has_identifier_reassignment("dataPw++;", "dataPw"));
+        assert!(has_identifier_reassignment("--dataPw;", "dataPw"));
+        assert!(!has_identifier_reassignment("dataPw === 'save';", "dataPw"));
+        assert!(!has_identifier_reassignment("dataPw == 'save';", "dataPw"));
+        assert!(!has_identifier_reassignment(
+            "// dataPw = makeId();\nconst message = \"dataPw += '-x';\";",
+            "dataPw"
+        ));
+        assert!(!has_identifier_reassignment("userid = makeId();", "id"));
+        assert!(!has_identifier_reassignment("id => id", "id"));
+    }
+
+    #[test]
+    fn code_only_text_masks_comments_and_string_literals() {
+        let masked = code_only_text(
+            "const id = 'data\\'Pw';\n// dataPw = line\n/* dataPw = block\n*/ const text = \"data\\\"Pw\"; const tpl = `data ${dataPw = makeId({ nested: true })} \\`Pw`; dataPw += '-x';",
+        );
+
+        assert!(masked.contains("const id ="));
+        assert!(masked.contains("const text ="));
+        assert!(masked.contains("const tpl ="));
+        assert!(masked.contains("dataPw = makeId({ nested: true })"));
+        assert!(masked.contains("dataPw +="));
+        assert!(!has_identifier_reassignment(
+            "'dataPw = string';\n\"dataPw += string\";\n`dataPw++`;\n/* dataPw ??= block */",
+            "dataPw"
+        ));
+    }
+
+    #[test]
+    fn enclosing_shadow_binding_requires_an_open_block() {
+        let binding = Regex::new(r"\bfunction\b[^(]*\([^)]*\bdataPw\b").unwrap();
+
+        assert!(has_enclosing_shadow_binding(
+            "function Inner(dataPw) { return <a data-pw={",
+            &binding
+        ));
+        assert!(has_enclosing_shadow_binding(
+            "function Inner(dataPw) { if (ready) { dataPw; } return <a data-pw={",
+            &binding
+        ));
+        assert!(!has_enclosing_shadow_binding(
+            "function Inner(dataPw)",
+            &binding
+        ));
+        assert!(!has_enclosing_shadow_binding(
+            "function Inner(dataPw); return <a data-pw={",
+            &binding
+        ));
+        assert!(!has_enclosing_shadow_binding(
+            "function Inner(dataPw) { return dataPw; } return <a data-pw={",
+            &binding
+        ));
     }
 
     #[test]

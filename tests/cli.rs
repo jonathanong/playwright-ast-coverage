@@ -1,5 +1,6 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
+use serde_json::Value;
 use std::path::PathBuf;
 
 fn fixture(name: &str) -> PathBuf {
@@ -349,6 +350,102 @@ fn duplicate_slash_empty_segments_do_not_cover_dynamic_routes() {
         .stdout(predicate::str::contains(
             r#""route": "/users/:id/settings""#,
         ));
+}
+
+#[test]
+fn route_specificity_keeps_static_routes_from_covering_dynamic_siblings() {
+    let output = Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("realistic-route-selector-edge-cases"))
+        .arg("--allow-skipped-tests")
+        .arg("edges")
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let edges = report["edges"].as_array().unwrap();
+
+    assert!(has_route_edge(edges, "/admin/crm", "/admin/crm"));
+    assert!(has_route_edge(edges, "/chat/support", "/chat/support"));
+    assert!(has_route_edge(
+        edges,
+        "/chat/support/new",
+        "/chat/support/new"
+    ));
+    assert!(has_route_edge(
+        edges,
+        "/chat/support/:threadId",
+        "/chat/support/x"
+    ));
+    assert!(has_route_edge(
+        edges,
+        "/communities/create",
+        "/communities/create"
+    ));
+    assert!(has_route_edge(edges, "/:topicType/:id", "/discussion/abc"));
+    assert!(has_route_edge(
+        edges,
+        "/admin/crm/:contactId",
+        "/admin/crm/x"
+    ));
+    assert!(has_route_edge(edges, "/discussions", "/discussions"));
+
+    assert!(!has_route_edge(edges, "/:topicType/:id", "/admin/crm"));
+    assert!(!has_route_edge(
+        edges,
+        "/chat/:conversationId",
+        "/chat/support"
+    ));
+    assert!(!has_route_edge(
+        edges,
+        "/chat/support/:threadId",
+        "/chat/support/new"
+    ));
+    assert!(!has_route_edge(
+        edges,
+        "/communities/:slug",
+        "/communities/create"
+    ));
+}
+
+#[test]
+fn skipped_navigation_helper_catalog_requires_allow_skipped_tests() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("realistic-route-selector-edge-cases"))
+        .arg("--json")
+        .arg("check")
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains(r#""route": "/catalog-only""#))
+        .stdout(predicate::str::contains(
+            "\"route\": \"/catalog-only\",\n      \"file\": \"app/catalog-only/page.tsx\",\n      \"covered\": false",
+        ));
+
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("realistic-route-selector-edge-cases"))
+        .arg("--allow-skipped-tests")
+        .arg("--json")
+        .arg("check")
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains(r#""uncoveredRoutes": 0"#))
+        .stdout(predicate::str::contains(r#""uncoveredSelectors": 1"#))
+        .stdout(predicate::str::contains(r#""value": "rss-feed-link""#))
+        .stdout(predicate::str::contains(r#""covered": true"#))
+        .stdout(predicate::str::contains(r#""value": "{dataPw}""#))
+        .stdout(predicate::str::contains(r#""unsupportedDynamic": true"#));
+}
+
+fn has_route_edge(edges: &[Value], route: &str, url: &str) -> bool {
+    edges
+        .iter()
+        .any(|edge| edge["kind"] == "route" && edge["route"] == route && edge["url"] == url)
 }
 
 #[test]

@@ -397,15 +397,29 @@ fn analyze_test_file(
             continue;
         };
         let ref_segments = matcher::reference_segments(&url);
-        for route in context.route_index.candidates(&ref_segments) {
-            if matcher::matches_segments(&ref_segments, &route.segments) {
-                edges.push(Edge::Route {
-                    test_file: rel_test_file.clone(),
-                    route_file: route.route_file.clone(),
-                    route: route.pattern.clone(),
-                    url: url.clone(),
-                });
-            }
+        let matching_routes: Vec<&RouteTarget> = context
+            .route_index
+            .candidates(&ref_segments)
+            .into_iter()
+            .filter(|route| matcher::matches_segments(&ref_segments, &route.segments))
+            .collect();
+        let Some(best_specificity) = matching_routes
+            .iter()
+            .map(|route| route_specificity(&route.segments))
+            .max()
+        else {
+            continue;
+        };
+        for route in matching_routes
+            .into_iter()
+            .filter(|route| route_specificity(&route.segments) == best_specificity)
+        {
+            edges.push(Edge::Route {
+                test_file: rel_test_file.clone(),
+                route_file: route.route_file.clone(),
+                route: route.pattern.clone(),
+                url: url.clone(),
+            });
         }
     }
 
@@ -550,6 +564,25 @@ impl<'a> SelectorIndex<'a> {
         }
         matches
     }
+}
+
+fn route_specificity(segments: &[String]) -> Vec<u8> {
+    let mut specificity: Vec<u8> = segments
+        .iter()
+        .map(|segment| {
+            if segment == "**" {
+                0
+            } else if segment == "*" {
+                1
+            } else if segment.starts_with(':') {
+                2
+            } else {
+                3
+            }
+        })
+        .collect();
+    specificity.push(4);
+    specificity
 }
 
 fn collect_app_selectors(
@@ -1106,6 +1139,29 @@ mod tests {
             &["shop"],
             &["shop".to_string(), "item".to_string()]
         ));
+    }
+
+    #[test]
+    fn route_specificity_prefers_earlier_static_segments_and_exact_end() {
+        let foo_dynamic: Vec<String> = matcher::pattern_segments("/foo/:id")
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        let dynamic_bar: Vec<String> = matcher::pattern_segments("/:section/bar")
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        let docs_exact: Vec<String> = matcher::pattern_segments("/docs")
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        let docs_catch_all: Vec<String> = matcher::pattern_segments("/docs/**")
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+
+        assert!(route_specificity(&foo_dynamic) > route_specificity(&dynamic_bar));
+        assert!(route_specificity(&docs_exact) > route_specificity(&docs_catch_all));
     }
 
     #[test]
