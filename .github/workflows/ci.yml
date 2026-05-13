@@ -13,17 +13,6 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  actionlint:
-    name: GitHub Actions
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Run actionlint
-        uses: raven-actions/actionlint@v2
-
   test:
     name: Rust
     runs-on: ubuntu-latest

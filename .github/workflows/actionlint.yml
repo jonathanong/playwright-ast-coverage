@@ -1,0 +1,36 @@
+name: GitHub Actions
+
+on:
+  pull_request:
+    paths:
+      - ".github/actions/**"
+      - ".github/workflows/**"
+      - ".github/actionlint.yml"
+      - ".github/actionlint.yaml"
+      - "actionlint.yml"
+      - "actionlint.yaml"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/actions/**"
+      - ".github/workflows/**"
+      - ".github/actionlint.yml"
+      - ".github/actionlint.yaml"
+      - "actionlint.yml"
+      - "actionlint.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run actionlint
+        uses: raven-actions/actionlint@v2
