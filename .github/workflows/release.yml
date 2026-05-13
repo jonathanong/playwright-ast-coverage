@@ -303,10 +303,13 @@ jobs:
 
       - name: Publish npm package
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
+          if [ -n "${NPM_TOKEN:-}" ]; then
+            export NODE_AUTH_TOKEN="$NPM_TOKEN"
+          fi
           version="${{ needs.prepare.outputs.version }}"
           if npm view "playwright-ast-coverage@$version" version >/dev/null 2>&1; then
             echo "playwright-ast-coverage $version is already published on npm; skipping"
@@ -316,10 +319,13 @@ jobs:
 
       - name: Publish ESLint plugin package
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
+          if [ -n "${NPM_TOKEN:-}" ]; then
+            export NODE_AUTH_TOKEN="$NPM_TOKEN"
+          fi
           version="${{ needs.prepare.outputs.version }}"
           if npm view "eslint-plugin-playwright-ast-coverage@$version" version >/dev/null 2>&1; then
             echo "eslint-plugin-playwright-ast-coverage $version is already published on npm; skipping"
