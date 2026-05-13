@@ -1,0 +1,4 @@
+frontendRoot: web/app
+selectorAttributes:
+  - data-testid
+  - data-pw

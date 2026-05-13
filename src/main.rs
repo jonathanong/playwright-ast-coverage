@@ -141,18 +141,60 @@ struct AppSelectorTarget<'a> {
     value: String,
 }
 
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
+struct TestProjectContext {
+    base_url: Option<String>,
+    test_id_attribute: String,
+}
+
+struct DiscoveredTestFile {
+    path: PathBuf,
+    contexts: Vec<TestProjectContext>,
+}
+
 struct TestAnalysisContext<'a> {
     root: &'a Path,
     route_targets: &'a [RouteTarget],
     app_selector_targets: &'a [AppSelectorTarget<'a>],
     navigation_helpers: &'a [String],
-    base_urls: &'a [String],
-    test_id_attributes: &'a [String],
     selector_regexes: &'a selectors::SelectorRegexes,
 }
 
 type SelectorCoverageKey = (String, String, String);
 type CoverageLinks = (BTreeSet<String>, BTreeSet<String>);
+
+impl TestProjectContext {
+    fn from_project(project: &playwright_config::TestProject) -> Self {
+        Self {
+            base_url: project.base_url.clone(),
+            test_id_attribute: project.test_id_attribute.clone(),
+        }
+    }
+}
+
+impl DiscoveredTestFile {
+    fn base_urls(&self) -> Vec<String> {
+        let mut urls: Vec<String> = self
+            .contexts
+            .iter()
+            .filter_map(|context| context.base_url.clone())
+            .collect();
+        urls.sort();
+        urls.dedup();
+        urls
+    }
+
+    fn test_id_attributes(&self) -> Vec<String> {
+        let mut attributes: Vec<String> = self
+            .contexts
+            .iter()
+            .map(|context| context.test_id_attribute.clone())
+            .collect();
+        attributes.sort();
+        attributes.dedup();
+        attributes
+    }
+}
 
 #[cfg(not(test))]
 fn main() -> ExitCode {
@@ -230,8 +272,6 @@ fn analyze(root: &Path, settings: &Settings) -> Result<Analysis> {
         settings.project.as_deref(),
     )?;
     let test_files = discover_test_files(root, settings, &playwright)?;
-    let base_urls = playwright.base_urls();
-    let test_id_attributes = playwright.test_id_attributes();
     let selector_regexes = selectors::compile_selector_regexes(&settings.selector_attributes);
     let app_selectors = if settings.selector_attributes.is_empty() {
         Vec::new()
@@ -245,8 +285,6 @@ fn analyze(root: &Path, settings: &Settings) -> Result<Analysis> {
         route_targets: &route_targets,
         app_selector_targets: &app_selector_targets,
         navigation_helpers: &settings.navigation_helpers,
-        base_urls: &base_urls,
-        test_id_attributes: &test_id_attributes,
         selector_regexes: &selector_regexes,
     };
 
@@ -271,13 +309,18 @@ fn analyze(root: &Path, settings: &Settings) -> Result<Analysis> {
     })
 }
 
-fn analyze_test_file(test_file: &Path, context: &TestAnalysisContext<'_>) -> Result<Vec<Edge>> {
-    let source = std::fs::read_to_string(test_file)?;
-    let rel_test_file = relative_string(context.root, test_file);
+fn analyze_test_file(
+    test_file: &DiscoveredTestFile,
+    context: &TestAnalysisContext<'_>,
+) -> Result<Vec<Edge>> {
+    let source = std::fs::read_to_string(&test_file.path)?;
+    let rel_test_file = relative_string(context.root, &test_file.path);
     let mut edges = Vec::new();
+    let base_urls = test_file.base_urls();
+    let test_id_attributes = test_file.test_id_attributes();
 
     let (raw_urls, playwright_selectors) =
-        ast::with_program(test_file, &source, |program, source| {
+        ast::with_program(&test_file.path, &source, |program, source| {
             let raw_urls = playwright_urls::extract_playwright_url_literals_from_program(
                 program,
                 source,
@@ -290,14 +333,14 @@ fn analyze_test_file(test_file: &Path, context: &TestAnalysisContext<'_>) -> Res
                     program,
                     source,
                     context.selector_regexes,
-                    context.test_id_attributes,
+                    &test_id_attributes,
                 )
             };
             (raw_urls, playwright_selectors)
         })?;
 
     for raw_url in raw_urls {
-        let Some(url) = normalize_url(&raw_url, context.base_urls) else {
+        let Some(url) = normalize_url(&raw_url, &base_urls) else {
             continue;
         };
         for route in context.route_targets {
@@ -421,7 +464,8 @@ fn discover_test_files(
     root: &Path,
     settings: &Settings,
     playwright: &playwright_config::PlaywrightConfig,
-) -> Result<Vec<PathBuf>> {
+) -> Result<Vec<DiscoveredTestFile>> {
+    let all_contexts = test_project_contexts(playwright);
     if !settings.test_include.is_empty() {
         let include = build_globset(&settings.test_include)?;
         let exclude = build_globset(&settings.test_exclude)?;
@@ -431,11 +475,15 @@ fn discover_test_files(
                 let rel = relative_string(root, path);
                 include.is_match(&rel) && !exclude.is_match(&rel)
             })
+            .map(|path| DiscoveredTestFile {
+                path,
+                contexts: all_contexts.clone(),
+            })
             .collect());
     }
 
     let yaml_exclude = build_globset(&settings.test_exclude)?;
-    let mut files = BTreeSet::new();
+    let mut files: BTreeMap<PathBuf, BTreeSet<TestProjectContext>> = BTreeMap::new();
 
     for project in &playwright.projects {
         let test_dir = project.test_dir(root);
@@ -444,6 +492,7 @@ fn discover_test_files(
         }
         let include = build_globset(&project.test_match)?;
         let ignore = build_globset(&project.test_ignore)?;
+        let project_context = TestProjectContext::from_project(project);
 
         for path in walk_files(&test_dir) {
             let rel_root = relative_string(root, &path);
@@ -455,12 +504,34 @@ fn discover_test_files(
             let ignored =
                 ignore.is_match(&rel_root) || ignore.is_match(&rel_test) || ignore.is_match(&abs);
             if included && !ignored && !yaml_exclude.is_match(&rel_root) {
-                files.insert(path);
+                files
+                    .entry(path)
+                    .or_default()
+                    .insert(project_context.clone());
             }
         }
     }
 
-    Ok(files.into_iter().collect())
+    Ok(files
+        .into_iter()
+        .map(|(path, contexts)| DiscoveredTestFile {
+            path,
+            contexts: contexts.into_iter().collect(),
+        })
+        .collect())
+}
+
+fn test_project_contexts(
+    playwright: &playwright_config::PlaywrightConfig,
+) -> Vec<TestProjectContext> {
+    let mut contexts: Vec<TestProjectContext> = playwright
+        .projects
+        .iter()
+        .map(TestProjectContext::from_project)
+        .collect();
+    contexts.sort();
+    contexts.dedup();
+    contexts
 }
 
 fn build_coverage(

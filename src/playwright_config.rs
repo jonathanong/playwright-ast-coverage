@@ -53,17 +53,7 @@ struct ParsedOptions {
 }
 
 impl PlaywrightConfig {
-    pub fn base_urls(&self) -> Vec<String> {
-        let mut urls: Vec<String> = self
-            .projects
-            .iter()
-            .filter_map(|project| project.base_url.clone())
-            .collect();
-        urls.sort();
-        urls.dedup();
-        urls
-    }
-
+    #[cfg(test)]
     pub fn test_id_attributes(&self) -> Vec<String> {
         let mut attributes: Vec<String> = self
             .projects

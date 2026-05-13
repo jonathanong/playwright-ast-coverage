@@ -102,7 +102,7 @@ impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
                     self.urls.insert(url);
                 }
             }
-        } else if callee_is_member_named(&call.callee, "toHaveURL")
+        } else if callee_is_member_named(&call.callee, "toHaveURL") && !callee_has_not(&callee)
             || callee_matches_navigation_helper(&callee, self.navigation_helpers)
         {
             if let Some(url) = first_candidate_literal(&call.arguments, self.source) {
@@ -123,6 +123,13 @@ fn callee_matches_navigation_helper(callee: &Option<Vec<String>>, helpers: &[Str
         helper == &full_name
             || (!helper.contains('.') && parts.last().is_some_and(|part| part == helper))
     })
+}
+
+fn callee_has_not(callee: &Option<Vec<String>>) -> bool {
+    let Some(parts) = callee else {
+        return false;
+    };
+    parts.iter().any(|part| part == "not")
 }
 
 fn callee_is_member_named(callee: &oxc_ast::ast::Expression<'_>, method: &str) -> bool {
@@ -256,6 +263,14 @@ mod tests {
             urls,
             vec!["/settings", "/user/${username}/rss-feed-items/viewed"]
         );
+    }
+
+    #[test]
+    fn ignores_negative_to_have_url_assertions() {
+        let urls = extract_playwright_urls(
+            "await expect(page).not.toHaveURL('/settings');\nawait expect(page).toHaveURL('/home');",
+        );
+        assert_eq!(urls, vec!["/home"]);
     }
 
     #[test]

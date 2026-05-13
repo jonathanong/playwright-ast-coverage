@@ -572,6 +572,22 @@ fn get_by_test_id_uses_playwright_test_id_attribute() {
 }
 
 #[test]
+fn analysis_uses_only_matching_project_context() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("project-scoped-context"))
+        .arg("--json")
+        .arg("check")
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains(r#""uncoveredRoutes": 1"#))
+        .stdout(predicate::str::contains(r#""route": "/admin""#))
+        .stdout(predicate::str::contains(r#""uncoveredSelectors": 1"#))
+        .stdout(predicate::str::contains(r#""value": "home""#));
+}
+
+#[test]
 fn edges_json_outputs_selector_edges() {
     Command::cargo_bin("playwright-ast-coverage")
         .unwrap()
