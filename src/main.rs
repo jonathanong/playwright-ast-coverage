@@ -566,26 +566,23 @@ impl<'a> SelectorIndex<'a> {
     }
 }
 
-fn route_specificity(segments: &[String]) -> (usize, usize, usize, usize) {
-    let static_segments = segments
+fn route_specificity(segments: &[String]) -> Vec<u8> {
+    let mut specificity: Vec<u8> = segments
         .iter()
-        .filter(|segment| !segment.starts_with(':') && *segment != "*" && *segment != "**")
-        .count();
-    let dynamic_segments = segments
-        .iter()
-        .filter(|segment| segment.starts_with(':'))
-        .count();
-    let wildcard_penalty = segments
-        .iter()
-        .filter(|segment| **segment == "*" || **segment == "**")
-        .count();
-
-    (
-        static_segments,
-        dynamic_segments,
-        segments.len(),
-        usize::MAX - wildcard_penalty,
-    )
+        .map(|segment| {
+            if segment == "**" {
+                0
+            } else if segment == "*" {
+                1
+            } else if segment.starts_with(':') {
+                2
+            } else {
+                3
+            }
+        })
+        .collect();
+    specificity.push(4);
+    specificity
 }
 
 fn collect_app_selectors(
@@ -1142,6 +1139,29 @@ mod tests {
             &["shop"],
             &["shop".to_string(), "item".to_string()]
         ));
+    }
+
+    #[test]
+    fn route_specificity_prefers_earlier_static_segments_and_exact_end() {
+        let foo_dynamic: Vec<String> = matcher::pattern_segments("/foo/:id")
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        let dynamic_bar: Vec<String> = matcher::pattern_segments("/:section/bar")
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        let docs_exact: Vec<String> = matcher::pattern_segments("/docs")
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        let docs_catch_all: Vec<String> = matcher::pattern_segments("/docs/**")
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+
+        assert!(route_specificity(&foo_dynamic) > route_specificity(&dynamic_bar));
+        assert!(route_specificity(&docs_exact) > route_specificity(&docs_catch_all));
     }
 
     #[test]

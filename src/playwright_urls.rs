@@ -5,7 +5,6 @@ use oxc_ast::ast::{
     Argument, CallExpression, ConditionalExpression, IfStatement, LogicalExpression, Program,
 };
 use oxc_ast_visit::{walk, Visit};
-use oxc_span::GetSpan;
 use std::collections::{BTreeSet, HashMap};
 #[cfg(test)]
 use std::path::Path;
@@ -139,7 +138,7 @@ impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
             }
         } else if (callee_is_member_named(&call.callee, "toHaveURL") && !callee_has_not(&callee))
             || callee_is_member_named(&call.callee, "waitForURL")
-            || callee_is_page_url_to_match(&call.callee, self.source)
+            || (callee_is_page_url_to_match(&call.callee) && !callee_has_not(&callee))
             || callee_matches_navigation_helper(&callee, self.navigation_helpers)
         {
             if let Some(url) =
@@ -262,7 +261,7 @@ fn callee_is_member_named(callee: &oxc_ast::ast::Expression<'_>, method: &str) -
     }
 }
 
-fn callee_is_page_url_to_match(callee: &oxc_ast::ast::Expression<'_>, source: &str) -> bool {
+fn callee_is_page_url_to_match(callee: &oxc_ast::ast::Expression<'_>) -> bool {
     let oxc_ast::ast::Expression::StaticMemberExpression(member) = callee else {
         return false;
     };
@@ -270,7 +269,37 @@ fn callee_is_page_url_to_match(callee: &oxc_ast::ast::Expression<'_>, source: &s
         return false;
     }
 
-    ast::span_text(source, member.object.span()).contains("page.url()")
+    let Some(expect_call) = expect_call_expression(&member.object) else {
+        return false;
+    };
+    let Some(expect_callee) = ast::expression_path(&expect_call.callee) else {
+        return false;
+    };
+    if expect_callee.last().is_none_or(|name| name != "expect") {
+        return false;
+    }
+
+    let Some(Argument::CallExpression(url_call)) = expect_call.arguments.first() else {
+        return false;
+    };
+    ast::expression_path(&url_call.callee).is_some_and(|path| path == ["page", "url"])
+}
+
+fn expect_call_expression<'a>(
+    expression: &'a oxc_ast::ast::Expression<'a>,
+) -> Option<&'a CallExpression<'a>> {
+    match expression {
+        oxc_ast::ast::Expression::CallExpression(call) => Some(call),
+        oxc_ast::ast::Expression::StaticMemberExpression(member)
+            if member.property.name == "not" =>
+        {
+            expect_call_expression(&member.object)
+        }
+        oxc_ast::ast::Expression::ParenthesizedExpression(parenthesized) => {
+            expect_call_expression(&parenthesized.expression)
+        }
+        _ => None,
+    }
 }
 
 fn first_candidate_literal(
@@ -411,7 +440,7 @@ fn regex_path_sample(pattern: &str) -> Option<String> {
         }
     }
 
-    if is_candidate_url(&sample) && sample != "/" {
+    if is_candidate_url(&sample) {
         Some(sample)
     } else {
         None
@@ -591,7 +620,27 @@ mod tests {
             Some("/orders/".to_string())
         );
         assert_eq!(regex_path_sample(r#"^not-a-path$"#), None);
-        assert_eq!(regex_path_sample(r#"^/$"#), None);
+        assert_eq!(regex_path_sample(r#"^/$"#), Some("/".to_string()));
+        assert_eq!(regex_path_sample(r#"^\/$"#), Some("/".to_string()));
+    }
+
+    #[test]
+    fn page_url_to_match_requires_positive_page_url_expectation() {
+        let urls = extract_playwright_urls(
+            r#"
+            await expect(page.url()).toMatch(/^\/$/);
+            await (expect(page.url())).toMatch(/\/account$/);
+            await expect(page.url()).toMatch(/\/settings$/);
+            await expect(page.url()).not.toMatch(/\/blocked$/);
+            await expect(otherpage.url()).toMatch(/\/other$/);
+            await expect(page.title()).toMatch(/\/title$/);
+            await assert(page.url()).toMatch(/\/assert$/);
+            await getExpect()(page.url()).toMatch(/\/factory$/);
+            await expect('/literal').toMatch(/\/literal$/);
+            await page.toMatch(/\/method$/);
+            "#,
+        );
+        assert_eq!(urls, vec!["/", "/account", "/settings"]);
     }
 
     #[test]
