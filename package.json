@@ -1,6 +1,6 @@
 {
   "name": "playwright-ast-coverage",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Static Playwright AST coverage for Next.js App Router routes",
   "license": "MIT",
   "repository": {
