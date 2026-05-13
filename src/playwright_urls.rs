@@ -416,7 +416,7 @@ fn regex_path_sample(pattern: &str) -> Option<String> {
             if next == '/' {
                 started = true;
                 sample.push('/');
-            } else if started && is_literal_path_char(next) {
+            } else if started && is_literal_path_char(next) && !next.is_ascii_alphanumeric() {
                 sample.push(next);
             } else if started {
                 unsupported = true;
@@ -634,6 +634,7 @@ mod tests {
         );
         assert_eq!(regex_path_sample(r#"^/orders/<id>$"#), None);
         assert_eq!(regex_path_sample(r#"^/orders/(\d+)$"#), None);
+        assert_eq!(regex_path_sample(r#"^\/users\/\d+$"#), None);
         assert_eq!(regex_path_sample(r#"^not-a-path$"#), None);
         assert_eq!(regex_path_sample(r#"^/$"#), Some("/".to_string()));
         assert_eq!(regex_path_sample(r#"^\/$"#), Some("/".to_string()));
