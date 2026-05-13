@@ -52,6 +52,7 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 24
+          registry-url: https://registry.npmjs.org
 
       - name: Configure git
         run: |
@@ -277,7 +278,15 @@ jobs:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-        run: gh release create "v${{ needs.prepare.outputs.version }}" dist/* --title "v${{ needs.prepare.outputs.version }}" --generate-notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v${{ needs.prepare.outputs.version }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber
+          else
+            gh release create "$tag" dist/* --title "$tag" --generate-notes
+          fi
 
       - name: Smoke test npm tarball install
         shell: bash
@@ -293,9 +302,14 @@ jobs:
           npx playwright-ast-coverage --version
 
       - name: Publish npm package
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
+          if [ -n "${NPM_TOKEN:-}" ]; then
+            export NODE_AUTH_TOKEN="$NPM_TOKEN"
+          fi
           version="${{ needs.prepare.outputs.version }}"
           if npm view "playwright-ast-coverage@$version" version >/dev/null 2>&1; then
             echo "playwright-ast-coverage $version is already published on npm; skipping"
@@ -304,9 +318,14 @@ jobs:
           fi
 
       - name: Publish ESLint plugin package
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
+          if [ -n "${NPM_TOKEN:-}" ]; then
+            export NODE_AUTH_TOKEN="$NPM_TOKEN"
+          fi
           version="${{ needs.prepare.outputs.version }}"
           if npm view "eslint-plugin-playwright-ast-coverage@$version" version >/dev/null 2>&1; then
             echo "eslint-plugin-playwright-ast-coverage $version is already published on npm; skipping"
