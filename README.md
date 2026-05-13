@@ -81,9 +81,10 @@ cargo install --path .
 
 ## Quick Start
 
-Create `.playwright-ast-coverage.yaml` when your app is not under the default
-`app` directory or when you want selector coverage beyond `data-testid` and
-`data-pw`:
+Create `.playwright-ast-coverage.yaml`, `.playwright-ast-coverage.yml`,
+`.playwright-ast-coverage.json`, or `.playwright-ast-coverage.jsonc` when your
+app is not under the default `app` directory or when you want selector coverage
+beyond `data-testid` and `data-pw`:
 
 ```yaml
 frontendRoot: web/app

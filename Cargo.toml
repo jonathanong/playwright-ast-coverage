@@ -10,6 +10,7 @@ repository = "https://github.com/jonathanong/playwright-ast-coverage"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 globset = "0.4"
+jsonc-parser = { version = "0.32", features = ["serde"] }
 oxc_allocator = "0.130.0"
 oxc_ast = "0.130.0"
 oxc_ast_visit = "0.130.0"

@@ -1,8 +1,10 @@
 use anyhow::Result;
+use jsonc_parser::ParseOptions;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
-const DEFAULT_CONFIG_FILE: &str = ".playwright-ast-coverage.yaml";
+const CONFIG_FILE_STEM: &str = ".playwright-ast-coverage";
+const CONFIG_EXTENSIONS: &[&str] = &["yaml", "yml", "json", "jsonc"];
 const DEFAULT_FRONTEND_ROOT: &str = "app";
 const DEFAULT_SELECTOR_ATTRIBUTES: &[&str] = &["data-testid", "data-pw"];
 const PLAYWRIGHT_CONFIG_EXTENSIONS: &[&str] = &["ts", "mts", "cts", "js", "mjs", "cjs"];
@@ -100,19 +102,76 @@ impl OneOrMany {
 }
 
 fn load_file_config(root: &Path, cli_config: Option<&Path>) -> Result<FileConfig> {
-    let config_path = cli_config
-        .map(|path| resolve(root, path))
-        .unwrap_or_else(|| root.join(DEFAULT_CONFIG_FILE));
-
-    if !config_path.exists() {
-        if cli_config.is_some() {
-            anyhow::bail!("config file does not exist: {}", config_path.display());
-        }
+    let Some(config_path) = config_path(root, cli_config)? else {
         return Ok(FileConfig::default());
-    }
+    };
 
     let source = std::fs::read_to_string(&config_path)?;
-    Ok(serde_yaml::from_str(&source)?)
+    parse_file_config(&source, &config_path)
+}
+
+fn config_path(root: &Path, cli_config: Option<&Path>) -> Result<Option<PathBuf>> {
+    if let Some(path) = cli_config {
+        let config_path = resolve(root, path);
+        if !config_path.exists() {
+            anyhow::bail!("config file does not exist: {}", config_path.display());
+        }
+        return Ok(Some(config_path));
+    }
+
+    let mut configs = Vec::new();
+    for extension in CONFIG_EXTENSIONS {
+        let path = root.join(format!("{CONFIG_FILE_STEM}.{extension}"));
+        if path.exists() {
+            configs.push(path);
+        }
+    }
+
+    match configs.len() {
+        0 => Ok(None),
+        1 => Ok(configs.pop()),
+        _ => {
+            let files = configs
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            anyhow::bail!("multiple config files found under --root: {files}");
+        }
+    }
+}
+
+fn parse_file_config(source: &str, config_path: &Path) -> Result<FileConfig> {
+    match config_extension(config_path) {
+        Some("yaml" | "yml") => Ok(serde_yaml::from_str(source)?),
+        Some("json") => Ok(serde_json::from_str(source)?),
+        Some("jsonc") => Ok(serde_json::from_value(jsonc_parser::parse_to_serde_value(
+            source,
+            &jsonc_parse_options(),
+        )?)?),
+        Some(extension) => anyhow::bail!(
+            "unsupported config file extension .{extension}; supported extensions are .yaml, .yml, .json, and .jsonc"
+        ),
+        None => anyhow::bail!(
+            "unsupported config file without extension; supported extensions are .yaml, .yml, .json, and .jsonc"
+        ),
+    }
+}
+
+fn config_extension(path: &Path) -> Option<&str> {
+    path.extension().and_then(|extension| extension.to_str())
+}
+
+fn jsonc_parse_options() -> ParseOptions {
+    ParseOptions {
+        allow_comments: true,
+        allow_loose_object_property_names: false,
+        allow_trailing_commas: true,
+        allow_missing_commas: false,
+        allow_single_quoted_strings: false,
+        allow_hexadecimal_numbers: false,
+        allow_unary_plus_numbers: false,
+    }
 }
 
 fn resolve(root: &Path, path: &Path) -> PathBuf {
@@ -186,6 +245,38 @@ mod tests {
     }
 
     #[test]
+    fn explicit_unsupported_config_extension_errors() {
+        let root = fixture_path(&["config", "unsupported-extension"]);
+        let err = load_settings(
+            &root,
+            Some(Path::new(".playwright-ast-coverage.toml")),
+            &[],
+            None,
+        )
+        .err()
+        .expect("expected unsupported config extension to fail");
+        assert!(err
+            .to_string()
+            .contains("unsupported config file extension"));
+    }
+
+    #[test]
+    fn explicit_extensionless_config_errors() {
+        let root = fixture_path(&["config", "extensionless"]);
+        let err = load_settings(
+            &root,
+            Some(Path::new(".playwright-ast-coverage")),
+            &[],
+            None,
+        )
+        .err()
+        .expect("expected extensionless config to fail");
+        assert!(err
+            .to_string()
+            .contains("unsupported config file without extension"));
+    }
+
+    #[test]
     fn reads_yaml_and_finds_default_playwright_config() {
         let root = fixture_path(&["config", "full"]);
         let settings = load_settings(&root, None, &[], None).unwrap();
@@ -199,6 +290,51 @@ mod tests {
             settings.playwright_configs,
             vec![root.join("playwright.config.mts")]
         );
+    }
+
+    #[test]
+    fn reads_yml_default_config() {
+        let root = fixture_path(&["config", "yml"]);
+        let settings = load_settings(&root, None, &[], None).unwrap();
+        assert_eq!(settings.frontend_root, "web/yml-app");
+    }
+
+    #[test]
+    fn reads_json_default_config() {
+        let root = fixture_path(&["config", "json"]);
+        let settings = load_settings(&root, None, &[], None).unwrap();
+        assert_eq!(settings.frontend_root, "web/json-app");
+        assert_eq!(settings.navigation_helpers, vec!["openJsonPath"]);
+    }
+
+    #[test]
+    fn reads_jsonc_default_config() {
+        let root = fixture_path(&["config", "jsonc"]);
+        let settings = load_settings(&root, None, &[], None).unwrap();
+        assert_eq!(settings.frontend_root, "web/jsonc-app");
+        assert_eq!(settings.test_exclude, vec!["**/jsonc-skip/**"]);
+    }
+
+    #[test]
+    fn jsonc_config_rejects_json5_object_keys() {
+        let root = fixture_path(&["config", "invalid-jsonc"]);
+        let err = load_settings(&root, None, &[], None)
+            .err()
+            .expect("expected invalid JSONC to fail");
+        assert!(err
+            .to_string()
+            .contains("Expected string for object property"));
+    }
+
+    #[test]
+    fn duplicate_default_config_files_error() {
+        let root = fixture_path(&["config", "duplicate-defaults"]);
+        let err = load_settings(&root, None, &[], None)
+            .err()
+            .expect("expected duplicate default configs to fail");
+        assert!(err.to_string().contains("multiple config files found"));
+        assert!(err.to_string().contains(".playwright-ast-coverage.yaml"));
+        assert!(err.to_string().contains(".playwright-ast-coverage.json"));
     }
 
     #[test]
