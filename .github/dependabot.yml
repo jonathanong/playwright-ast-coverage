@@ -8,6 +8,8 @@ updates:
       day: monday
       time: "09:00"
       timezone: America/Los_Angeles
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 10
     labels:
       - dependencies
@@ -24,6 +26,8 @@ updates:
       day: monday
       time: "09:15"
       timezone: America/Los_Angeles
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 10
     labels:
       - dependencies
@@ -40,6 +44,8 @@ updates:
       day: monday
       time: "09:30"
       timezone: America/Los_Angeles
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 10
     labels:
       - dependencies
