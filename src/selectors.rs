@@ -50,13 +50,16 @@ pub struct PlaywrightSelector {
     matcher: SelectorMatcher,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Debug)]
 enum SelectorMatcher {
     Exact(String),
     Prefix(String),
     Suffix(String),
     Contains(String),
-    Regex(String),
+    Regex {
+        pattern: String,
+        compiled: Option<Regex>,
+    },
 }
 
 pub fn compile_selector_regexes(attributes: &[String]) -> SelectorRegexes {
@@ -83,6 +86,35 @@ impl AppSelector {
 
     pub fn matches_playwright(&self, selector: &PlaywrightSelector) -> bool {
         self.attribute == selector.attribute && self.value.matches_selector(&selector.matcher)
+    }
+}
+
+impl PlaywrightSelector {
+    pub fn exact_value(&self) -> Option<&str> {
+        match &self.matcher {
+            SelectorMatcher::Exact(value) => Some(value),
+            _ => None,
+        }
+    }
+}
+
+impl PartialEq for SelectorMatcher {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp_key() == other.cmp_key()
+    }
+}
+
+impl Eq for SelectorMatcher {}
+
+impl PartialOrd for SelectorMatcher {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SelectorMatcher {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.cmp_key().cmp(&other.cmp_key())
     }
 }
 
@@ -179,15 +211,25 @@ impl TemplatePattern {
 }
 
 impl SelectorMatcher {
+    fn cmp_key(&self) -> (u8, &str) {
+        match self {
+            Self::Exact(value) => (0, value),
+            Self::Prefix(value) => (1, value),
+            Self::Suffix(value) => (2, value),
+            Self::Contains(value) => (3, value),
+            Self::Regex { pattern, .. } => (4, pattern),
+        }
+    }
+
     fn matches_value(&self, value: &str) -> bool {
         match self {
             Self::Exact(expected) => value == expected,
             Self::Prefix(prefix) => value.starts_with(prefix),
             Self::Suffix(suffix) => value.ends_with(suffix),
             Self::Contains(part) => value.contains(part),
-            Self::Regex(pattern) => Regex::new(pattern)
-                .map(|regex| regex.is_match(value))
-                .unwrap_or(false),
+            Self::Regex { compiled, .. } => {
+                compiled.as_ref().is_some_and(|regex| regex.is_match(value))
+            }
         }
     }
 
@@ -201,9 +243,9 @@ impl SelectorMatcher {
                 .last_static()
                 .is_some_and(|part| part.ends_with(suffix) || suffix.ends_with(part)),
             Self::Contains(part) => pattern.contains_static(part),
-            Self::Regex(regex) => Regex::new(regex)
-                .map(|regex| regex.is_match(&pattern.sample()))
-                .unwrap_or(false),
+            Self::Regex { compiled, .. } => compiled
+                .as_ref()
+                .is_some_and(|regex| regex.is_match(&pattern.sample())),
         }
     }
 }
@@ -339,10 +381,12 @@ pub fn extract_playwright_selector_occurrences_from_program(
         test_id_attributes,
         status: playwright_tests::TestStatus::Active,
         annotation_status: playwright_tests::TestStatus::Active,
-        selectors: BTreeSet::new(),
+        selectors: Vec::new(),
     };
     visitor.visit_program(program);
-    visitor.selectors.into_iter().collect()
+    visitor.selectors.sort();
+    visitor.selectors.dedup();
+    visitor.selectors
 }
 
 struct AppSelectorVisitor<'a, 'r> {
@@ -381,7 +425,7 @@ struct PlaywrightSelectorVisitor<'a, 'r> {
     test_id_attributes: &'r [String],
     status: playwright_tests::TestStatus,
     annotation_status: playwright_tests::TestStatus,
-    selectors: BTreeSet<playwright_tests::TestOccurrence<PlaywrightSelector>>,
+    selectors: Vec<playwright_tests::TestOccurrence<PlaywrightSelector>>,
 }
 
 impl<'a> oxc_ast_visit::Visit<'a> for PlaywrightSelectorVisitor<'a, '_> {
@@ -465,7 +509,7 @@ impl<'a> oxc_ast_visit::Visit<'a> for PlaywrightSelectorVisitor<'a, '_> {
 
 impl PlaywrightSelectorVisitor<'_, '_> {
     fn insert(&mut self, value: PlaywrightSelector) {
-        self.selectors.insert(playwright_tests::TestOccurrence {
+        self.selectors.push(playwright_tests::TestOccurrence {
             value,
             status: self.status.merge(self.annotation_status),
         });
@@ -635,7 +679,14 @@ fn extract_get_by_test_id_call(
         }
         oxc_ast::ast::Argument::RegExpLiteral(regex) => {
             let value = regex.regex.pattern.text.to_string();
-            Some((format!("/{value}/"), SelectorMatcher::Regex(value)))
+            let compiled = Regex::new(&value).ok();
+            Some((
+                format!("/{value}/"),
+                SelectorMatcher::Regex {
+                    pattern: value,
+                    compiled,
+                },
+            ))
         }
         _ => None,
     };
@@ -1006,6 +1057,47 @@ mod tests {
         );
         assert!(!app.matches_playwright(&selectors[0]));
         assert_eq!(app.display_value(), "{id}");
+    }
+
+    #[test]
+    fn unsupported_regex_selector_does_not_panic_or_match() {
+        let app = AppSelector {
+            file: PathBuf::from("app/page.tsx"),
+            attribute: "data-testid".to_string(),
+            value: AppSelectorValue::Exact("save".to_string()),
+        };
+        let selectors = extract_playwright_selectors(
+            "await page.getByTestId(/(?<=prefix)save/);",
+            &["data-testid".to_string()],
+            &["data-testid".to_string()],
+        );
+
+        assert_eq!(selectors[0].selector, "getByTestId(/(?<=prefix)save/)");
+        assert!(!app.matches_playwright(&selectors[0]));
+    }
+
+    #[test]
+    fn playwright_selector_order_uses_matcher_kind_and_pattern() {
+        let mut matchers = [
+            SelectorMatcher::Contains("v".to_string()),
+            SelectorMatcher::Regex {
+                pattern: "^v".to_string(),
+                compiled: Regex::new("^v").ok(),
+            },
+            SelectorMatcher::Suffix("v".to_string()),
+            SelectorMatcher::Prefix("v".to_string()),
+            SelectorMatcher::Exact("v".to_string()),
+        ];
+
+        assert_eq!(matchers[0], matchers[0]);
+        matchers.sort();
+        assert_eq!(
+            matchers
+                .iter()
+                .map(SelectorMatcher::cmp_key)
+                .collect::<Vec<_>>(),
+            vec![(0, "v"), (1, "v"), (2, "v"), (3, "v"), (4, "^v")]
+        );
     }
 
     #[test]

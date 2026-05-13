@@ -18,7 +18,7 @@ use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use rayon::prelude::*;
 use routes::Route;
 use serde::Serialize;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 #[cfg(not(test))]
 use std::process::ExitCode;
@@ -140,6 +140,7 @@ struct Analysis {
 struct RouteTarget {
     route_file: String,
     pattern: String,
+    segments: Vec<String>,
 }
 
 struct AppSelectorTarget<'a> {
@@ -168,11 +169,26 @@ struct TestProjectDiscovery {
 
 struct TestAnalysisContext<'a> {
     root: &'a Path,
-    route_targets: &'a [RouteTarget],
+    route_index: &'a RouteIndex,
     app_selector_targets: &'a [AppSelectorTarget<'a>],
+    selector_index: &'a SelectorIndex<'a>,
     navigation_helpers: &'a [String],
     selector_regexes: &'a selectors::SelectorRegexes,
     test_policy: playwright_tests::TestPolicy,
+}
+
+#[derive(Default)]
+struct RouteIndex {
+    root: Vec<RouteTarget>,
+    literal_first: HashMap<String, Vec<RouteTarget>>,
+    dynamic_first: Vec<RouteTarget>,
+}
+
+#[derive(Default)]
+struct SelectorIndex<'a> {
+    exact: HashMap<String, HashMap<String, Vec<&'a AppSelectorTarget<'a>>>>,
+    by_attribute: HashMap<String, Vec<&'a AppSelectorTarget<'a>>>,
+    templates_by_attribute: HashMap<String, Vec<&'a AppSelectorTarget<'a>>>,
 }
 
 type SelectorCoverageKey = (String, String, String);
@@ -309,31 +325,33 @@ fn analyze_with_policy(
     } else {
         collect_app_selectors(root, settings, &selector_regexes)?
     };
-    let route_targets = route_targets(root, &routes);
+    let route_index = route_index(root, &routes);
     let app_selector_targets = app_selector_targets(root, &app_selectors);
+    let selector_index = selector_index(&app_selector_targets);
     let test_analysis = TestAnalysisContext {
         root,
-        route_targets: &route_targets,
+        route_index: &route_index,
         app_selector_targets: &app_selector_targets,
+        selector_index: &selector_index,
         navigation_helpers: &settings.navigation_helpers,
         selector_regexes: &selector_regexes,
         test_policy,
     };
 
-    let edges: BTreeSet<Edge> = test_files
+    let mut edges: Vec<Edge> = test_files
         .par_iter()
-        .try_fold(BTreeSet::new, |mut edges, test_file| -> Result<_> {
+        .try_fold(Vec::new, |mut edges, test_file| -> Result<_> {
             edges.extend(analyze_test_file(test_file, &test_analysis)?);
             Ok(edges)
         })
-        .try_reduce(BTreeSet::new, |mut left, right| -> Result<_> {
-            left.extend(right);
+        .try_reduce(Vec::new, |mut left, mut right| -> Result<_> {
+            left.append(&mut right);
             Ok(left)
         })?;
+    edges.sort();
+    edges.dedup();
 
-    let edge_report = EdgeReport {
-        edges: edges.into_iter().collect(),
-    };
+    let edge_report = EdgeReport { edges };
     let coverage = build_coverage(root, &routes, &app_selectors, &edge_report.edges, settings);
     Ok(Analysis {
         coverage,
@@ -378,8 +396,9 @@ fn analyze_test_file(
         let Some(url) = normalize_url(&raw_url.value, &base_urls) else {
             continue;
         };
-        for route in context.route_targets {
-            if matcher::matches(&url, &route.pattern) {
+        let ref_segments = matcher::reference_segments(&url);
+        for route in context.route_index.candidates(&ref_segments) {
+            if matcher::matches_segments(&ref_segments, &route.segments) {
                 edges.push(Edge::Route {
                     test_file: rel_test_file.clone(),
                     route_file: route.route_file.clone(),
@@ -391,23 +410,18 @@ fn analyze_test_file(
     }
 
     if !context.app_selector_targets.is_empty() {
-        for app_selector in context.app_selector_targets {
-            for playwright_selector in &playwright_selectors {
-                if !context.test_policy.allows(playwright_selector.status) {
-                    continue;
-                }
-                if app_selector
-                    .selector
-                    .matches_playwright(&playwright_selector.value)
-                {
-                    edges.push(Edge::Selector {
-                        test_file: rel_test_file.clone(),
-                        app_file: app_selector.app_file.clone(),
-                        attribute: app_selector.selector.attribute.clone(),
-                        value: app_selector.value.clone(),
-                        selector: playwright_selector.value.selector.clone(),
-                    });
-                }
+        for playwright_selector in &playwright_selectors {
+            if !context.test_policy.allows(playwright_selector.status) {
+                continue;
+            }
+            for app_selector in context.selector_index.matches(&playwright_selector.value) {
+                edges.push(Edge::Selector {
+                    test_file: rel_test_file.clone(),
+                    app_file: app_selector.app_file.clone(),
+                    attribute: app_selector.selector.attribute.clone(),
+                    value: app_selector.value.clone(),
+                    selector: playwright_selector.value.selector.clone(),
+                });
             }
         }
     }
@@ -415,14 +429,28 @@ fn analyze_test_file(
     Ok(edges)
 }
 
-fn route_targets(root: &Path, routes: &[Route]) -> Vec<RouteTarget> {
-    routes
-        .iter()
-        .map(|route| RouteTarget {
+fn route_index(root: &Path, routes: &[Route]) -> RouteIndex {
+    let mut index = RouteIndex::default();
+    for route in routes {
+        let target = RouteTarget {
             route_file: relative_string(root, &route.file),
             pattern: route.pattern.clone(),
-        })
-        .collect()
+            segments: matcher::pattern_segments(&route.pattern)
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+        };
+        match target.segments.first() {
+            None => index.root.push(target),
+            Some(first) if is_dynamic_pattern_segment(first) => index.dynamic_first.push(target),
+            Some(first) => index
+                .literal_first
+                .entry(first.clone())
+                .or_default()
+                .push(target),
+        }
+    }
+    index
 }
 
 fn app_selector_targets<'a>(
@@ -439,6 +467,91 @@ fn app_selector_targets<'a>(
         .collect()
 }
 
+fn selector_index<'a>(targets: &'a [AppSelectorTarget<'a>]) -> SelectorIndex<'a> {
+    let mut index = SelectorIndex::default();
+    for target in targets {
+        if target.selector.unsupported_dynamic() {
+            continue;
+        }
+        index
+            .by_attribute
+            .entry(target.selector.attribute.clone())
+            .or_default()
+            .push(target);
+        if let selectors::AppSelectorValue::Exact(value) = &target.selector.value {
+            index
+                .exact
+                .entry(target.selector.attribute.clone())
+                .or_default()
+                .entry(value.clone())
+                .or_default()
+                .push(target);
+        }
+        if matches!(
+            target.selector.value,
+            selectors::AppSelectorValue::Template(_)
+        ) {
+            index
+                .templates_by_attribute
+                .entry(target.selector.attribute.clone())
+                .or_default()
+                .push(target);
+        }
+    }
+    index
+}
+
+impl RouteIndex {
+    fn candidates<'a>(&'a self, reference_segments: &[&str]) -> Vec<&'a RouteTarget> {
+        if reference_segments.is_empty() {
+            return self.root.iter().chain(&self.dynamic_first).collect();
+        }
+
+        let mut candidates: Vec<&RouteTarget> = self.dynamic_first.iter().collect();
+        if let Some(literal) = self.literal_first.get(reference_segments[0]) {
+            candidates.extend(literal);
+        }
+        candidates
+    }
+}
+
+impl<'a> SelectorIndex<'a> {
+    fn matches(
+        &'a self,
+        playwright_selector: &selectors::PlaywrightSelector,
+    ) -> Vec<&'a AppSelectorTarget<'a>> {
+        let mut matches = Vec::new();
+        if let Some(value) = playwright_selector.exact_value() {
+            if let Some(by_value) = self.exact.get(&playwright_selector.attribute) {
+                if let Some(exact) = by_value.get(value) {
+                    matches.extend(exact.iter().copied());
+                }
+            }
+            let Some(attribute_targets) = self
+                .templates_by_attribute
+                .get(&playwright_selector.attribute)
+            else {
+                return matches;
+            };
+            for target in attribute_targets {
+                if target.selector.matches_playwright(playwright_selector) {
+                    matches.push(*target);
+                }
+            }
+            return matches;
+        }
+
+        if let Some(attribute_targets) = self.by_attribute.get(&playwright_selector.attribute) {
+            for target in attribute_targets {
+                if target.selector.matches_playwright(playwright_selector) {
+                    matches.push(*target);
+                }
+            }
+        }
+        matches
+    }
+}
+
 fn collect_app_selectors(
     root: &Path,
     settings: &Settings,
@@ -449,9 +562,9 @@ fn collect_app_selectors(
     let include_all = settings.selector_include.is_empty();
     let source_files =
         collect_selector_source_files(root, settings, &include, &exclude, include_all);
-    let app_selectors = source_files
+    let mut app_selectors = source_files
         .par_iter()
-        .try_fold(BTreeSet::new, |mut app_selectors, path| -> Result<_> {
+        .try_fold(Vec::new, |mut app_selectors, path| -> Result<_> {
             let source = std::fs::read_to_string(path)?;
             app_selectors.extend(selectors::extract_app_selectors_with_regexes(
                 path,
@@ -460,12 +573,14 @@ fn collect_app_selectors(
             )?);
             Ok(app_selectors)
         })
-        .try_reduce(BTreeSet::new, |mut left, right| -> Result<_> {
-            left.extend(right);
+        .try_reduce(Vec::new, |mut left, mut right| -> Result<_> {
+            left.append(&mut right);
             Ok(left)
         })?;
+    app_selectors.sort();
+    app_selectors.dedup();
 
-    Ok(app_selectors.into_iter().collect())
+    Ok(app_selectors)
 }
 
 fn collect_selector_source_files(
@@ -524,27 +639,40 @@ fn discover_test_files(
 
     let yaml_exclude = build_globset(&settings.test_exclude)?;
     let mut files: BTreeMap<PathBuf, BTreeSet<TestProjectContext>> = BTreeMap::new();
+    let mut projects_by_test_dir: HashMap<PathBuf, Vec<&TestProjectDiscovery>> = HashMap::new();
 
     for project_discovery in &project_discovery {
         if !project_discovery.test_dir.exists() {
             continue;
         }
+        projects_by_test_dir
+            .entry(project_discovery.test_dir.clone())
+            .or_default()
+            .push(project_discovery);
+    }
 
-        for path in walk_files(&project_discovery.test_dir) {
+    for (test_dir, projects) in projects_by_test_dir {
+        for path in walk_files(&test_dir) {
             let rel_root = relative_string(root, &path);
-            let rel_test = relative_string(&project_discovery.test_dir, &path);
+            if yaml_exclude.is_match(&rel_root) {
+                continue;
+            }
+            let rel_test = relative_string(&test_dir, &path);
             let abs = slash_path(&path);
-            let included = project_discovery.include.is_match(&rel_root)
-                || project_discovery.include.is_match(&rel_test)
-                || project_discovery.include.is_match(&abs);
-            let ignored = project_discovery.ignore.is_match(&rel_root)
-                || project_discovery.ignore.is_match(&rel_test)
-                || project_discovery.ignore.is_match(&abs);
-            if included && !ignored && !yaml_exclude.is_match(&rel_root) {
-                files
-                    .entry(path)
-                    .or_default()
-                    .insert(project_discovery.context.clone());
+            let mut contexts_to_add = Vec::new();
+            for project_discovery in &projects {
+                let included = project_discovery.include.is_match(&rel_root)
+                    || project_discovery.include.is_match(&rel_test)
+                    || project_discovery.include.is_match(&abs);
+                let ignored = project_discovery.ignore.is_match(&rel_root)
+                    || project_discovery.ignore.is_match(&rel_test)
+                    || project_discovery.ignore.is_match(&abs);
+                if included && !ignored {
+                    contexts_to_add.push(project_discovery.context.clone());
+                }
+            }
+            if !contexts_to_add.is_empty() {
+                files.entry(path).or_default().extend(contexts_to_add);
             }
         }
     }
@@ -851,6 +979,10 @@ fn normalize_url(raw: &str, base_urls: &[String]) -> Option<String> {
     None
 }
 
+fn is_dynamic_pattern_segment(segment: &str) -> bool {
+    segment.starts_with(':') || segment == "*" || segment == "**"
+}
+
 fn is_ignored(route: &str, ignored: &[String]) -> bool {
     ignored
         .iter()
@@ -954,6 +1086,75 @@ mod tests {
             relative_string(Path::new("/repo"), Path::new("/other/file.ts")),
             "/other/file.ts"
         );
+    }
+
+    #[test]
+    fn compiled_route_matching_handles_edge_segments() {
+        assert_eq!(
+            matcher::reference_segments("/users/42/?tab=profile"),
+            vec!["users", "42"]
+        );
+        assert_eq!(
+            matcher::pattern_segments("/users/:id"),
+            vec!["users", ":id"]
+        );
+        assert!(matcher::matches_segments(
+            &["shop"],
+            &["shop".to_string(), "**".to_string()]
+        ));
+        assert!(!matcher::matches_segments(
+            &["shop"],
+            &["shop".to_string(), "item".to_string()]
+        ));
+    }
+
+    #[test]
+    fn selector_index_matches_exact_template_and_fuzzy_selectors() {
+        let root = Path::new("/repo");
+        let app_selectors = selectors::extract_app_selectors(
+            Path::new("/repo/web/app/page.tsx"),
+            r#"
+                export function Page({ id }) {
+                    return <>
+                        <button data-testid="save-button" />
+                        <div data-testid={`user-${id}`} />
+                        <span data-pw="other" />
+                    </>;
+                }
+            "#,
+            &["data-testid".to_string(), "data-pw".to_string()],
+        )
+        .unwrap();
+        let targets = app_selector_targets(root, &app_selectors);
+        let index = selector_index(&targets);
+
+        let exact = selectors::extract_playwright_selectors(
+            "await page.getByTestId('user-123');",
+            &["data-testid".to_string()],
+            &["data-testid".to_string()],
+        );
+        assert_eq!(index.matches(&exact[0]).len(), 1);
+
+        let fuzzy = selectors::extract_playwright_selectors(
+            r#"await page.locator('[data-testid^="save"]');"#,
+            &["data-testid".to_string()],
+            &["data-testid".to_string()],
+        );
+        assert_eq!(index.matches(&fuzzy[0]).len(), 1);
+
+        let missing_value = selectors::extract_playwright_selectors(
+            r#"await page.locator('[data-testid^="missing"]');"#,
+            &["data-testid".to_string()],
+            &["data-testid".to_string()],
+        );
+        assert!(index.matches(&missing_value[0]).is_empty());
+
+        let missing_attribute = selectors::extract_playwright_selectors(
+            r#"await page.locator('[data-role^="save"]');"#,
+            &["data-role".to_string()],
+            &["data-role".to_string()],
+        );
+        assert!(index.matches(&missing_attribute[0]).is_empty());
     }
 
     #[test]
@@ -1175,6 +1376,81 @@ mod tests {
         let analysis = analyze(&root, &settings).unwrap();
         assert_eq!(analysis.coverage.summary.covered_routes, 1);
         assert_eq!(analysis.edges.edges.len(), 1);
+    }
+
+    #[test]
+    fn discover_test_files_walks_shared_project_test_dir_once() {
+        let root = fixture_path(&["main", "analyze-basic"]);
+        let settings = Settings {
+            frontend_root: "web/app".to_string(),
+            playwright_configs: vec![],
+            project: None,
+            test_include: vec![],
+            test_exclude: vec![],
+            ignore_routes: vec![],
+            navigation_helpers: vec![],
+            selector_attributes: vec![],
+            selector_roots: vec!["web/app".to_string()],
+            selector_include: vec![],
+            selector_exclude: vec![],
+        };
+        let playwright = playwright_config::PlaywrightConfig {
+            name: None,
+            projects: vec![
+                playwright_config::TestProject {
+                    config_dir: root.clone(),
+                    test_dir: "tests".to_string(),
+                    test_match: vec!["**/*.spec.ts".to_string()],
+                    test_ignore: vec![],
+                    base_url: Some("http://localhost:3000".to_string()),
+                    test_id_attribute: "data-testid".to_string(),
+                },
+                playwright_config::TestProject {
+                    config_dir: root.clone(),
+                    test_dir: "tests".to_string(),
+                    test_match: vec!["**/*.spec.ts".to_string()],
+                    test_ignore: vec![],
+                    base_url: Some("http://localhost:4000".to_string()),
+                    test_id_attribute: "data-pw".to_string(),
+                },
+            ],
+        };
+
+        let files = discover_test_files(&root, &settings, &playwright).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].contexts.len(), 2);
+    }
+
+    #[test]
+    fn discover_test_files_applies_yaml_exclude_before_project_matching() {
+        let root = fixture_path(&["main", "analyze-basic"]);
+        let settings = Settings {
+            frontend_root: "web/app".to_string(),
+            playwright_configs: vec![],
+            project: None,
+            test_include: vec![],
+            test_exclude: vec!["tests/**".to_string()],
+            ignore_routes: vec![],
+            navigation_helpers: vec![],
+            selector_attributes: vec![],
+            selector_roots: vec!["web/app".to_string()],
+            selector_include: vec![],
+            selector_exclude: vec![],
+        };
+        let playwright = playwright_config::PlaywrightConfig {
+            name: None,
+            projects: vec![playwright_config::TestProject {
+                config_dir: root.clone(),
+                test_dir: "tests".to_string(),
+                test_match: vec!["**/*.spec.ts".to_string()],
+                test_ignore: vec![],
+                base_url: None,
+                test_id_attribute: "data-testid".to_string(),
+            }],
+        };
+
+        let files = discover_test_files(&root, &settings, &playwright).unwrap();
+        assert!(files.is_empty());
     }
 
     #[test]
