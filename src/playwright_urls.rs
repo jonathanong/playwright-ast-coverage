@@ -371,16 +371,23 @@ fn collect_static_zero_arg_paths(source: &str) -> HashMap<String, String> {
         r#"([A-Za-z_$][\w$]*)\s*:\s*\(\s*\)\s*=>\s*(?:"([^"`]+)"|'([^'`]+)'|`([^'"`]+)`)"#,
     )
     .expect("static route helper regex should compile");
-    pattern
-        .captures_iter(source)
-        .filter_map(|captures| {
+    let mut candidates: HashMap<String, (String, usize)> = HashMap::new();
+    for captures in pattern.captures_iter(source) {
+        if let Some((name, value)) = (|| {
             let name = captures.get(1)?;
             let value = captures
                 .get(2)
                 .or_else(|| captures.get(3))
                 .or_else(|| captures.get(4))?;
             Some((name.as_str().to_string(), value.as_str().to_string()))
-        })
+        })() {
+            let entry = candidates.entry(name).or_insert((value, 0));
+            entry.1 += 1;
+        }
+    }
+    candidates
+        .into_iter()
+        .filter_map(|(name, (value, count))| (count == 1).then_some((name, value)))
         .collect()
 }
 
@@ -400,6 +407,7 @@ fn regex_path_sample(pattern: &str) -> Option<String> {
     let mut chars = pattern.trim_start_matches('^').chars().peekable();
     let mut sample = String::new();
     let mut started = false;
+    let mut unsupported = false;
     while let Some(ch) = chars.next() {
         if ch == '\\' {
             let Some(next) = chars.next() else {
@@ -411,6 +419,7 @@ fn regex_path_sample(pattern: &str) -> Option<String> {
             } else if started && is_literal_path_char(next) {
                 sample.push(next);
             } else if started {
+                unsupported = true;
                 break;
             }
             continue;
@@ -434,13 +443,20 @@ fn regex_path_sample(pattern: &str) -> Option<String> {
                 sample.push('x');
                 consume_regex_quantifier(&mut chars);
             }
-            '$' | '|' | '(' | ')' => break,
+            '$' => break,
+            '|' | '(' | ')' => {
+                unsupported = true;
+                break;
+            }
             ch if is_literal_path_char(ch) => sample.push(ch),
-            _ => break,
+            _ => {
+                unsupported = true;
+                break;
+            }
         }
     }
 
-    if is_candidate_url(&sample) {
+    if !unsupported && is_candidate_url(&sample) {
         Some(sample)
     } else {
         None
@@ -579,10 +595,14 @@ mod tests {
                 metrics: () => `/orders/metrics`,
                 dynamic: (id) => `/orders/${id}`,
             };
+            const account = { path: () => "/account" };
+            const settings = { path: () => "/settings" };
             await page.waitForURL(routes.details());
             await expect(page.url()).toMatch(routes.overview());
             await expect(page.url()).toMatch(routes.metrics());
             await expect(page.url()).toMatch(routes.dynamic("42"));
+            await page.waitForURL(account.path());
+            await page.waitForURL(settings.path());
             await page.goto(routeName);
             "#,
         );
@@ -603,10 +623,7 @@ mod tests {
             regex_path_sample(r#"^\/orders\/\%bad$"#),
             Some("/orders/%bad".to_string())
         );
-        assert_eq!(
-            regex_path_sample(r#"^\/orders\/\#$"#),
-            Some("/orders/".to_string())
-        );
+        assert_eq!(regex_path_sample(r#"^\/orders\/\#$"#), None);
         assert_eq!(
             regex_path_sample(r#"^\s/orders$"#),
             Some("/orders".to_string())
@@ -615,10 +632,8 @@ mod tests {
             regex_path_sample(r#"^\/orders\/\"#),
             Some("/orders/".to_string())
         );
-        assert_eq!(
-            regex_path_sample(r#"^/orders/<id>$"#),
-            Some("/orders/".to_string())
-        );
+        assert_eq!(regex_path_sample(r#"^/orders/<id>$"#), None);
+        assert_eq!(regex_path_sample(r#"^/orders/(\d+)$"#), None);
         assert_eq!(regex_path_sample(r#"^not-a-path$"#), None);
         assert_eq!(regex_path_sample(r#"^/$"#), Some("/".to_string()));
         assert_eq!(regex_path_sample(r#"^\/$"#), Some("/".to_string()));
