@@ -145,10 +145,10 @@ fn parse_file_config(source: &str, config_path: &Path) -> Result<FileConfig> {
     match config_extension(config_path) {
         Some("yaml" | "yml") => Ok(serde_yaml::from_str(source)?),
         Some("json") => Ok(serde_json::from_str(source)?),
-        Some("jsonc") => Ok(jsonc_parser::parse_to_serde_value(
+        Some("jsonc") => Ok(serde_json::from_value(jsonc_parser::parse_to_serde_value(
             source,
             &jsonc_parse_options(),
-        )?),
+        )?)?),
         Some(extension) => anyhow::bail!(
             "unsupported config file extension .{extension}; supported extensions are .yaml, .yml, .json, and .jsonc"
         ),
