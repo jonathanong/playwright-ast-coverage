@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "vitest";
-import { fixture, lint, messages, plugin } from "./helpers.mjs";
+import { fixture, lint, messages, plugin, require } from "./helpers.mjs";
 
 describe("plugin exports", () => {
   it("exposes rules and flat configs", () => {
@@ -11,6 +11,13 @@ describe("plugin exports", () => {
       "error",
       { canonicalAttribute: "data-pw" },
     ]);
+  });
+});
+
+describe("defaulted prop helpers", () => {
+  it("returns an empty set outside functions", () => {
+    const { defaultedPropsForNode } = require("../src/defaulted-props");
+    assert.equal(defaultedPropsForNode({ parent: null }).size, 0);
   });
 });
 
@@ -56,11 +63,53 @@ describe("literals", () => {
       ["literal"],
     );
   });
+
+  it("does not treat shadowed locals as defaulted props", () => {
+    const code = `
+      function A({ testId = "save" }) {
+        {
+          const testId = id;
+          return <button data-pw={testId} />;
+        }
+      }
+    `;
+    assert.deepEqual(messages(code, "literals"), ["literal"]);
+  });
+
+  it("accepts defaulted props through nested scopes only when unshadowed", () => {
+    const code = `
+      function A({ testId = "save" }) {
+        {
+          return <button data-pw={testId} />;
+        }
+      }
+    `;
+    assert.deepEqual(messages(code, "literals"), []);
+  });
+
+  it("rejects missing getByTestId arguments and identifiers outside functions", () => {
+    assert.deepEqual(messages("page.getByTestId(); page.getByTestId(testId);", "literals"), [
+      "literal",
+      "literal",
+    ]);
+  });
 });
 
 describe("defaults", () => {
   it("requires literal defaults for prop passthrough", () => {
     assert.deepEqual(messages(fixture("defaults.jsx"), "defaults"), ["default", "default"]);
+  });
+
+  it("rejects shadowed defaulted props", () => {
+    const code = `
+      function A({ testId = "save" }) {
+        {
+          const testId = id;
+          return <button data-pw={testId} />;
+        }
+      }
+    `;
+    assert.deepEqual(messages(code, "defaults"), ["default"]);
   });
 });
 

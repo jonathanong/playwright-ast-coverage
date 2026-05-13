@@ -1,9 +1,10 @@
 "use strict";
 
-const { isStringLiteralNode } = require("./helpers");
+const { isStringLiteralNode, literalString, staticTemplate } = require("./helpers");
 
-function isLiteralLike(node, opts, defaultedProps) {
-  const { literalString, staticTemplate } = require("./helpers");
+const DEFAULTED_PROPS = new WeakMap();
+
+function isLiteralLike(node, opts, context) {
   const value = literalString(node);
   if (value !== null) {
     return true;
@@ -11,7 +12,7 @@ function isLiteralLike(node, opts, defaultedProps) {
   if (opts.allowStaticTemplates && staticTemplate(node)) {
     return true;
   }
-  if (opts.allowDefaultedProps && node.type === "Identifier" && defaultedProps.has(node.name)) {
+  if (opts.allowDefaultedProps && isDefaultedPropReference(node, context)) {
     return true;
   }
   return false;
@@ -74,10 +75,40 @@ function nearestFunction(node) {
 
 function defaultedPropsForNode(node) {
   const fn = nearestFunction(node);
-  return fn ? collectDefaultedProps(fn.params) : new Set();
+  /* v8 ignore next -- direct helper tests cover the no-function return */
+  if (!fn) {
+    return new Set();
+  }
+  let props = DEFAULTED_PROPS.get(fn);
+  if (!props) {
+    props = collectDefaultedProps(fn.params);
+    DEFAULTED_PROPS.set(fn, props);
+  }
+  return props;
+}
+
+function isDefaultedPropReference(node, context) {
+  if (node?.type !== "Identifier" || !defaultedPropsForNode(node).has(node.name)) {
+    return false;
+  }
+  const variable = findVariable(context.sourceCode.getScope(node), node.name);
+  return Boolean(variable?.defs.some((def) => def.type === "Parameter"));
+}
+
+function findVariable(scope, name) {
+  let current = scope;
+  while (current) {
+    const variable = current.variables.find((item) => item.name === name);
+    if (variable) {
+      return variable;
+    }
+    current = current.upper;
+  }
+  return null;
 }
 
 module.exports = {
   defaultedPropsForNode,
+  isDefaultedPropReference,
   isLiteralLike,
 };

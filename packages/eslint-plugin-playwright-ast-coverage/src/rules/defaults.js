@@ -1,7 +1,7 @@
 "use strict";
 
 const { rule, selectorValueNode } = require("../helpers");
-const { defaultedPropsForNode } = require("../defaulted-props");
+const { isDefaultedPropReference } = require("../defaulted-props");
 const { selectorAttributeVisitors } = require("../selector-visitor");
 
 module.exports = rule(
@@ -25,7 +25,7 @@ module.exports = rule(
   (context) =>
     selectorAttributeVisitors(context, (node) => {
       const valueNode = selectorValueNode(node);
-      if (valueNode?.type === "Identifier" && !defaultedPropsForNode(node).has(valueNode.name)) {
+      if (valueNode?.type === "Identifier" && !isDefaultedPropReference(valueNode, context)) {
         context.report({ node, messageId: "default" });
       }
     }),

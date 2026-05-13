@@ -9,7 +9,7 @@ const {
   selectorAttributes,
   selectorValueNode,
 } = require("../helpers");
-const { defaultedPropsForNode, isLiteralLike } = require("../defaulted-props");
+const { isLiteralLike } = require("../defaulted-props");
 
 module.exports = rule(
   {
@@ -46,7 +46,7 @@ module.exports = rule(
           return;
         }
         const valueNode = selectorValueNode(node);
-        if (!valueNode || !isLiteralLike(valueNode, opts, defaultedPropsForNode(node))) {
+        if (!valueNode || !isLiteralLike(valueNode, opts, context)) {
           context.report({ node, messageId: "literal" });
         }
       },
@@ -55,7 +55,7 @@ module.exports = rule(
           return;
         }
         const arg = node.arguments[0];
-        if (!arg || !isLiteralLike(arg, opts, defaultedPropsForNode(node))) {
+        if (!arg || !isLiteralLike(arg, opts, context)) {
           context.report({ node: arg || node, messageId: "literal" });
         }
       },
