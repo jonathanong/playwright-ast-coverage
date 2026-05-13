@@ -744,10 +744,42 @@ fn identifier_may_be_shadowed_or_reassigned(
     let start = scope.start as usize;
     let end = span.start as usize;
     let prefix = source.get(start..end).unwrap_or("");
-    prefix.contains("function")
-        || prefix.contains("=>")
-        || prefix.contains(&format!("{name} ="))
-        || prefix.contains(&format!("{name}="))
+    let escaped = regex::escape(name);
+    let declaration = Regex::new(&format!(r"\b(?:const|let|var)\s+{escaped}\b"))
+        .expect("identifier declaration regex should compile");
+    let function_param = Regex::new(&format!(r"\bfunction\b[^(]*\([^)]*\b{escaped}\b"))
+        .expect("function parameter regex should compile");
+    let arrow_param = Regex::new(&format!(
+        r"(?:\([^)]*\b{escaped}\b[^)]*\)|\b{escaped}\b)\s*=>"
+    ))
+    .expect("arrow parameter regex should compile");
+
+    has_identifier_reassignment(prefix, name)
+        || declaration.is_match(prefix)
+        || function_param.is_match(prefix)
+        || arrow_param.is_match(prefix)
+}
+
+fn has_identifier_reassignment(source: &str, name: &str) -> bool {
+    for (index, _) in source.match_indices(name) {
+        let before = source[..index].chars().next_back();
+        let after_index = index + name.len();
+        let after = source[after_index..].chars().next();
+        if before.is_some_and(is_identifier_continue) || after.is_some_and(is_identifier_continue) {
+            continue;
+        }
+        let rest = source[after_index..].trim_start();
+        if let Some(after_equals) = rest.strip_prefix('=') {
+            if !after_equals.starts_with('=') && !after_equals.starts_with('>') {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn is_identifier_continue(ch: char) -> bool {
+    ch == '_' || ch == '$' || ch.is_ascii_alphanumeric()
 }
 
 fn extract_css_attribute_selectors(
@@ -1002,6 +1034,16 @@ mod tests {
                 reassigned = makeId();
                 return <a data-pw={reassigned}>Assigned</a>;
             }
+
+            export function WithHelper({ dataPw = 'helper-link' }) {
+                const isReady = () => dataPw === 'helper-link';
+                return isReady() ? <a data-pw={dataPw}>Ready</a> : null;
+            }
+
+            export function ShortName({ id = 'short-link' }) {
+                const userId = makeId();
+                return <a data-pw={id}>Short</a>;
+            }
             "#,
             &attrs(),
         )
@@ -1015,7 +1057,9 @@ mod tests {
                 "array-link",
                 "arrow-link",
                 "direct-link",
+                "helper-link",
                 "rss-feed-link",
+                "short-link",
                 "{1 + 1}",
                 "{dataPw}",
                 "{passThrough}",
@@ -1359,6 +1403,15 @@ mod tests {
         assert!(!pattern.matches_exact("user-1-link"));
         assert!(!pattern.matches_exact("user-1"));
         assert!(!pattern.matches_exact("user-button"));
+    }
+
+    #[test]
+    fn identifier_reassignment_uses_identifier_boundaries_and_assignment_operator() {
+        assert!(has_identifier_reassignment("dataPw = makeId();", "dataPw"));
+        assert!(!has_identifier_reassignment("dataPw === 'save';", "dataPw"));
+        assert!(!has_identifier_reassignment("dataPw == 'save';", "dataPw"));
+        assert!(!has_identifier_reassignment("userid = makeId();", "id"));
+        assert!(!has_identifier_reassignment("id => id", "id"));
     }
 
     #[test]

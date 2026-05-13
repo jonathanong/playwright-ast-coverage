@@ -137,8 +137,13 @@ impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
         } else if (callee_is_member_named(&call.callee, "toHaveURL") && !callee_has_not(&callee))
             || callee_is_member_named(&call.callee, "waitForURL")
             || (callee_is_page_url_to_match(&call.callee) && !callee_has_not(&callee))
-            || callee_matches_navigation_helper(&callee, self.navigation_helpers)
         {
+            for url in
+                direct_candidate_literals(&call.arguments, self.source, self.static_zero_arg_paths)
+            {
+                self.insert(url);
+            }
+        } else if callee_matches_navigation_helper(&callee, self.navigation_helpers) {
             for url in candidate_literals(&call.arguments, self.source, self.static_zero_arg_paths)
             {
                 if is_candidate_url(&url) {
@@ -321,6 +326,26 @@ fn candidate_literals(
         .collect()
 }
 
+fn direct_candidate_literals(
+    arguments: &[Argument<'_>],
+    source: &str,
+    static_zero_arg_paths: &HashMap<String, Vec<String>>,
+) -> Vec<String> {
+    let mut visitor = LiteralVisitor {
+        source,
+        static_zero_arg_paths,
+        literals: Vec::new(),
+    };
+    for argument in arguments {
+        visitor.visit_argument(argument);
+    }
+    visitor
+        .literals
+        .into_iter()
+        .filter(|url| is_candidate_url(url))
+        .collect()
+}
+
 struct LiteralVisitor<'a> {
     source: &'a str,
     static_zero_arg_paths: &'a HashMap<String, Vec<String>>,
@@ -350,7 +375,6 @@ impl<'a> Visit<'a> for LiteralVisitor<'a> {
     fn visit_template_literal(&mut self, template: &oxc_ast::ast::TemplateLiteral<'a>) {
         self.literals
             .push(ast::template_literal_text(template, self.source));
-        walk::walk_template_literal(self, template);
     }
 }
 
@@ -374,6 +398,10 @@ fn collect_static_zero_arg_paths(source: &str) -> HashMap<String, Vec<String>> {
     .expect("static route helper regex should compile");
     let mut candidates: HashMap<String, (Vec<String>, usize)> = HashMap::new();
     for captures in pattern.captures_iter(source) {
+        let full_match = captures.get(0).expect("full capture should exist");
+        if !source_offset_is_code(source, full_match.start()) {
+            continue;
+        }
         if let Some((name, value)) = (|| {
             let name = captures.get(1)?;
             let value = captures
@@ -403,14 +431,81 @@ fn static_zero_arg_path_call(
     let Some(path) = ast::expression_path(&call.callee) else {
         return Vec::new();
     };
-    if path.len() != 1 {
-        return Vec::new();
-    }
-    let name = &path[0];
+    let name = &path[path.len() - 1];
     static_zero_arg_paths
         .get(name.as_str())
         .cloned()
         .unwrap_or_default()
+}
+
+fn source_offset_is_code(source: &str, offset: usize) -> bool {
+    let mut chars = source.char_indices().peekable();
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut in_template = false;
+    let mut in_line_comment = false;
+    let mut in_block_comment = false;
+    let mut escaped = false;
+
+    while let Some((index, ch)) = chars.next() {
+        if index >= offset {
+            return !in_single
+                && !in_double
+                && !in_template
+                && !in_line_comment
+                && !in_block_comment;
+        }
+
+        if in_line_comment {
+            if ch == '\n' {
+                in_line_comment = false;
+            }
+            continue;
+        }
+        if in_block_comment {
+            if ch == '*' && chars.peek().is_some_and(|(_, next)| *next == '/') {
+                chars.next();
+                in_block_comment = false;
+            }
+            continue;
+        }
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if (in_single || in_double || in_template) && ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if in_single {
+            in_single = ch != '\'';
+            continue;
+        }
+        if in_double {
+            in_double = ch != '"';
+            continue;
+        }
+        if in_template {
+            in_template = ch != '`';
+            continue;
+        }
+
+        if ch == '/' && chars.peek().is_some_and(|(_, next)| *next == '/') {
+            chars.next();
+            in_line_comment = true;
+        } else if ch == '/' && chars.peek().is_some_and(|(_, next)| *next == '*') {
+            chars.next();
+            in_block_comment = true;
+        } else if ch == '\'' {
+            in_single = true;
+        } else if ch == '"' {
+            in_double = true;
+        } else if ch == '`' {
+            in_template = true;
+        }
+    }
+
+    !in_single && !in_double && !in_template && !in_line_comment && !in_block_comment
 }
 
 fn regex_path_sample(pattern: &str) -> Option<String> {
@@ -605,9 +700,12 @@ mod tests {
                 metrics: () => `/orders/metrics`,
                 dynamic: (id) => `/orders/${id}`,
             };
+            // ghost: () => "/comment-only"
+            const ignoredText = "text: () => '/string-only'";
             const account = { path: () => "/account" };
             const settings = { path: () => "/settings" };
             await page.waitForURL(details());
+            await page.waitForURL(routes.details());
             await expect(page.url()).toMatch(overview());
             await expect(page.url()).toMatch(metrics());
             await expect(page.url()).toMatch(dynamic("42"));
@@ -617,6 +715,8 @@ mod tests {
             await page.waitForURL(getPath()());
             await page.goto();
             await page.goto(routeName);
+            await page.waitForURL(ghost());
+            await page.waitForURL(text());
             "#,
         );
         assert_eq!(urls, vec!["/orders", "/orders/42", "/orders/metrics",]);
@@ -654,6 +754,31 @@ mod tests {
     }
 
     #[test]
+    fn source_offset_filter_ignores_comments_and_strings() {
+        let source = "'route: () => \\'/string\\'';\n/* route: () => '/block' */\n// route: () => '/line'\nconst route = () => '/real';";
+        assert!(!source_offset_is_code(
+            source,
+            source.find("route:").unwrap()
+        ));
+        assert!(!source_offset_is_code(
+            source,
+            source.find("block").unwrap() - 14
+        ));
+        assert!(!source_offset_is_code(
+            source,
+            source.find("line").unwrap() - 14
+        ));
+        assert!(source_offset_is_code(
+            source,
+            source.rfind("route").unwrap()
+        ));
+        assert!(!source_offset_is_code(
+            "'unterminated",
+            "'unterminated".len()
+        ));
+    }
+
+    #[test]
     fn page_url_to_match_requires_positive_page_url_expectation() {
         let urls = extract_playwright_urls(
             r#"
@@ -667,10 +792,19 @@ mod tests {
             await getExpect()(page.url()).toMatch(/\/factory$/);
             await helpers.expect(page.url()).toMatch(/\/helper$/);
             await expect('/literal').toMatch(/\/literal$/);
+            await expect(page.url()).toMatch(`/users/${role === 'admin' ? '/admin' : '/user'}`);
             await page.toMatch(/\/method$/);
             "#,
         );
-        assert_eq!(urls, vec!["/", "/account", "/settings"]);
+        assert_eq!(
+            urls,
+            vec![
+                "/",
+                "/account",
+                "/settings",
+                "/users/${role === 'admin' ? '/admin' : '/user'}"
+            ]
+        );
     }
 
     #[test]
