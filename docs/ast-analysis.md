@@ -172,7 +172,8 @@ value matcher match.
 - Template app selectors match against their static parts.
 - `getByTestId(/.../)` regex selectors are tested against static app selector
   values and against a generated sample for template selectors where each
-  dynamic hole is replaced with `x`.
+  dynamic hole is replaced with `x`. JavaScript regex flags are ignored; the
+  pattern is evaluated as a Rust regex string.
 - Unsupported dynamic app selectors never count as covered.
 
 ## Limitations

@@ -34,8 +34,10 @@ Playwright tests:
 
 ```sh
 changed='web/app/users/[id]/page.tsx'
-playwright-ast-coverage related "$changed"
-npx playwright test $(playwright-ast-coverage related "$changed")
+tests=$(playwright-ast-coverage related "$changed")
+if [ -n "$tests" ]; then
+  npx playwright test $tests
+fi
 ```
 
 Use `check --json` for machine-readable CI or agent decisions. A failing route

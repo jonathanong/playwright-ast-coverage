@@ -24,7 +24,7 @@ playwright-ast-coverage related [OPTIONS] <FILES>...
 | --- | --- | --- |
 | `--root <ROOT>` | `.` | Repository or package root to analyze. Relative paths are resolved from the current working directory. |
 | `--config <CONFIG>` | `.playwright-ast-coverage.yaml` under `--root`, when present | YAML config file. Relative paths are resolved from `--root`. Passing a missing file is an error. |
-| `--playwright-config <PLAYWRIGHT_CONFIG>` | All root-level `playwright*.config.*` files under `--root` | Playwright config file. May be repeated. Relative paths are resolved from `--root`. This overrides `playwrightConfig` in YAML. Passing a missing file is an error. |
+| `--playwright-config <PLAYWRIGHT_CONFIG>` | YAML `playwrightConfig`, otherwise all root-level `playwright*.config.*` files under `--root` | Playwright config file. May be repeated. Relative paths are resolved from `--root`. This overrides `playwrightConfig` in YAML. Passing a missing file is an error. |
 | `--project <PROJECT>` | | Filter by top-level Playwright config `name`, not by `projects[].name`. |
 | `--json` | `false` | Emit pretty-printed JSON instead of text output. |
 | `-h`, `--help` | | Print CLI help. |
@@ -42,7 +42,8 @@ playwright-ast-coverage related --project storybook 'web/app/users/[id]/page.tsx
 By default the tool:
 
 - reads `.playwright-ast-coverage.yaml` when present,
-- reads all root-level `playwright*.config.*` files when present,
+- reads `playwrightConfig` from YAML when present, otherwise reads all
+  root-level `playwright*.config.*` files when present,
 - analyzes `frontendRoot: app` unless configured,
 - checks route coverage and selector coverage,
 - checks `data-testid` and `data-pw` selectors unless configured,
@@ -98,8 +99,9 @@ The tool reads a limited set of literal values from Playwright config:
 | `use.testIdAttribute` or `testIdAttribute` | Attribute that Playwright `getByTestId(...)` uses. Defaults to `data-testid`; project values override the root value. Non-literal values are ignored. |
 | `projects` | Array of project objects. Each project inherits supported root options unless the project provides its own supported value. |
 
-When more than one Playwright config file is analyzed, each config must define a
-unique top-level `name`. The CLI `--project` flag filters by that config name:
+When more than one Playwright config file is analyzed, or when `--project` is
+used, each analyzed config must define a unique top-level `name`. The CLI
+`--project` flag filters by that config name:
 
 ```ts
 export default defineConfig({
