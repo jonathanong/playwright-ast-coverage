@@ -321,7 +321,9 @@ mod tests {
         let err = load_settings(&root, None, &[], None)
             .err()
             .expect("expected invalid JSONC to fail");
-        assert!(err.to_string().contains("Expected string for object property"));
+        assert!(err
+            .to_string()
+            .contains("Expected string for object property"));
     }
 
     #[test]
