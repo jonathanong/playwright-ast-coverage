@@ -350,8 +350,8 @@ impl<'a> oxc_ast_visit::Visit<'a> for PlaywrightSelectorVisitor<'a, '_> {
                 self.test_id_attributes,
                 &mut self.selectors,
             );
-        } else if selector_taking_call(&call.callee) {
-            if let Some(selector) = selector_argument_literal(call, self.source) {
+        } else if let Some(argument_mode) = selector_argument_mode(&call.callee) {
+            for selector in selector_argument_literals(call, self.source, argument_mode) {
                 extract_css_attribute_selectors(
                     &selector,
                     &self.regexes.playwright_attributes,
@@ -446,57 +446,42 @@ fn callee_static_member_name<'a>(callee: &'a oxc_ast::ast::Expression<'a>) -> Op
     }
 }
 
-fn selector_taking_call(callee: &oxc_ast::ast::Expression<'_>) -> bool {
-    callee_static_member_name(callee).is_some_and(|name| {
-        matches!(
-            name,
-            "$" | "$$"
-                | "$$eval"
-                | "$eval"
-                | "check"
-                | "click"
-                | "dblclick"
-                | "dispatchEvent"
-                | "dragTo"
-                | "evalOnSelector"
-                | "evalOnSelectorAll"
-                | "fill"
-                | "focus"
-                | "getAttribute"
-                | "hover"
-                | "innerHTML"
-                | "innerText"
-                | "inputValue"
-                | "isChecked"
-                | "isDisabled"
-                | "isEditable"
-                | "isEnabled"
-                | "isHidden"
-                | "isVisible"
-                | "locator"
-                | "press"
-                | "selectOption"
-                | "setChecked"
-                | "tap"
-                | "textContent"
-                | "type"
-                | "uncheck"
-                | "waitForSelector"
-        )
-    })
+#[derive(Clone, Copy)]
+enum SelectorArgumentMode {
+    First,
+    All,
 }
 
-fn selector_argument_literal(
-    call: &oxc_ast::ast::CallExpression<'_>,
-    source: &str,
-) -> Option<String> {
-    match call.arguments.first()? {
-        oxc_ast::ast::Argument::StringLiteral(literal) => Some(literal.value.to_string()),
-        oxc_ast::ast::Argument::TemplateLiteral(template) => {
-            Some(ast::template_literal_text(template, source))
-        }
+fn selector_argument_mode(callee: &oxc_ast::ast::Expression<'_>) -> Option<SelectorArgumentMode> {
+    match callee_static_member_name(callee)? {
+        "dragAndDrop" => Some(SelectorArgumentMode::All),
+        "$" | "$$" | "$$eval" | "$eval" | "check" | "click" | "dblclick" | "dispatchEvent"
+        | "dragTo" | "evalOnSelector" | "evalOnSelectorAll" | "fill" | "focus" | "frameLocator"
+        | "getAttribute" | "hover" | "innerHTML" | "innerText" | "inputValue" | "isChecked"
+        | "isDisabled" | "isEditable" | "isEnabled" | "isHidden" | "isVisible" | "locator"
+        | "press" | "selectOption" | "setChecked" | "tap" | "textContent" | "type" | "uncheck"
+        | "waitForSelector" => Some(SelectorArgumentMode::First),
         _ => None,
     }
+}
+
+fn selector_argument_literals(
+    call: &oxc_ast::ast::CallExpression<'_>,
+    source: &str,
+    mode: SelectorArgumentMode,
+) -> Vec<String> {
+    call.arguments
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| matches!(mode, SelectorArgumentMode::All) || *index == 0)
+        .filter_map(|(_, argument)| match argument {
+            oxc_ast::ast::Argument::StringLiteral(literal) => Some(literal.value.to_string()),
+            oxc_ast::ast::Argument::TemplateLiteral(template) => {
+                Some(ast::template_literal_text(template.as_ref(), source))
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 fn extract_get_by_test_id_call(
@@ -663,6 +648,8 @@ mod tests {
             await page.type('[data-testid="search"]', 'query');
             await page.$eval('[data-pw="panel"]', node => node.textContent);
             await page.$$eval('[data-testid="items"]', nodes => nodes.length);
+            await page.frameLocator('[data-pw="frame"]').locator('[data-testid="inside"]');
+            await page.dragAndDrop('[data-testid="source"]', '[data-pw="target"]');
         "#;
         let selectors =
             extract_playwright_selectors(source, &attrs(), &["data-testid".to_string()]);
@@ -681,6 +668,18 @@ mod tests {
         assert!(selectors
             .iter()
             .any(|selector| selector.selector == r#"[data-testid="items"]"#));
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == r#"[data-pw="frame"]"#));
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == r#"[data-testid="inside"]"#));
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == r#"[data-testid="source"]"#));
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == r#"[data-pw="target"]"#));
         assert!(selectors
             .iter()
             .all(|selector| selector.selector != r#"[data-testid="save"]"#));

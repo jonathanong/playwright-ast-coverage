@@ -473,6 +473,7 @@ fn discover_test_files(
     playwright: &playwright_config::PlaywrightConfig,
 ) -> Result<Vec<DiscoveredTestFile>> {
     let project_discovery = build_project_discovery(root, playwright)?;
+    let all_contexts = test_project_contexts(&project_discovery);
     if !settings.test_include.is_empty() {
         let include = build_globset(&settings.test_include)?;
         let exclude = build_globset(&settings.test_exclude)?;
@@ -481,10 +482,11 @@ fn discover_test_files(
             let rel = relative_string(root, path);
             include.is_match(&rel) && !exclude.is_match(&rel)
         }) {
-            files.push(DiscoveredTestFile {
-                contexts: matching_project_contexts(root, &project_discovery, &path),
-                path,
-            });
+            let mut contexts = matching_project_contexts(root, &project_discovery, &path);
+            if contexts.is_empty() && !is_under_project_test_dir(&project_discovery, &path) {
+                contexts = all_contexts.clone();
+            }
+            files.push(DiscoveredTestFile { contexts, path });
         }
         return Ok(files);
     }
@@ -541,6 +543,16 @@ fn build_project_discovery(
     Ok(discovery)
 }
 
+fn test_project_contexts(projects: &[TestProjectDiscovery]) -> Vec<TestProjectContext> {
+    let mut contexts: Vec<TestProjectContext> = projects
+        .iter()
+        .map(|project| project.context.clone())
+        .collect();
+    contexts.sort();
+    contexts.dedup();
+    contexts
+}
+
 fn matching_project_contexts(
     root: &Path,
     projects: &[TestProjectDiscovery],
@@ -566,6 +578,12 @@ fn matching_project_contexts(
         }
     }
     contexts.into_iter().collect()
+}
+
+fn is_under_project_test_dir(projects: &[TestProjectDiscovery], path: &Path) -> bool {
+    projects
+        .iter()
+        .any(|project| path.starts_with(&project.test_dir))
 }
 
 fn build_coverage(
