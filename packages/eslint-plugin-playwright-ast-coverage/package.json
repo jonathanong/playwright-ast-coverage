@@ -1,6 +1,6 @@
 {
   "name": "eslint-plugin-playwright-ast-coverage",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "ESLint and Oxlint rules for playwright-ast-coverage test IDs",
   "license": "MIT",
   "repository": {
