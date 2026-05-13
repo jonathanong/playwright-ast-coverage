@@ -5,6 +5,7 @@ module.exports = defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**/*.js"],
+      reporter: ["text", "lcov"],
       thresholds: {
         statements: 100,
         branches: 100,
