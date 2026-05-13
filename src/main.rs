@@ -483,7 +483,7 @@ fn discover_test_files(
             include.is_match(&rel) && !exclude.is_match(&rel)
         }) {
             let mut contexts = matching_project_contexts(root, &project_discovery, &path);
-            if contexts.is_empty() && !is_under_project_test_dir(&project_discovery, &path) {
+            if contexts.is_empty() {
                 contexts = all_contexts.clone();
             }
             files.push(DiscoveredTestFile { contexts, path });
@@ -578,12 +578,6 @@ fn matching_project_contexts(
         }
     }
     contexts.into_iter().collect()
-}
-
-fn is_under_project_test_dir(projects: &[TestProjectDiscovery], path: &Path) -> bool {
-    projects
-        .iter()
-        .any(|project| path.starts_with(&project.test_dir))
 }
 
 fn build_coverage(
