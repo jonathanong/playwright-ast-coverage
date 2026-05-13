@@ -4,7 +4,7 @@ use anyhow::Result;
 use oxc_ast_visit::Visit;
 use oxc_span::GetSpan;
 use regex::Regex;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 #[cfg(test)]
 use walkdir::WalkDir;
@@ -291,10 +291,12 @@ pub fn extract_app_selectors_with_regexes(
     regexes: &SelectorRegexes,
 ) -> anyhow::Result<Vec<AppSelector>> {
     ast::with_program(path, source, |program, source| {
+        let static_identifier_defaults = collect_static_identifier_defaults(source);
         let mut visitor = AppSelectorVisitor {
             path,
             source,
             attributes: &regexes.app_attributes,
+            static_identifier_defaults: &static_identifier_defaults,
             selectors: BTreeSet::new(),
         };
         visitor.visit_program(program);
@@ -393,6 +395,7 @@ struct AppSelectorVisitor<'a, 'r> {
     path: &'r Path,
     source: &'a str,
     attributes: &'r [String],
+    static_identifier_defaults: &'r HashMap<String, String>,
     selectors: BTreeSet<AppSelector>,
 }
 
@@ -407,7 +410,11 @@ impl<'a> oxc_ast_visit::Visit<'a> for AppSelectorVisitor<'a, '_> {
             return;
         }
 
-        if let Some(value) = app_selector_value(attribute.value.as_ref(), self.source) {
+        if let Some(value) = app_selector_value(
+            attribute.value.as_ref(),
+            self.source,
+            self.static_identifier_defaults,
+        ) {
             self.selectors.insert(AppSelector {
                 file: self.path.to_path_buf(),
                 attribute: name.to_string(),
@@ -548,13 +555,14 @@ fn jsx_attribute_name<'a>(name: &'a oxc_ast::ast::JSXAttributeName<'a>) -> Optio
 fn app_selector_value(
     value: Option<&oxc_ast::ast::JSXAttributeValue<'_>>,
     source: &str,
+    static_identifier_defaults: &HashMap<String, String>,
 ) -> Option<AppSelectorValue> {
     match value? {
         oxc_ast::ast::JSXAttributeValue::StringLiteral(literal) => {
             Some(AppSelectorValue::Exact(literal.value.to_string()))
         }
         oxc_ast::ast::JSXAttributeValue::ExpressionContainer(container) => {
-            jsx_expression_value(&container.expression, source)
+            jsx_expression_value(&container.expression, source, static_identifier_defaults)
         }
         _ => None,
     }
@@ -563,6 +571,7 @@ fn app_selector_value(
 fn jsx_expression_value(
     expression: &oxc_ast::ast::JSXExpression<'_>,
     source: &str,
+    static_identifier_defaults: &HashMap<String, String>,
 ) -> Option<AppSelectorValue> {
     match expression {
         oxc_ast::ast::JSXExpression::StringLiteral(literal) => {
@@ -577,7 +586,9 @@ fn jsx_expression_value(
             )
         }
         oxc_ast::ast::JSXExpression::Identifier(identifier) => Some(
-            static_default_for_identifier(identifier.name.as_str(), source)
+            static_identifier_defaults
+                .get(identifier.name.as_str())
+                .cloned()
                 .map(AppSelectorValue::Exact)
                 .unwrap_or_else(|| AppSelectorValue::Unsupported(identifier.name.to_string())),
         ),
@@ -587,16 +598,17 @@ fn jsx_expression_value(
     }
 }
 
-fn static_default_for_identifier(name: &str, source: &str) -> Option<String> {
-    let pattern = Regex::new(&format!(
-        r#"{}\s*=\s*(?:"([^"]+)"|'([^']+)')"#,
-        regex::escape(name)
-    ))
-    .ok()?;
+fn collect_static_identifier_defaults(source: &str) -> HashMap<String, String> {
+    let pattern = Regex::new(r#"([A-Za-z_$][\w$]*)\s*=\s*(?:"([^"]+)"|'([^']+)')"#)
+        .expect("static identifier default regex should compile");
     pattern
-        .captures(source)
-        .and_then(|captures| captures.get(1).or_else(|| captures.get(2)))
-        .map(|capture| capture.as_str().to_string())
+        .captures_iter(source)
+        .filter_map(|captures| {
+            let name = captures.get(1)?;
+            let value = captures.get(2).or_else(|| captures.get(3))?;
+            Some((name.as_str().to_string(), value.as_str().to_string()))
+        })
+        .collect()
 }
 
 fn extract_css_attribute_selectors(
@@ -800,6 +812,33 @@ mod tests {
             .iter()
             .any(|selector| selector.display_value() == "user-${id}"));
         assert!(selectors.iter().any(AppSelector::unsupported_dynamic));
+    }
+
+    #[test]
+    fn extracts_static_identifier_default_jsx_selectors() {
+        let selectors = extract_app_selectors(
+            Path::new("app/page.tsx"),
+            r#"
+            export function Link({ 'data-pw': dataPw = 'rss-feed-link' }) {
+                return <a data-pw={dataPw}>RSS</a>;
+            }
+
+            export function Button({ passThrough }) {
+                return (
+                    <>
+                        <button data-pw={passThrough}>Save</button>
+                        <button data-pw={1 + 1}>Count</button>
+                    </>
+                );
+            }
+            "#,
+            &attrs(),
+        )
+        .unwrap();
+
+        let mut values: Vec<String> = selectors.iter().map(AppSelector::display_value).collect();
+        values.sort();
+        assert_eq!(values, vec!["rss-feed-link", "{1 + 1}", "{passThrough}"]);
     }
 
     #[test]

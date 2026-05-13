@@ -6,7 +6,7 @@ use oxc_ast::ast::{
 };
 use oxc_ast_visit::{walk, Visit};
 use oxc_span::GetSpan;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 #[cfg(test)]
 use std::path::Path;
 
@@ -69,9 +69,11 @@ pub fn extract_playwright_url_occurrences_from_program(
     source: &str,
     navigation_helpers: &[String],
 ) -> Vec<playwright_tests::TestOccurrence<String>> {
+    let static_zero_arg_paths = collect_static_zero_arg_paths(source);
     let mut visitor = UrlVisitor {
         source,
         navigation_helpers,
+        static_zero_arg_paths: &static_zero_arg_paths,
         status: playwright_tests::TestStatus::Active,
         annotation_status: playwright_tests::TestStatus::Active,
         urls: BTreeSet::new(),
@@ -105,6 +107,7 @@ fn extract_href_from_selector(selector: &str) -> Option<String> {
 struct UrlVisitor<'a, 'h> {
     source: &'a str,
     navigation_helpers: &'h [String],
+    static_zero_arg_paths: &'h HashMap<String, String>,
     status: playwright_tests::TestStatus,
     annotation_status: playwright_tests::TestStatus,
     urls: BTreeSet<playwright_tests::TestOccurrence<String>>,
@@ -118,7 +121,7 @@ impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
             if let Some(url) = call
                 .arguments
                 .first()
-                .and_then(|arg| argument_literal(arg, self.source))
+                .and_then(|arg| argument_literal(arg, self.source, self.static_zero_arg_paths))
             {
                 if is_candidate_url(&url) {
                     self.insert(url);
@@ -128,7 +131,7 @@ impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
             if let Some(selector) = call
                 .arguments
                 .first()
-                .and_then(|arg| argument_literal(arg, self.source))
+                .and_then(|arg| argument_literal(arg, self.source, self.static_zero_arg_paths))
             {
                 if let Some(url) = extract_href_from_selector(&selector) {
                     self.insert(url);
@@ -139,7 +142,9 @@ impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
             || callee_is_page_url_to_match(&call.callee, self.source)
             || callee_matches_navigation_helper(&callee, self.navigation_helpers)
         {
-            if let Some(url) = first_candidate_literal(&call.arguments, self.source) {
+            if let Some(url) =
+                first_candidate_literal(&call.arguments, self.source, self.static_zero_arg_paths)
+            {
                 self.insert(url);
             }
         }
@@ -268,9 +273,14 @@ fn callee_is_page_url_to_match(callee: &oxc_ast::ast::Expression<'_>, source: &s
     ast::span_text(source, member.object.span()).contains("page.url()")
 }
 
-fn first_candidate_literal(arguments: &[Argument<'_>], source: &str) -> Option<String> {
+fn first_candidate_literal(
+    arguments: &[Argument<'_>],
+    source: &str,
+    static_zero_arg_paths: &HashMap<String, String>,
+) -> Option<String> {
     let mut visitor = LiteralVisitor {
         source,
+        static_zero_arg_paths,
         literals: Vec::new(),
     };
     for argument in arguments {
@@ -284,12 +294,13 @@ fn first_candidate_literal(arguments: &[Argument<'_>], source: &str) -> Option<S
 
 struct LiteralVisitor<'a> {
     source: &'a str,
+    static_zero_arg_paths: &'a HashMap<String, String>,
     literals: Vec<String>,
 }
 
 impl<'a> Visit<'a> for LiteralVisitor<'a> {
     fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
-        if let Some(url) = static_zero_arg_path_call(call, self.source) {
+        if let Some(url) = static_zero_arg_path_call(call, self.static_zero_arg_paths) {
             self.literals.push(url);
             return;
         }
@@ -313,35 +324,47 @@ impl<'a> Visit<'a> for LiteralVisitor<'a> {
     }
 }
 
-fn argument_literal(argument: &Argument<'_>, source: &str) -> Option<String> {
+fn argument_literal(
+    argument: &Argument<'_>,
+    source: &str,
+    static_zero_arg_paths: &HashMap<String, String>,
+) -> Option<String> {
     match argument {
         Argument::StringLiteral(literal) => Some(literal.value.to_string()),
         Argument::TemplateLiteral(template) => Some(ast::template_literal_text(template, source)),
-        Argument::CallExpression(call) => static_zero_arg_path_call(call, source),
+        Argument::CallExpression(call) => static_zero_arg_path_call(call, static_zero_arg_paths),
         _ => None,
     }
 }
 
-fn static_zero_arg_path_call(call: &CallExpression<'_>, source: &str) -> Option<String> {
+fn collect_static_zero_arg_paths(source: &str) -> HashMap<String, String> {
+    let pattern = regex::Regex::new(
+        r#"([A-Za-z_$][\w$]*)\s*:\s*\(\s*\)\s*=>\s*(?:"([^"`]+)"|'([^'`]+)'|`([^'"`]+)`)"#,
+    )
+    .expect("static route helper regex should compile");
+    pattern
+        .captures_iter(source)
+        .filter_map(|captures| {
+            let name = captures.get(1)?;
+            let value = captures
+                .get(2)
+                .or_else(|| captures.get(3))
+                .or_else(|| captures.get(4))?;
+            Some((name.as_str().to_string(), value.as_str().to_string()))
+        })
+        .collect()
+}
+
+fn static_zero_arg_path_call(
+    call: &CallExpression<'_>,
+    static_zero_arg_paths: &HashMap<String, String>,
+) -> Option<String> {
     if !call.arguments.is_empty() {
         return None;
     }
     let path = ast::expression_path(&call.callee)?;
     let name = path.last()?;
-    let pattern = regex::Regex::new(&format!(
-        r#"{}\s*:\s*\(\s*\)\s*=>\s*(?:"([^"`]+)"|'([^'`]+)'|`([^'"`]+)`)"#,
-        regex::escape(name)
-    ))
-    .ok()?;
-    pattern
-        .captures(source)
-        .and_then(|captures| {
-            captures
-                .get(1)
-                .or_else(|| captures.get(2))
-                .or_else(|| captures.get(3))
-        })
-        .map(|capture| capture.as_str().to_string())
+    static_zero_arg_paths.get(name.as_str()).cloned()
 }
 
 fn regex_path_sample(pattern: &str) -> Option<String> {
@@ -374,28 +397,13 @@ fn regex_path_sample(pattern: &str) -> Option<String> {
 
         match ch {
             '[' => {
-                for next in chars.by_ref() {
-                    if next == ']' {
-                        break;
-                    }
-                }
+                consume_regex_char_class(&mut chars);
                 sample.push('x');
-                while matches!(chars.peek(), Some('+' | '*' | '?' | '{')) {
-                    let quantifier = chars.next();
-                    if quantifier == Some('{') {
-                        for next in chars.by_ref() {
-                            if next == '}' {
-                                break;
-                            }
-                        }
-                    }
-                }
+                consume_regex_quantifier(&mut chars);
             }
             '.' => {
                 sample.push('x');
-                if matches!(chars.peek(), Some('+' | '*')) {
-                    chars.next();
-                }
+                consume_regex_quantifier(&mut chars);
             }
             '$' | '|' | '(' | ')' => break,
             ch if is_literal_path_char(ch) => sample.push(ch),
@@ -407,6 +415,36 @@ fn regex_path_sample(pattern: &str) -> Option<String> {
         Some(sample)
     } else {
         None
+    }
+}
+
+fn consume_regex_char_class(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
+    let mut escaped = false;
+    for next in chars.by_ref() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if next == '\\' {
+            escaped = true;
+            continue;
+        }
+        if next == ']' {
+            break;
+        }
+    }
+}
+
+fn consume_regex_quantifier(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
+    while matches!(chars.peek(), Some('+' | '*' | '?' | '{')) {
+        let quantifier = chars.next();
+        if quantifier == Some('{') {
+            for next in chars.by_ref() {
+                if next == '}' {
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -500,6 +538,60 @@ mod tests {
             urls,
             vec!["/settings", "/user/${username}/rss-feed-items/viewed"]
         );
+    }
+
+    #[test]
+    fn extracts_wait_for_url_page_url_match_and_static_route_helpers() {
+        let urls = extract_playwright_urls(
+            r#"
+            const routes = {
+                details: () => "/orders/42",
+                overview: () => '/orders',
+                metrics: () => `/orders/metrics`,
+                dynamic: (id) => `/orders/${id}`,
+            };
+            await page.waitForURL(routes.details());
+            await expect(page.url()).toMatch(routes.overview());
+            await expect(page.url()).toMatch(routes.metrics());
+            await expect(page.url()).toMatch(routes.dynamic("42"));
+            await page.goto(routeName);
+            "#,
+        );
+        assert_eq!(urls, vec!["/orders", "/orders/42", "/orders/metrics"]);
+    }
+
+    #[test]
+    fn samples_simple_url_regex_literals() {
+        assert_eq!(
+            regex_path_sample(r#"^/orders/[a-z\]]+/.{2,4}$"#),
+            Some("/orders/x/x".to_string())
+        );
+        assert_eq!(
+            regex_path_sample(r#"^\/orders\/.*?$"#),
+            Some("/orders/x".to_string())
+        );
+        assert_eq!(
+            regex_path_sample(r#"^\/orders\/\%bad$"#),
+            Some("/orders/%bad".to_string())
+        );
+        assert_eq!(
+            regex_path_sample(r#"^\/orders\/\#$"#),
+            Some("/orders/".to_string())
+        );
+        assert_eq!(
+            regex_path_sample(r#"^\s/orders$"#),
+            Some("/orders".to_string())
+        );
+        assert_eq!(
+            regex_path_sample(r#"^\/orders\/\"#),
+            Some("/orders/".to_string())
+        );
+        assert_eq!(
+            regex_path_sample(r#"^/orders/<id>$"#),
+            Some("/orders/".to_string())
+        );
+        assert_eq!(regex_path_sample(r#"^not-a-path$"#), None);
+        assert_eq!(regex_path_sample(r#"^/$"#), None);
     }
 
     #[test]
