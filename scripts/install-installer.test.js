@@ -6,7 +6,7 @@ const { join } = require("node:path");
 const { tmpdir } = require("node:os");
 const { pathToFileURL } = require("node:url");
 
-const { assetName, install, platformTarget } = require("./install");
+const { assetName, install, platformTarget, unsupportedPlatformMessage } = require("./install");
 
 function assetBaseUrl(root) {
   return pathToFileURL(join(root, "assets")).toString();
@@ -20,6 +20,15 @@ function executableName(target) {
 
 test("rejects unsupported install targets", async () => {
   await assert.rejects(() => install({ target: null }), /Unsupported platform/);
+  assert.match(unsupportedPlatformMessage("freebsd", "x64"), /Unsupported platform freebsd\/x64/);
+  assert.match(
+    unsupportedPlatformMessage("linux", "x64", { getReport: () => ({ header: {} }) }),
+    /glibc 2\.35/,
+  );
+  assert.match(
+    unsupportedPlatformMessage("linux", "arm64", { getReport: () => ({ header: {} }) }),
+    /glibc 2\.35/,
+  );
 });
 
 test("installs only the requested platform binary and verifies checksum", async () => {
@@ -79,6 +88,10 @@ test("installs with default target and release base environment", async () => {
   const root = await mkdtemp(join(tmpdir(), "playwright-ast-coverage-env-install-"));
   const vendorDir = join(root, "vendor");
   const target = platformTarget();
+  if (!target) {
+    await rm(root, { recursive: true, force: true });
+    return;
+  }
   const version = "9.8.7";
   const asset = assetName(version, target);
   const content = Buffer.from("#!/bin/sh\nexit 0\n");

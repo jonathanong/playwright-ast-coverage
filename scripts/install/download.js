@@ -29,8 +29,12 @@ function request(url, handleResponse, redirects = 0) {
     const req = client.get(url, (response) => {
       if (isRedirectStatus(response.statusCode)) {
         response.resume();
-        if (redirects >= 5 || !response.headers.location) {
+        if (redirects >= 5) {
           reject(new Error(`Too many redirects while downloading ${url}`));
+          return;
+        }
+        if (!response.headers.location) {
+          reject(new Error(`Redirect missing Location header while downloading ${url}`));
           return;
         }
         request(

@@ -7,7 +7,7 @@ const { join } = require("node:path");
 
 const { assetName, parseChecksum, releaseBaseUrl } = require("./assets");
 const { download, fetchText } = require("./download");
-const { platformTarget } = require("./platform");
+const { platformTarget, supportedGlibc } = require("./platform");
 
 const PACKAGE_ROOT = join(__dirname, "..", "..");
 const VENDOR_DIR = join(PACKAGE_ROOT, "vendor");
@@ -28,11 +28,7 @@ async function install(options = {}) {
   const version = options.version || packageVersion();
   const target = Object.hasOwn(options, "target") ? options.target : platformTarget();
   if (!target) {
-    throw new Error(
-      `Unsupported platform ${process.platform}/${process.arch}. ` +
-        "Linux npm installs require glibc 2.35 or newer. " +
-        "Install with `cargo install playwright-ast-coverage` instead.",
-    );
+    throw new Error(unsupportedPlatformMessage());
   }
 
   const asset = assetName(version, target);
@@ -67,8 +63,20 @@ async function install(options = {}) {
   }
 }
 
+function unsupportedPlatformMessage(
+  platform = process.platform,
+  arch = process.arch,
+  report = process.report,
+) {
+  if (platform === "linux" && (arch === "x64" || arch === "arm64") && !supportedGlibc(report)) {
+    return "Linux npm installs require glibc 2.35 or newer. Install with `cargo install playwright-ast-coverage` instead.";
+  }
+  return `Unsupported platform ${platform}/${arch}. Install with \`cargo install playwright-ast-coverage\` instead.`;
+}
+
 module.exports = {
   install,
   packageVersion,
   sha256,
+  unsupportedPlatformMessage,
 };

@@ -14,6 +14,11 @@ test("downloads file URLs and fetches text over HTTP redirects", async () => {
   await writeFile(source, "hello");
 
   const server = createServer((request, response) => {
+    if (request.url === "/missing-location") {
+      response.writeHead(302);
+      response.end();
+      return;
+    }
     if (request.url === "/redirect") {
       response.writeHead(302, { location: "/text" });
       response.end();
@@ -36,6 +41,10 @@ test("downloads file URLs and fetches text over HTTP redirects", async () => {
     assert.equal(await readFile(destination, "utf8"), "hello");
     assert.equal(await fetchText(`http://127.0.0.1:${address.port}/redirect`), "redirected");
     await assert.rejects(() => fetchText(`http://127.0.0.1:${address.port}/missing`), /HTTP 404/);
+    await assert.rejects(
+      () => fetchText(`http://127.0.0.1:${address.port}/missing-location`),
+      /missing Location/i,
+    );
     await assert.rejects(() => fetchText(`https://127.0.0.1:${address.port}/text`));
   } finally {
     await new Promise((resolve) => server.close(resolve));

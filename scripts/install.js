@@ -3,7 +3,12 @@
 
 const { assetName, parseChecksum, releaseBaseUrl } = require("./install/assets");
 const { download, fetchText, isRedirectStatus, request } = require("./install/download");
-const { install, packageVersion, sha256 } = require("./install/installer");
+const {
+  install,
+  packageVersion,
+  sha256,
+  unsupportedPlatformMessage,
+} = require("./install/installer");
 const { glibcVersion, isGlibc, platformTarget, supportedGlibc } = require("./install/platform");
 
 async function main() {
@@ -35,4 +40,5 @@ module.exports = {
   request,
   sha256,
   supportedGlibc,
+  unsupportedPlatformMessage,
 };
