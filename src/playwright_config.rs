@@ -29,6 +29,7 @@ const DEFAULT_TEST_MATCH: &[&str] = &[
 const DEFAULT_TEST_ID_ATTRIBUTE: &str = "data-testid";
 
 pub struct PlaywrightConfig {
+    pub name: Option<String>,
     pub projects: Vec<TestProject>,
 }
 
@@ -43,6 +44,7 @@ pub struct TestProject {
 
 #[derive(Default)]
 struct ParsedOptions {
+    name: Option<String>,
     test_dir: Option<String>,
     test_match: Option<Vec<String>>,
     test_ignore: Option<Vec<String>>,
@@ -74,6 +76,54 @@ impl PlaywrightConfig {
     }
 }
 
+pub fn load_many(
+    root: &Path,
+    config_paths: &[PathBuf],
+    config_name_filter: Option<&str>,
+) -> Result<PlaywrightConfig> {
+    if config_paths.is_empty() {
+        if let Some(name) = config_name_filter {
+            anyhow::bail!("--project requires a named Playwright config, but no config was found matching {name}");
+        }
+        return Ok(default_config(root));
+    }
+
+    let mut configs = Vec::new();
+    for config_path in config_paths {
+        let config = load(root, config_path)?;
+        configs.push((config_path, config));
+    }
+
+    validate_config_names(&configs, config_name_filter)?;
+    match config_name_filter {
+        Some(name)
+            if !configs
+                .iter()
+                .any(|(_, config)| config.name.as_deref() == Some(name)) =>
+        {
+            return Err(missing_config_name_error(name));
+        }
+        _ => {}
+    }
+
+    let mut projects = Vec::new();
+    for (_, config) in configs {
+        if config_name_filter.is_some_and(|name| config.name.as_deref() != Some(name)) {
+            continue;
+        }
+        projects.extend(config.projects);
+    }
+
+    Ok(PlaywrightConfig {
+        name: config_name_filter.map(str::to_string),
+        projects,
+    })
+}
+
+fn missing_config_name_error(name: &str) -> anyhow::Error {
+    anyhow::Error::msg(format!("no Playwright config found with name {name}"))
+}
+
 impl TestProject {
     pub fn test_dir(&self, root: &Path) -> PathBuf {
         let path = Path::new(&self.test_dir);
@@ -87,11 +137,7 @@ impl TestProject {
     }
 }
 
-pub fn load(root: &Path, config_path: Option<&Path>) -> Result<PlaywrightConfig> {
-    let Some(config_path) = config_path else {
-        return Ok(default_config(root));
-    };
-
+pub fn load(root: &Path, config_path: &Path) -> Result<PlaywrightConfig> {
     if !config_path.exists() {
         anyhow::bail!(
             "Playwright config does not exist: {}",
@@ -105,6 +151,7 @@ pub fn load(root: &Path, config_path: Option<&Path>) -> Result<PlaywrightConfig>
 
 fn default_config(root: &Path) -> PlaywrightConfig {
     PlaywrightConfig {
+        name: None,
         projects: vec![TestProject {
             config_dir: root.to_path_buf(),
             test_dir: ".".to_string(),
@@ -135,6 +182,7 @@ fn parse_program(
     let bindings = top_level_object_bindings(program);
     let Some(root_object) = default_export_object(program) else {
         return Ok(PlaywrightConfig {
+            name: None,
             projects: vec![merge_project(config_dir, &ParsedOptions::default(), None)],
         });
     };
@@ -143,6 +191,7 @@ fn parse_program(
 
     if project_objects.is_empty() {
         return Ok(PlaywrightConfig {
+            name: root_options.name.clone(),
             projects: vec![merge_project(config_dir, &root_options, None)],
         });
     }
@@ -156,7 +205,37 @@ fn parse_program(
         ));
     }
 
-    Ok(PlaywrightConfig { projects })
+    Ok(PlaywrightConfig {
+        name: root_options.name,
+        projects,
+    })
+}
+
+fn validate_config_names(
+    configs: &[(&PathBuf, PlaywrightConfig)],
+    config_name_filter: Option<&str>,
+) -> Result<()> {
+    if configs.len() <= 1 && config_name_filter.is_none() {
+        return Ok(());
+    }
+
+    let mut seen = BTreeMap::new();
+    for (path, config) in configs {
+        let Some(name) = config.name.as_deref() else {
+            anyhow::bail!(
+                "Playwright config {} must define top-level name when multiple configs are analyzed or --project is used",
+                path.display()
+            );
+        };
+        if let Some(previous) = seen.insert(name.to_string(), path.display().to_string()) {
+            anyhow::bail!(
+                "Playwright config name {name} is duplicated by {} and {}",
+                previous,
+                path.display()
+            );
+        }
+    }
+    Ok(())
 }
 
 fn merge_project(
@@ -196,6 +275,7 @@ fn parse_options(
     });
 
     Ok(ParsedOptions {
+        name: property_expression(object, "name").and_then(|value| optional_string(value, source)),
         test_dir: property_expression(object, "testDir")
             .map(|value| required_string(value, source, "testDir"))
             .transpose()?,
@@ -496,6 +576,7 @@ mod tests {
     fn parses_test_dir_and_match() {
         let source = fixture_source(&["playwright_config", "test-dir-and-match.ts"]);
         let parsed = parse(&source, Path::new("/repo")).unwrap();
+        assert_eq!(parsed.name, None);
         assert_eq!(parsed.projects[0].test_dir, "./tests/e2e");
         assert_eq!(parsed.projects[0].test_match, vec!["**/*.spec.ts"]);
     }
@@ -640,7 +721,7 @@ mod tests {
 
     #[test]
     fn load_without_config_uses_default_project() {
-        let parsed = load(Path::new("/repo"), None).unwrap();
+        let parsed = load_many(Path::new("/repo"), &[], None).unwrap();
         assert_eq!(parsed.projects[0].test_dir, ".");
         assert!(parsed.projects[0]
             .test_match
@@ -648,25 +729,43 @@ mod tests {
     }
 
     #[test]
+    fn load_many_without_configs_rejects_project_filter() {
+        let err = load_many(Path::new("/repo"), &[], Some("storybook"))
+            .err()
+            .expect("expected project filter without config to fail");
+        assert!(err.to_string().contains("--project requires"));
+    }
+
+    #[test]
     fn load_missing_config_errors() {
-        let err = load(Path::new("/repo"), Some(Path::new("/repo/missing.ts")))
+        let err = load(Path::new("/repo"), Path::new("/repo/missing.ts"))
             .err()
             .expect("expected missing config to fail");
         assert!(err.to_string().contains("does not exist"));
     }
 
     #[test]
+    fn load_many_errors_when_project_filter_matches_no_config() {
+        let dir = fixture_path(&["config", "multi-playwright-config"]);
+        let config = dir.join("playwright.config.mts");
+        let err = load_many(&dir, &[config], Some("missing"))
+            .err()
+            .expect("expected missing config name to fail");
+        assert!(err.to_string().contains("no Playwright config found"));
+    }
+
+    #[test]
     fn load_existing_config_reads_and_parses() {
         let dir = fixture_path(&["playwright_config", "load-existing"]);
         let config = dir.join("playwright.config.ts");
-        let parsed = load(&dir, Some(&config)).unwrap();
+        let parsed = load(&dir, &config).unwrap();
         assert_eq!(parsed.projects[0].test_dir, "./tests");
     }
 
     #[test]
     fn load_directory_config_path_returns_read_error() {
         let dir = fixture_path(&["playwright_config", "load-existing"]);
-        let err = load(&dir, Some(&dir))
+        let err = load(&dir, &dir)
             .err()
             .expect("expected directory config path to fail");
         assert!(!err.to_string().is_empty());

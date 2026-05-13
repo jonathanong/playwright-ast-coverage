@@ -28,13 +28,13 @@ Setup `.playwright-ast-coverage.yaml` below.
 Add a git prepush hook:
 
 ```sh
-playwright-ast-coverage
+playwright-ast-coverage check
 ```
 
 Add a CI check:
 
 ```sh
-playwright-ast-coverage
+playwright-ast-coverage check
 ```
 
 
@@ -47,12 +47,14 @@ cargo install --path .
 ## CLI
 
 ```sh
-playwright-ast-coverage
-playwright-ast-coverage --json
-playwright-ast-coverage --mode edges --json
-playwright-ast-coverage --root packages/web
-playwright-ast-coverage --config config/playwright-ast-coverage.yaml
-playwright-ast-coverage --playwright-config packages/web/playwright.config.ts
+playwright-ast-coverage check
+playwright-ast-coverage --json check
+playwright-ast-coverage edges --json
+playwright-ast-coverage related 'web/app/users/[id]/page.tsx'
+playwright-ast-coverage related --project storybook 'web/app/users/[id]/page.tsx'
+playwright-ast-coverage --root packages/web check
+playwright-ast-coverage --config config/playwright-ast-coverage.yaml check
+playwright-ast-coverage --playwright-config packages/web/playwright.config.ts check
 ```
 
 CLI options:
@@ -61,8 +63,8 @@ CLI options:
 | --- | --- | --- |
 | `--root <ROOT>` | `.` | Repository or package root to analyze. Relative paths are resolved from the current working directory. |
 | `--config <CONFIG>` | `.playwright-ast-coverage.yaml` under `--root`, when present | YAML config file. Relative paths are resolved from `--root`. Passing a missing file is an error. |
-| `--playwright-config <PLAYWRIGHT_CONFIG>` | First existing `playwright.config.ts`, `.mts`, `.cts`, `.js`, `.mjs`, or `.cjs` under `--root` | Playwright config file. Relative paths are resolved from `--root`. This overrides `playwrightConfig` in the YAML config. Passing a missing file is an error. |
-| `--mode <MODE>` | `coverage` | `coverage` prints coverage and exits `1` when routes or selectors are uncovered. `edges` prints detected test-to-app links and always exits `0` when analysis succeeds. |
+| `--playwright-config <PLAYWRIGHT_CONFIG>` | All root-level `playwright*.config.*` files under `--root` | Playwright config file. May be repeated. Relative paths are resolved from `--root`. This overrides `playwrightConfig` in the YAML config. Passing a missing file is an error. |
+| `--project <PROJECT>` | | Filter by top-level Playwright config `name`, not by `projects[].name`. |
 | `--json` | `false` | Emit pretty-printed JSON instead of text output. |
 | `-h`, `--help` | | Print CLI help. |
 | `-V`, `--version` | | Print the package version. |
@@ -70,7 +72,7 @@ CLI options:
 By default the tool:
 
 - reads `.playwright-ast-coverage.yaml` when present,
-- reads `playwright.config.*` when present,
+- reads all root-level `playwright*.config.*` files when present,
 - analyzes `frontendRoot: app` unless configured,
 - checks route coverage and selector coverage,
 - checks `data-testid` and `data-pw` selectors unless configured,
@@ -107,7 +109,7 @@ YAML options:
 | Option | Default | Description |
 | --- | --- | --- |
 | `frontendRoot` | `app` | Next.js App Router root containing `page.ts`, `page.tsx`, `page.js`, and `page.jsx` files. Relative to `--root`. |
-| `playwrightConfig` | First default Playwright config found under `--root`, otherwise none | Playwright config path. Relative to `--root`. Overridden by `--playwright-config`. |
+| `playwrightConfig` | All root-level `playwright*.config.*` files found under `--root`, otherwise none | Playwright config path, or array of paths. Relative to `--root`. Overridden by repeated `--playwright-config`. |
 | `testInclude` | `[]` | Root-relative glob patterns for test files. When non-empty, this replaces test discovery from Playwright `testDir` and `testMatch`. |
 | `testExclude` | `[]` | Root-relative glob patterns for test files to ignore. Applied to `testInclude` discovery and also in addition to Playwright `testIgnore`. |
 | `ignoreRoutes` | `[]` | Route patterns that should count as covered even when no test URL matches them. Uses the same route matching rules as coverage. |
@@ -127,6 +129,21 @@ The tool also reads a limited set of literal values from Playwright config:
 | `use.baseURL` or `baseURL` | Literal base URL used to normalize absolute URLs such as `http://localhost:3000/users/42` to `/users/42`. Non-literal values are ignored. |
 | `use.testIdAttribute` or `testIdAttribute` | Attribute that Playwright `getByTestId(...)` uses. Defaults to `data-testid`; project values override the root value. Non-literal values are ignored. |
 | `projects` | Array of project objects. Each project inherits supported root options unless the project provides its own supported value. |
+
+When more than one Playwright config file is analyzed, each config must define a
+unique top-level `name`. The CLI `--project` flag filters by that config name:
+
+```ts
+export default defineConfig({
+  name: 'storybook',
+  testDir: './playwright/storybook',
+  projects: [{ name: 'chromium' }],
+})
+```
+
+In this example, use `--project storybook`. The inner `projects[].name`
+(`chromium`) is still parsed for Playwright inheritance, but it is not matched
+by `--project`.
 
 ## Matching Patterns
 

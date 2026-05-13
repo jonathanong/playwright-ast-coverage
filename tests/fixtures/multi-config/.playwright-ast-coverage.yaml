@@ -1,0 +1,3 @@
+frontendRoot: web/app
+selectorAttributes:
+  - data-pw

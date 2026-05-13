@@ -5,20 +5,13 @@ use std::path::{Path, PathBuf};
 const DEFAULT_CONFIG_FILE: &str = ".playwright-ast-coverage.yaml";
 const DEFAULT_FRONTEND_ROOT: &str = "app";
 const DEFAULT_SELECTOR_ATTRIBUTES: &[&str] = &["data-testid", "data-pw"];
-const PLAYWRIGHT_CONFIG_NAMES: &[&str] = &[
-    "playwright.config.ts",
-    "playwright.config.mts",
-    "playwright.config.cts",
-    "playwright.config.js",
-    "playwright.config.mjs",
-    "playwright.config.cjs",
-];
+const PLAYWRIGHT_CONFIG_EXTENSIONS: &[&str] = &["ts", "mts", "cts", "js", "mjs", "cjs"];
 
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 struct FileConfig {
     frontend_root: Option<String>,
-    playwright_config: Option<String>,
+    playwright_config: Option<OneOrMany>,
     test_include: Vec<String>,
     test_exclude: Vec<String>,
     ignore_routes: Vec<String>,
@@ -29,10 +22,18 @@ struct FileConfig {
     selector_exclude: Vec<String>,
 }
 
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum OneOrMany {
+    One(String),
+    Many(Vec<String>),
+}
+
 #[derive(Clone)]
 pub struct Settings {
     pub frontend_root: String,
-    pub playwright_config: Option<PathBuf>,
+    pub playwright_configs: Vec<PathBuf>,
+    pub project: Option<String>,
     pub test_include: Vec<String>,
     pub test_exclude: Vec<String>,
     pub ignore_routes: Vec<String>,
@@ -46,18 +47,24 @@ pub struct Settings {
 pub fn load_settings(
     root: &Path,
     cli_config: Option<&Path>,
-    cli_playwright_config: Option<&Path>,
+    cli_playwright_configs: &[PathBuf],
+    cli_project: Option<String>,
 ) -> Result<Settings> {
     let file_config = load_file_config(root, cli_config)?;
-    let playwright_config = cli_playwright_config
-        .map(|path| resolve(root, path))
-        .or_else(|| {
-            file_config
-                .playwright_config
-                .as_deref()
-                .map(|path| resolve(root, Path::new(path)))
-        })
-        .or_else(|| find_default_playwright_config(root));
+    let playwright_configs = if !cli_playwright_configs.is_empty() {
+        cli_playwright_configs
+            .iter()
+            .map(|path| resolve(root, path))
+            .collect()
+    } else if let Some(paths) = file_config.playwright_config.as_ref() {
+        paths
+            .values()
+            .iter()
+            .map(|path| resolve(root, Path::new(path)))
+            .collect()
+    } else {
+        find_default_playwright_configs(root)?
+    };
 
     let frontend_root = file_config
         .frontend_root
@@ -68,7 +75,8 @@ pub fn load_settings(
 
     Ok(Settings {
         frontend_root,
-        playwright_config,
+        playwright_configs,
+        project: cli_project,
         test_include: file_config.test_include,
         test_exclude: file_config.test_exclude,
         ignore_routes: file_config.ignore_routes,
@@ -80,6 +88,15 @@ pub fn load_settings(
         selector_include: file_config.selector_include,
         selector_exclude: file_config.selector_exclude,
     })
+}
+
+impl OneOrMany {
+    fn values(&self) -> Vec<String> {
+        match self {
+            OneOrMany::One(value) => vec![value.clone()],
+            OneOrMany::Many(values) => values.clone(),
+        }
+    }
 }
 
 fn load_file_config(root: &Path, cli_config: Option<&Path>) -> Result<FileConfig> {
@@ -106,11 +123,35 @@ fn resolve(root: &Path, path: &Path) -> PathBuf {
     }
 }
 
-fn find_default_playwright_config(root: &Path) -> Option<PathBuf> {
-    PLAYWRIGHT_CONFIG_NAMES
-        .iter()
-        .map(|name| root.join(name))
-        .find(|path| path.exists())
+fn find_default_playwright_configs(root: &Path) -> Result<Vec<PathBuf>> {
+    if !root.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut configs = Vec::new();
+    for entry in std::fs::read_dir(root)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_file() || !is_playwright_config_name(&path) {
+            continue;
+        }
+        configs.push(path);
+    }
+    configs.sort();
+    Ok(configs)
+}
+
+fn is_playwright_config_name(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    let Some(extension) = path.extension().and_then(|extension| extension.to_str()) else {
+        return false;
+    };
+
+    name.starts_with("playwright")
+        && name.contains(".config.")
+        && PLAYWRIGHT_CONFIG_EXTENSIONS.contains(&extension)
 }
 
 fn default_selector_attributes() -> Vec<String> {
@@ -128,9 +169,9 @@ mod tests {
     #[test]
     fn missing_default_config_uses_defaults() {
         let root = fixture_path(&["config", "missing-default"]);
-        let settings = load_settings(&root, None, None).unwrap();
+        let settings = load_settings(&root, None, &[], None).unwrap();
         assert_eq!(settings.frontend_root, "app");
-        assert!(settings.playwright_config.is_none());
+        assert!(settings.playwright_configs.is_empty());
         assert_eq!(settings.selector_attributes, vec!["data-testid", "data-pw"]);
         assert_eq!(settings.selector_roots, vec!["app"]);
     }
@@ -138,7 +179,7 @@ mod tests {
     #[test]
     fn explicit_missing_config_errors() {
         let root = fixture_path(&["config", "missing-default"]);
-        let err = load_settings(&root, Some(Path::new("missing.yaml")), None)
+        let err = load_settings(&root, Some(Path::new("missing.yaml")), &[], None)
             .err()
             .expect("expected missing config to fail");
         assert!(err.to_string().contains("config file does not exist"));
@@ -147,7 +188,7 @@ mod tests {
     #[test]
     fn reads_yaml_and_finds_default_playwright_config() {
         let root = fixture_path(&["config", "full"]);
-        let settings = load_settings(&root, None, None).unwrap();
+        let settings = load_settings(&root, None, &[], None).unwrap();
         assert_eq!(settings.frontend_root, "web/app");
         assert_eq!(settings.test_exclude, vec!["**/skip/**"]);
         assert_eq!(settings.navigation_helpers, vec!["navigateTo"]);
@@ -155,18 +196,18 @@ mod tests {
         assert_eq!(settings.selector_include, vec!["web/components/**/*.tsx"]);
         assert_eq!(settings.selector_exclude, vec!["**/*.test.tsx"]);
         assert_eq!(
-            settings.playwright_config,
-            Some(root.join("playwright.config.mts"))
+            settings.playwright_configs,
+            vec![root.join("playwright.config.mts")]
         );
     }
 
     #[test]
     fn yaml_playwright_config_path_is_resolved() {
         let root = fixture_path(&["config", "yaml-playwright-config"]);
-        let settings = load_settings(&root, None, None).unwrap();
+        let settings = load_settings(&root, None, &[], None).unwrap();
         assert_eq!(
-            settings.playwright_config,
-            Some(root.join("configs/playwright.config.ts"))
+            settings.playwright_configs,
+            vec![root.join("configs/playwright.config.ts")]
         );
     }
 
@@ -174,14 +215,14 @@ mod tests {
     fn cli_playwright_config_absolute_path_is_preserved() {
         let root = fixture_path(&["config", "missing-default"]);
         let config = root.join("custom.config.ts");
-        let settings = load_settings(&root, None, Some(&config)).unwrap();
-        assert_eq!(settings.playwright_config, Some(config));
+        let settings = load_settings(&root, None, std::slice::from_ref(&config), None).unwrap();
+        assert_eq!(settings.playwright_configs, vec![config]);
     }
 
     #[test]
     fn invalid_yaml_errors() {
         let root = fixture_path(&["config", "invalid-yaml"]);
-        let err = load_settings(&root, None, None)
+        let err = load_settings(&root, None, &[], None)
             .err()
             .expect("expected invalid YAML to fail");
         assert!(!err.to_string().is_empty());
@@ -190,21 +231,54 @@ mod tests {
     #[test]
     fn selector_attributes_can_be_custom_or_disabled() {
         let custom = fixture_path(&["config", "selector-attributes-custom"]);
-        let settings = load_settings(&custom, None, None).unwrap();
+        let settings = load_settings(&custom, None, &[], None).unwrap();
         assert_eq!(
             settings.selector_attributes,
             vec!["data-test", "data-test-id"]
         );
 
         let disabled = fixture_path(&["config", "selector-attributes-disabled"]);
-        let settings = load_settings(&disabled, None, None).unwrap();
+        let settings = load_settings(&disabled, None, &[], None).unwrap();
         assert!(settings.selector_attributes.is_empty());
     }
 
     #[test]
     fn old_default_config_name_is_ignored() {
         let root = fixture_path(&["config", "old-name"]);
-        let settings = load_settings(&root, None, None).unwrap();
+        let settings = load_settings(&root, None, &[], None).unwrap();
         assert_eq!(settings.frontend_root, "app");
+    }
+
+    #[test]
+    fn default_discovery_finds_all_root_playwright_configs() {
+        let root = fixture_path(&["config", "multi-playwright-config"]);
+        let settings = load_settings(&root, None, &[], None).unwrap();
+        assert_eq!(
+            settings.playwright_configs,
+            vec![
+                root.join("playwright.config.mts"),
+                root.join("playwright.storybook.config.mts"),
+            ]
+        );
+    }
+
+    #[test]
+    fn yaml_playwright_config_array_paths_are_resolved() {
+        let root = fixture_path(&["config", "yaml-playwright-config-array"]);
+        let settings = load_settings(&root, None, &[], None).unwrap();
+        assert_eq!(
+            settings.playwright_configs,
+            vec![
+                root.join("playwright.config.mts"),
+                root.join("playwright.storybook.config.mts"),
+            ]
+        );
+    }
+
+    #[test]
+    fn playwright_config_name_filter_rejects_paths_without_file_or_extension() {
+        assert!(!is_playwright_config_name(Path::new("")));
+        assert!(!is_playwright_config_name(Path::new("playwright")));
+        assert!(!is_playwright_config_name(Path::new("playwright.config")));
     }
 }

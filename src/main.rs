@@ -11,7 +11,7 @@ mod test_support;
 #[cfg(not(test))]
 use anyhow::Context;
 use anyhow::Result;
-use clap::{Parser, ValueEnum};
+use clap::{Parser, Subcommand};
 use config::Settings;
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use rayon::prelude::*;
@@ -26,26 +26,33 @@ use walkdir::WalkDir;
 #[derive(Parser)]
 #[command(author, version, about)]
 struct Cli {
-    #[arg(long, default_value = ".")]
+    #[arg(long, default_value = ".", global = true)]
     root: PathBuf,
 
-    #[arg(long)]
+    #[arg(long, global = true)]
     config: Option<PathBuf>,
 
-    #[arg(long)]
-    playwright_config: Option<PathBuf>,
+    #[arg(long, global = true)]
+    playwright_config: Vec<PathBuf>,
 
-    #[arg(long, value_enum, default_value_t = Mode::Coverage)]
-    mode: Mode,
+    #[arg(long, global = true)]
+    project: Option<String>,
 
-    #[arg(long)]
+    #[arg(long, global = true)]
     json: bool,
+
+    #[command(subcommand)]
+    command: Command,
 }
 
-#[derive(Clone, Copy, ValueEnum)]
-enum Mode {
-    Coverage,
+#[derive(Subcommand)]
+enum Command {
+    Check,
     Edges,
+    Related {
+        #[arg(required = true, num_args = 1..)]
+        files: Vec<PathBuf>,
+    },
 }
 
 #[derive(Serialize)]
@@ -113,6 +120,11 @@ struct EdgeReport {
     edges: Vec<Edge>,
 }
 
+#[derive(Serialize)]
+struct RelatedReport {
+    tests: Vec<String>,
+}
+
 struct Analysis {
     coverage: CoverageReport,
     edges: EdgeReport,
@@ -160,12 +172,12 @@ fn run() -> Result<ExitCode> {
     let settings = config::load_settings(
         &root,
         cli.config.as_deref(),
-        cli.playwright_config.as_deref(),
+        &cli.playwright_config,
+        cli.project.clone(),
     )?;
     let analysis = analyze(&root, &settings)?;
-
-    match cli.mode {
-        Mode::Coverage => {
+    match cli.command {
+        Command::Check => {
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&analysis.coverage)?);
             } else {
@@ -179,11 +191,20 @@ fn run() -> Result<ExitCode> {
                 Ok(ExitCode::SUCCESS)
             }
         }
-        Mode::Edges => {
+        Command::Edges => {
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&analysis.edges)?);
             } else {
                 print_edges_text(&analysis.edges);
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Related { files } => {
+            let related = build_related_report(&root, &analysis.edges.edges, &files);
+            if cli.json {
+                println!("{}", serde_json::to_string_pretty(&related)?);
+            } else {
+                print_related_text(&related);
             }
             Ok(ExitCode::SUCCESS)
         }
@@ -203,7 +224,11 @@ fn analyze(root: &Path, settings: &Settings) -> Result<Analysis> {
         );
     }
 
-    let playwright = playwright_config::load(root, settings.playwright_config.as_deref())?;
+    let playwright = playwright_config::load_many(
+        root,
+        &settings.playwright_configs,
+        settings.project.as_deref(),
+    )?;
     let test_files = discover_test_files(root, settings, &playwright)?;
     let base_urls = playwright.base_urls();
     let test_id_attributes = playwright.test_id_attributes();
@@ -607,6 +632,53 @@ fn print_edges_text(report: &EdgeReport) {
     }
 }
 
+fn build_related_report(root: &Path, edges: &[Edge], files: &[PathBuf]) -> RelatedReport {
+    let related_files: BTreeSet<String> = files
+        .iter()
+        .map(|file| related_input_file(root, file))
+        .collect();
+    let mut tests = BTreeSet::new();
+
+    for edge in edges {
+        match edge {
+            Edge::Route {
+                test_file,
+                route_file,
+                ..
+            } if related_files.contains(route_file) => {
+                tests.insert(test_file.clone());
+            }
+            Edge::Selector {
+                test_file,
+                app_file,
+                ..
+            } if related_files.contains(app_file) => {
+                tests.insert(test_file.clone());
+            }
+            _ => {}
+        }
+    }
+
+    RelatedReport {
+        tests: tests.into_iter().collect(),
+    }
+}
+
+fn related_input_file(root: &Path, file: &Path) -> String {
+    if file.is_absolute() {
+        return relative_string(root, file);
+    }
+
+    let rooted = root.join(file);
+    relative_string(root, &rooted)
+}
+
+fn print_related_text(report: &RelatedReport) {
+    for test in &report.tests {
+        println!("{test}");
+    }
+}
+
 fn normalize_url(raw: &str, base_urls: &[String]) -> Option<String> {
     if raw.starts_with("//") {
         return None;
@@ -756,7 +828,8 @@ mod tests {
         let root = fixture_path(&["main", "selector-source"]);
         let settings = Settings {
             frontend_root: "web/app".to_string(),
-            playwright_config: None,
+            playwright_configs: vec![],
+            project: None,
             test_include: vec![],
             test_exclude: vec![],
             ignore_routes: vec![],
@@ -788,7 +861,8 @@ mod tests {
         ];
         let settings = Settings {
             frontend_root: "web/app".to_string(),
-            playwright_config: None,
+            playwright_configs: vec![],
+            project: None,
             test_include: vec![],
             test_exclude: vec![],
             ignore_routes: vec![],
@@ -813,7 +887,8 @@ mod tests {
         }];
         let settings = Settings {
             frontend_root: "web/app".to_string(),
-            playwright_config: None,
+            playwright_configs: vec![],
+            project: None,
             test_include: vec![],
             test_exclude: vec![],
             ignore_routes: vec![],
@@ -851,7 +926,8 @@ mod tests {
         ];
         let settings = Settings {
             frontend_root: "web/app".to_string(),
-            playwright_config: None,
+            playwright_configs: vec![],
+            project: None,
             test_include: vec![],
             test_exclude: vec![],
             ignore_routes: vec![],
@@ -884,7 +960,8 @@ mod tests {
         }];
         let settings = Settings {
             frontend_root: "web/app".to_string(),
-            playwright_config: None,
+            playwright_configs: vec![],
+            project: None,
             test_include: vec![],
             test_exclude: vec![],
             ignore_routes: vec![],
@@ -914,7 +991,8 @@ mod tests {
         }];
         let settings = Settings {
             frontend_root: "web/app".to_string(),
-            playwright_config: None,
+            playwright_configs: vec![],
+            project: None,
             test_include: vec![],
             test_exclude: vec![],
             ignore_routes: vec![],
@@ -934,7 +1012,8 @@ mod tests {
         let root = fixture_path(&["main", "analyze-basic"]);
         let settings = Settings {
             frontend_root: "web/app".to_string(),
-            playwright_config: None,
+            playwright_configs: vec![],
+            project: None,
             test_include: vec!["tests/**/*.spec.ts".to_string()],
             test_exclude: vec![],
             ignore_routes: vec![],
@@ -955,7 +1034,8 @@ mod tests {
         let root = fixture_path(&["main", "invalid-test-source"]);
         let settings = Settings {
             frontend_root: "web/app".to_string(),
-            playwright_config: None,
+            playwright_configs: vec![],
+            project: None,
             test_include: vec!["tests/**/*.spec.ts".to_string()],
             test_exclude: vec![],
             ignore_routes: vec![],
@@ -972,7 +1052,8 @@ mod tests {
         let root = fixture_path(&["main", "invalid-selector-source"]);
         let settings = Settings {
             frontend_root: "web/app".to_string(),
-            playwright_config: None,
+            playwright_configs: vec![],
+            project: None,
             test_include: vec![],
             test_exclude: vec![],
             ignore_routes: vec![],
@@ -1037,5 +1118,39 @@ mod tests {
             ],
         };
         print_edges_text(&edges);
+    }
+
+    #[test]
+    fn related_report_matches_route_and_selector_edges() {
+        let root = Path::new("/repo");
+        let edges = vec![
+            Edge::Route {
+                test_file: "tests/e2e/route.spec.ts".to_string(),
+                route_file: "web/app/page.tsx".to_string(),
+                route: "/".to_string(),
+                url: "/".to_string(),
+            },
+            Edge::Selector {
+                test_file: "tests/e2e/selector.spec.ts".to_string(),
+                app_file: "web/app/components/save.tsx".to_string(),
+                attribute: "data-testid".to_string(),
+                value: "save".to_string(),
+                selector: "getByTestId(save)".to_string(),
+            },
+        ];
+        let report = build_related_report(
+            root,
+            &edges,
+            &[
+                PathBuf::from("/repo/web/app/page.tsx"),
+                PathBuf::from("./web/app/components/save.tsx"),
+            ],
+        );
+
+        assert_eq!(
+            report.tests,
+            vec!["tests/e2e/route.spec.ts", "tests/e2e/selector.spec.ts"]
+        );
+        print_related_text(&report);
     }
 }
