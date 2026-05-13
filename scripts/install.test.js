@@ -11,12 +11,13 @@ const {
   install,
   parseChecksum,
   platformTarget,
+  supportedGlibc,
 } = require("./install");
 
-function glibcReport() {
+function glibcReport(version = "2.39") {
   return {
     getReport() {
-      return { header: { glibcVersionRuntime: "2.39" } };
+      return { header: { glibcVersionRuntime: version } };
     },
   };
 }
@@ -33,14 +34,22 @@ test("maps supported platforms to Rust targets", () => {
   assert.equal(platformTarget("darwin", "x64"), "x86_64-apple-darwin");
   assert.equal(platformTarget("darwin", "arm64"), "aarch64-apple-darwin");
   assert.equal(platformTarget("win32", "x64"), "x86_64-pc-windows-msvc");
-  assert.equal(platformTarget("linux", "x64", glibcReport()), "x86_64-unknown-linux-gnu");
-  assert.equal(platformTarget("linux", "arm64", glibcReport()), "aarch64-unknown-linux-gnu");
+  assert.equal(platformTarget("linux", "x64", glibcReport("2.35")), "x86_64-unknown-linux-gnu");
+  assert.equal(platformTarget("linux", "arm64", glibcReport("2.39")), "aarch64-unknown-linux-gnu");
 });
 
 test("rejects unsupported platform targets", () => {
   assert.equal(platformTarget("linux", "x64", muslReport()), null);
+  assert.equal(platformTarget("linux", "x64", glibcReport("2.31")), null);
   assert.equal(platformTarget("freebsd", "x64"), null);
   assert.equal(platformTarget("win32", "arm64"), null);
+});
+
+test("checks minimum glibc version", () => {
+  assert.equal(supportedGlibc(glibcReport("2.34")), false);
+  assert.equal(supportedGlibc(glibcReport("2.35")), true);
+  assert.equal(supportedGlibc(glibcReport("3.0")), true);
+  assert.equal(supportedGlibc(muslReport()), false);
 });
 
 test("formats release asset names", () => {
@@ -103,7 +112,6 @@ test("installs only the requested platform binary and verifies checksum", async 
     assert.equal(installed, join(vendorDir, "playwright-ast-coverage"));
     assert.deepEqual(requests.sort(), [`/${asset}`, `/${asset}.sha256`].sort());
     assert.equal(await readFile(installed, "utf8"), content.toString("utf8"));
-    assert.equal(await readFile(join(vendorDir, "target.txt"), "utf8"), `${target}\n`);
     if (process.platform !== "win32") {
       assert.equal((await stat(installed)).mode & 0o111, 0o111);
     }

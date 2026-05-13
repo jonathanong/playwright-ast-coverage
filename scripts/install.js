@@ -1,16 +1,19 @@
 #!/usr/bin/env node
 
 const { createHash } = require("node:crypto");
-const { createWriteStream } = require("node:fs");
-const { chmod, copyFile, mkdir, readFile, rename, rm, writeFile } = require("node:fs/promises");
+const { createReadStream, createWriteStream } = require("node:fs");
+const { chmod, copyFile, mkdir, readFile, rename, rm } = require("node:fs/promises");
 const http = require("node:http");
 const https = require("node:https");
 const { basename, join } = require("node:path");
+const { pipeline } = require("node:stream/promises");
 const { fileURLToPath } = require("node:url");
 
 const PACKAGE_ROOT = join(__dirname, "..");
 const VENDOR_DIR = join(PACKAGE_ROOT, "vendor");
 const REPOSITORY = "jonathanong/playwright-ast-coverage";
+const DOWNLOAD_TIMEOUT_MS = 30_000;
+const MIN_GLIBC = [2, 35];
 
 function packageVersion() {
   return require(join(PACKAGE_ROOT, "package.json")).version;
@@ -27,7 +30,7 @@ function platformTarget(platform = process.platform, arch = process.arch, report
     return "x86_64-pc-windows-msvc";
   }
   if (platform === "linux" && (arch === "x64" || arch === "arm64")) {
-    if (!isGlibc(report)) {
+    if (!supportedGlibc(report)) {
       return null;
     }
     return arch === "x64" ? "x86_64-unknown-linux-gnu" : "aarch64-unknown-linux-gnu";
@@ -36,8 +39,24 @@ function platformTarget(platform = process.platform, arch = process.arch, report
 }
 
 function isGlibc(report = process.report) {
+  return glibcVersion(report) !== null;
+}
+
+function glibcVersion(report = process.report) {
   const header = typeof report?.getReport === "function" ? report.getReport().header : {};
-  return Boolean(header?.glibcVersionRuntime || header?.glibcVersionCompiler);
+  return header?.glibcVersionRuntime || header?.glibcVersionCompiler || null;
+}
+
+function supportedGlibc(report = process.report) {
+  const version = glibcVersion(report);
+  if (!version) {
+    return false;
+  }
+  const [major, minor] = version.split(".").map((part) => Number.parseInt(part, 10));
+  if (!Number.isInteger(major) || !Number.isInteger(minor)) {
+    return false;
+  }
+  return major > MIN_GLIBC[0] || (major === MIN_GLIBC[0] && minor >= MIN_GLIBC[1]);
 }
 
 function assetName(version, target) {
@@ -73,16 +92,22 @@ function download(url, destination, redirects = 0) {
     return copyFile(fileURLToPath(url), destination);
   }
 
+  return request(url, async (response) => {
+    await pipeline(response, createWriteStream(destination));
+  }, redirects);
+}
+
+function request(url, handleResponse, redirects = 0) {
   return new Promise((resolve, reject) => {
     const client = url.startsWith("http://") ? http : https;
-    client.get(url, (response) => {
+    const req = client.get(url, (response) => {
       if ([301, 302, 303, 307, 308].includes(response.statusCode || 0)) {
         response.resume();
         if (redirects >= 5 || !response.headers.location) {
           reject(new Error(`Too many redirects while downloading ${url}`));
           return;
         }
-        download(new URL(response.headers.location, url).toString(), destination, redirects + 1)
+        request(new URL(response.headers.location, url).toString(), handleResponse, redirects + 1)
           .then(resolve, reject);
         return;
       }
@@ -93,17 +118,22 @@ function download(url, destination, redirects = 0) {
         return;
       }
 
-      const file = createWriteStream(destination);
-      response.pipe(file);
-      file.on("finish", () => file.close(resolve));
-      file.on("error", reject);
-    }).on("error", reject);
+      Promise.resolve(handleResponse(response)).then(resolve, reject);
+    });
+
+    req.setTimeout(DOWNLOAD_TIMEOUT_MS, () => {
+      req.destroy(new Error(`Download timed out after ${DOWNLOAD_TIMEOUT_MS}ms: ${url}`));
+    });
+    req.on("error", reject);
   });
 }
 
 async function sha256(path) {
-  const data = await readFile(path);
-  return createHash("sha256").update(data).digest("hex");
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(path)) {
+    hash.update(chunk);
+  }
+  return hash.digest("hex");
 }
 
 async function install(options = {}) {
@@ -112,6 +142,7 @@ async function install(options = {}) {
   if (!target) {
     throw new Error(
       `Unsupported platform ${process.platform}/${process.arch}. `
+        + "Linux npm installs require glibc 2.35 or newer. "
         + "Install with `cargo install playwright-ast-coverage` instead.",
     );
   }
@@ -139,7 +170,6 @@ async function install(options = {}) {
       await chmod(temp, 0o755);
     }
     await rename(temp, destination);
-    await writeFile(join(vendorDir, "target.txt"), `${target}\n`);
     return destination;
   } catch (error) {
     await rm(temp, { force: true });
@@ -148,14 +178,16 @@ async function install(options = {}) {
 }
 
 async function fetchText(url) {
-  const tempDir = await import("node:os").then((os) => os.tmpdir());
-  const temp = join(tempDir, `playwright-ast-coverage-${process.pid}-${Date.now()}.txt`);
-  try {
-    await download(url, temp);
-    return await readFile(temp, "utf8");
-  } finally {
-    await rm(temp, { force: true });
+  if (url.startsWith("file://")) {
+    return readFile(fileURLToPath(url), "utf8");
   }
+  const chunks = [];
+  await request(url, async (response) => {
+    for await (const chunk of response) {
+      chunks.push(chunk);
+    }
+  });
+  return Buffer.concat(chunks).toString("utf8");
 }
 
 async function main() {
@@ -178,4 +210,5 @@ module.exports = {
   isGlibc,
   parseChecksum,
   platformTarget,
+  supportedGlibc,
 };

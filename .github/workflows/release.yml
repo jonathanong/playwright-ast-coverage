@@ -1,26 +1,95 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Semver bump type
+        type: choice
+        required: true
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
 
 permissions:
   contents: write
   id-token: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  validate:
-    name: Validate
+  prepare:
+    name: Prepare release
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.version.outputs.version }}
+      version: ${{ steps.bump.outputs.version }}
+    steps:
+      - name: Check RELEASE_TOKEN is set
+        run: |
+          if [ -z "${{ secrets.RELEASE_TOKEN }}" ]; then
+            echo "::error::RELEASE_TOKEN secret is not set. This workflow requires a PAT that can push release commits and tags to main." >&2
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: main
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump versions, commit, and tag
+        id: bump
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm version "${{ inputs.bump }}" --no-git-tag-version
+          version="$(node -p "require('./package.json').version")"
+          node -e "
+            const fs = require('node:fs');
+            const version = process.argv[1];
+            const cargo = fs.readFileSync('Cargo.toml', 'utf8')
+              .replace(/^version = \".*\"$/m, \`version = \"\${version}\"\`);
+            fs.writeFileSync('Cargo.toml', cargo);
+          " "$version"
+          cargo update -w
+          git add Cargo.toml Cargo.lock package.json
+          git commit -m "chore(release): v$version"
+          git tag -a "v$version" -m "v$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Push release commit and tag
+        run: git push origin HEAD:main --follow-tags
+
+  validate:
+    name: Validate
+    needs: prepare
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: v${{ needs.prepare.outputs.version }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -37,16 +106,14 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Verify versions
-        id: version
         shell: bash
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME#v}"
+          tag="${{ needs.prepare.outputs.version }}"
           cargo_version="$(cargo metadata --no-deps --format-version 1 | node -e "let d=''; process.stdin.on('data', c => d += c); process.stdin.on('end', () => console.log(JSON.parse(d).packages[0].version));")"
           npm_version="$(node -p "require('./package.json').version")"
           test "$tag" = "$cargo_version"
           test "$tag" = "$npm_version"
-          echo "version=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -68,35 +135,39 @@ jobs:
 
   build:
     name: Build ${{ matrix.target }}
-    needs: validate
+    needs:
+      - prepare
+      - validate
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: macos-15-intel
             target: x86_64-apple-darwin
-            artifact: playwright-ast-coverage-v${{ needs.validate.outputs.version }}-x86_64-apple-darwin
+            artifact: playwright-ast-coverage-v${{ needs.prepare.outputs.version }}-x86_64-apple-darwin
             binary: playwright-ast-coverage
           - os: macos-15
             target: aarch64-apple-darwin
-            artifact: playwright-ast-coverage-v${{ needs.validate.outputs.version }}-aarch64-apple-darwin
+            artifact: playwright-ast-coverage-v${{ needs.prepare.outputs.version }}-aarch64-apple-darwin
             binary: playwright-ast-coverage
-          - os: ubuntu-24.04
+          - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            artifact: playwright-ast-coverage-v${{ needs.validate.outputs.version }}-x86_64-unknown-linux-gnu
+            artifact: playwright-ast-coverage-v${{ needs.prepare.outputs.version }}-x86_64-unknown-linux-gnu
             binary: playwright-ast-coverage
-          - os: ubuntu-24.04-arm
+          - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
-            artifact: playwright-ast-coverage-v${{ needs.validate.outputs.version }}-aarch64-unknown-linux-gnu
+            artifact: playwright-ast-coverage-v${{ needs.prepare.outputs.version }}-aarch64-unknown-linux-gnu
             binary: playwright-ast-coverage
           - os: windows-2025
             target: x86_64-pc-windows-msvc
-            artifact: playwright-ast-coverage-v${{ needs.validate.outputs.version }}-x86_64-pc-windows-msvc.exe
+            artifact: playwright-ast-coverage-v${{ needs.prepare.outputs.version }}-x86_64-pc-windows-msvc.exe
             binary: playwright-ast-coverage.exe
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: v${{ needs.prepare.outputs.version }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -132,12 +203,15 @@ jobs:
   publish:
     name: Publish
     needs:
+      - prepare
       - validate
       - build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: v${{ needs.prepare.outputs.version }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -156,8 +230,8 @@ jobs:
 
       - name: Create GitHub release
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: gh release create "v${{ needs.prepare.outputs.version }}" dist/* --title "v${{ needs.prepare.outputs.version }}" --generate-notes
 
       - name: Smoke test npm tarball install
         shell: bash
@@ -169,12 +243,10 @@ jobs:
           mkdir npm-smoke
           cd npm-smoke
           npm init -y
-          npm install "../playwright-ast-coverage-${{ needs.validate.outputs.version }}.tgz"
+          npm install "../playwright-ast-coverage-${{ needs.prepare.outputs.version }}.tgz"
           npx playwright-ast-coverage --version
 
       - name: Publish npm package
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --provenance --access public
 
       - name: Publish Cargo crate
