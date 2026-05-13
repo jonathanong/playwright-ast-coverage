@@ -185,8 +185,8 @@ Route matching rules:
 - `:name` matches one path segment.
 - A final `*` matches one or more path segments.
 - A final `**` matches zero or more path segments.
-- Queries, fragments, and a trailing slash on non-root URLs are ignored before
-  matching.
+- During route matching, queries, fragments, and a trailing slash on non-root
+  URLs are ignored after local URL normalization.
 - Dynamic and wildcard segments do not match empty path segments from duplicate
   slashes.
 - `ignoreRoutes` entries are compared to derived route patterns, not concrete
