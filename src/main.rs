@@ -186,7 +186,7 @@ struct RouteIndex {
 
 #[derive(Default)]
 struct SelectorIndex<'a> {
-    exact: HashMap<(String, String), Vec<&'a AppSelectorTarget<'a>>>,
+    exact: HashMap<String, HashMap<String, Vec<&'a AppSelectorTarget<'a>>>>,
     by_attribute: HashMap<String, Vec<&'a AppSelectorTarget<'a>>>,
     templates_by_attribute: HashMap<String, Vec<&'a AppSelectorTarget<'a>>>,
 }
@@ -478,7 +478,9 @@ fn selector_index<'a>(targets: &'a [AppSelectorTarget<'a>]) -> SelectorIndex<'a>
         if let selectors::AppSelectorValue::Exact(value) = &target.selector.value {
             index
                 .exact
-                .entry((target.selector.attribute.clone(), value.clone()))
+                .entry(target.selector.attribute.clone())
+                .or_default()
+                .entry(value.clone())
                 .or_default()
                 .push(target);
         }
@@ -517,11 +519,10 @@ impl<'a> SelectorIndex<'a> {
     ) -> Vec<&'a AppSelectorTarget<'a>> {
         let mut matches = Vec::new();
         if let Some(value) = playwright_selector.exact_value() {
-            if let Some(exact) = self
-                .exact
-                .get(&(playwright_selector.attribute.clone(), value.to_string()))
-            {
-                matches.extend(exact.iter().copied());
+            if let Some(by_value) = self.exact.get(&playwright_selector.attribute) {
+                if let Some(exact) = by_value.get(value) {
+                    matches.extend(exact.iter().copied());
+                }
             }
             let Some(attribute_targets) = self
                 .templates_by_attribute
@@ -635,7 +636,7 @@ fn discover_test_files(
 
     let yaml_exclude = build_globset(&settings.test_exclude)?;
     let mut files: BTreeMap<PathBuf, BTreeSet<TestProjectContext>> = BTreeMap::new();
-    let mut projects_by_test_dir: BTreeMap<PathBuf, Vec<&TestProjectDiscovery>> = BTreeMap::new();
+    let mut projects_by_test_dir: HashMap<PathBuf, Vec<&TestProjectDiscovery>> = HashMap::new();
 
     for project_discovery in &project_discovery {
         if !project_discovery.test_dir.exists() {
@@ -655,6 +656,7 @@ fn discover_test_files(
             }
             let rel_test = relative_string(&test_dir, &path);
             let abs = slash_path(&path);
+            let mut contexts_to_add = Vec::new();
             for project_discovery in &projects {
                 let included = project_discovery.include.is_match(&rel_root)
                     || project_discovery.include.is_match(&rel_test)
@@ -663,11 +665,11 @@ fn discover_test_files(
                     || project_discovery.ignore.is_match(&rel_test)
                     || project_discovery.ignore.is_match(&abs);
                 if included && !ignored {
-                    files
-                        .entry(path.clone())
-                        .or_default()
-                        .insert(project_discovery.context.clone());
+                    contexts_to_add.push(project_discovery.context.clone());
                 }
+            }
+            if !contexts_to_add.is_empty() {
+                files.entry(path).or_default().extend(contexts_to_add);
             }
         }
     }
