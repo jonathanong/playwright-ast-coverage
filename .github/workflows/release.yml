@@ -189,7 +189,19 @@ jobs:
         run: |
           set -euo pipefail
           cp "target/${{ matrix.target }}/release/${{ matrix.binary }}" "${{ matrix.artifact }}"
-          shasum -a 256 "${{ matrix.artifact }}" > "${{ matrix.artifact }}.sha256"
+
+      - name: Generate checksum (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: shasum -a 256 "${{ matrix.artifact }}" > "${{ matrix.artifact }}.sha256"
+
+      - name: Generate checksum (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $artifact = "${{ matrix.artifact }}"
+          $hash = (Get-FileHash -Algorithm SHA256 -Path $artifact).Hash.ToLowerInvariant()
+          "$hash  $artifact" | Set-Content -Encoding ascii -NoNewline "$artifact.sha256"
 
       - name: Upload asset artifact
         uses: actions/upload-artifact@v7
