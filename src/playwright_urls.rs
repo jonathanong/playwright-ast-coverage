@@ -146,10 +146,14 @@ impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
                 self.insert(url);
             }
         } else if callee_matches_navigation_helper(&callee, self.navigation_helpers) {
-            for url in candidate_literals(&call.arguments, self.source, self.static_zero_arg_paths)
-            {
-                if is_candidate_url(&url) {
-                    self.insert(url);
+            for argument in &call.arguments {
+                let urls =
+                    argument_candidate_literals(argument, self.source, self.static_zero_arg_paths);
+                if !urls.is_empty() {
+                    for url in urls {
+                        self.insert(url);
+                    }
+                    break;
                 }
             }
         }
@@ -469,6 +473,21 @@ fn argument_literals(
     }
 }
 
+fn argument_candidate_literals(
+    argument: &Argument<'_>,
+    source: &str,
+    static_zero_arg_paths: &HashMap<String, Vec<String>>,
+) -> Vec<String> {
+    match argument {
+        Argument::ObjectExpression(_) => Vec::new(),
+        _ => candidate_literals(
+            std::slice::from_ref(argument),
+            source,
+            static_zero_arg_paths,
+        ),
+    }
+}
+
 fn collect_static_zero_arg_paths(source: &str) -> HashMap<String, Vec<String>> {
     let pattern = regex::Regex::new(
         r#"([A-Za-z_$][\w$]*)\s*:\s*\(\s*\)\s*=>\s*(?:"([^"`]+)"|'([^'`]+)'|`([^'"`]+)`)"#,
@@ -624,7 +643,11 @@ fn regex_path_sample(pattern: &str) -> Option<String> {
                 consume_regex_quantifier(&mut chars);
             }
             '.' => {
-                sample.push('x');
+                if sample_is_absolute_url_host(&sample) {
+                    sample.push('.');
+                } else {
+                    sample.push('x');
+                }
                 consume_regex_quantifier(&mut chars);
             }
             '$' => break,
@@ -679,6 +702,16 @@ fn consume_regex_quantifier(chars: &mut std::iter::Peekable<std::str::Chars<'_>>
 
 fn is_literal_path_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || matches!(ch, '/' | '-' | '_' | '.' | '~' | '%' | ':')
+}
+
+fn sample_is_absolute_url_host(sample: &str) -> bool {
+    let Some(after_scheme) = sample
+        .strip_prefix("http://")
+        .or_else(|| sample.strip_prefix("https://"))
+    else {
+        return false;
+    };
+    !after_scheme.contains('/')
 }
 
 #[cfg(test)]
@@ -756,7 +789,16 @@ mod tests {
     fn helper_url_extraction_skips_non_url_literals() {
         let src = fixture_source(&["playwright_urls", "helper-nested-url.ts"]);
         let urls = extract_playwright_url_literals_with_helpers(&src, &["navigateTo".to_string()]);
-        assert_eq!(urls, vec!["/dynamic", "/fallback"]);
+        assert_eq!(urls, vec!["/dynamic"]);
+    }
+
+    #[test]
+    fn navigation_helpers_use_only_the_target_argument() {
+        let urls = extract_playwright_url_literals_with_helpers(
+            "navigateTo('/orders', { redirect: '/login' });",
+            &["navigateTo".to_string()],
+        );
+        assert_eq!(urls, vec!["/orders"]);
     }
 
     #[test]
@@ -841,7 +883,7 @@ mod tests {
         );
         assert_eq!(
             regex_path_sample(r#"^https:\/\/example.com\/orders$"#),
-            Some("https://examplexcom/orders".to_string())
+            Some("https://example.com/orders".to_string())
         );
         assert_eq!(
             regex_path_sample(r#"^https:\/\/example\.com\/orders$"#),

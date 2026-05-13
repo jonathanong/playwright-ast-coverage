@@ -752,18 +752,14 @@ fn identifier_may_be_shadowed_or_reassigned(
         r"\b(?:const|let|var)\s+(?:\{{[^;]*\b{escaped}\b[^;]*\}}|\[[^;]*\b{escaped}\b[^;]*\])"
     ))
     .expect("identifier destructuring declaration regex should compile");
-    let function_param = Regex::new(&format!(r"\bfunction\b[^(]*\([^)]*\b{escaped}\b"))
-        .expect("function parameter regex should compile");
-    let arrow_param = Regex::new(&format!(
-        r"(?:\([^)]*\b{escaped}\b[^)]*\)|\b{escaped}\b)\s*=>"
+    let destructuring_parameter = Regex::new(&format!(
+        r"\bfunction\b[^(]*\([^)]*(?:\{{[^)]*\b{escaped}\b[^)]*\}}|\[[^)]*\b{escaped}\b[^)]*\])"
     ))
-    .expect("arrow parameter regex should compile");
-
+    .expect("identifier destructuring parameter regex should compile");
     has_identifier_reassignment(&prefix, name)
         || declaration.is_match(&prefix)
         || destructuring_declaration.is_match(&prefix)
-        || function_param.is_match(&prefix)
-        || arrow_param.is_match(&prefix)
+        || has_enclosing_shadow_binding(&prefix, &destructuring_parameter)
 }
 
 fn has_identifier_reassignment(source: &str, name: &str) -> bool {
@@ -804,6 +800,28 @@ fn is_identifier_continue(ch: char) -> bool {
     ch == '_' || ch == '$' || ch.is_ascii_alphanumeric()
 }
 
+fn has_enclosing_shadow_binding(prefix: &str, binding: &Regex) -> bool {
+    binding.find_iter(prefix).any(|matched| {
+        let rest = &prefix[matched.end()..];
+        let Some(block_start) = rest.find('{') else {
+            return false;
+        };
+        if rest[..block_start].contains(';') {
+            return false;
+        }
+        let mut depth = 0usize;
+        for ch in rest[block_start..].chars() {
+            match ch {
+                '{' => depth += 1,
+                '}' if depth <= 1 => return false,
+                '}' => depth -= 1,
+                _ => {}
+            }
+        }
+        depth > 0
+    })
+}
+
 fn code_only_text(source: &str) -> String {
     let mut chars = source.chars().peekable();
     let mut output = String::with_capacity(source.len());
@@ -813,6 +831,7 @@ fn code_only_text(source: &str) -> String {
     let mut in_line_comment = false;
     let mut in_block_comment = false;
     let mut escaped = false;
+    let mut template_expression_depth = 0usize;
 
     while let Some(ch) = chars.next() {
         if in_line_comment {
@@ -845,6 +864,20 @@ fn code_only_text(source: &str) -> String {
             output.push(' ');
             continue;
         }
+        if template_expression_depth > 0 {
+            if ch == '{' {
+                template_expression_depth += 1;
+            } else if ch == '}' {
+                template_expression_depth -= 1;
+                if template_expression_depth == 0 {
+                    in_template = true;
+                    output.push(' ');
+                    continue;
+                }
+            }
+            output.push(ch);
+            continue;
+        }
         if in_single {
             in_single = ch != '\'';
             output.push(' ');
@@ -856,8 +889,16 @@ fn code_only_text(source: &str) -> String {
             continue;
         }
         if in_template {
-            in_template = ch != '`';
-            output.push(' ');
+            if ch == '$' && chars.peek().is_some_and(|next| *next == '{') {
+                output.push(' ');
+                output.push(' ');
+                chars.next();
+                in_template = false;
+                template_expression_depth = 1;
+            } else {
+                in_template = ch != '`';
+                output.push(' ');
+            }
             continue;
         }
 
@@ -1157,6 +1198,19 @@ mod tests {
                 return <a data-pw={dataPw}>Comment safe</a>;
             }
 
+            export function TemplateExpressionMutation({ mutated = 'template-mutation-link' }) {
+                const label = `${mutated = makeId()}`;
+                return <a data-pw={mutated}>Template mutation</a>;
+            }
+
+            export function EarlierHelperParam({ dataPw = 'helper-param-link' }) {
+                function helper(dataPw) {
+                    return dataPw;
+                }
+                const local = (dataPw) => dataPw;
+                return <a data-pw={dataPw}>{helper(local('x'))}</a>;
+            }
+
             export function WithHelper({ dataPw = 'helper-link' }) {
                 const isReady = () => dataPw === 'helper-link';
                 return isReady() ? <a data-pw={dataPw}>Ready</a> : null;
@@ -1181,11 +1235,13 @@ mod tests {
                 "comment-safe-link",
                 "direct-link",
                 "helper-link",
+                "helper-param-link",
                 "rss-feed-link",
                 "short-link",
                 "{1 + 1}",
                 "{compound}",
                 "{dataPw}",
+                "{mutated}",
                 "{passThrough}",
                 "{reassigned}",
                 "{shadowed}",
@@ -1553,16 +1609,43 @@ mod tests {
     #[test]
     fn code_only_text_masks_comments_and_string_literals() {
         let masked = code_only_text(
-            "const id = 'data\\'Pw';\n// dataPw = line\n/* dataPw = block\n*/ const text = \"data\\\"Pw\"; const tpl = `data\\`Pw`; dataPw += '-x';",
+            "const id = 'data\\'Pw';\n// dataPw = line\n/* dataPw = block\n*/ const text = \"data\\\"Pw\"; const tpl = `data ${dataPw = makeId({ nested: true })} \\`Pw`; dataPw += '-x';",
         );
 
         assert!(masked.contains("const id ="));
         assert!(masked.contains("const text ="));
         assert!(masked.contains("const tpl ="));
+        assert!(masked.contains("dataPw = makeId({ nested: true })"));
         assert!(masked.contains("dataPw +="));
         assert!(!has_identifier_reassignment(
             "'dataPw = string';\n\"dataPw += string\";\n`dataPw++`;\n/* dataPw ??= block */",
             "dataPw"
+        ));
+    }
+
+    #[test]
+    fn enclosing_shadow_binding_requires_an_open_block() {
+        let binding = Regex::new(r"\bfunction\b[^(]*\([^)]*\bdataPw\b").unwrap();
+
+        assert!(has_enclosing_shadow_binding(
+            "function Inner(dataPw) { return <a data-pw={",
+            &binding
+        ));
+        assert!(has_enclosing_shadow_binding(
+            "function Inner(dataPw) { if (ready) { dataPw; } return <a data-pw={",
+            &binding
+        ));
+        assert!(!has_enclosing_shadow_binding(
+            "function Inner(dataPw)",
+            &binding
+        ));
+        assert!(!has_enclosing_shadow_binding(
+            "function Inner(dataPw); return <a data-pw={",
+            &binding
+        ));
+        assert!(!has_enclosing_shadow_binding(
+            "function Inner(dataPw) { return dataPw; } return <a data-pw={",
+            &binding
         ));
     }
 
