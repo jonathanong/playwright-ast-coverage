@@ -1,7 +1,9 @@
 use crate::{ast, playwright_tests};
 #[cfg(test)]
 use anyhow::Result;
-use oxc_ast::ast::{Argument, CallExpression, IfStatement, Program};
+use oxc_ast::ast::{
+    Argument, CallExpression, ConditionalExpression, IfStatement, LogicalExpression, Program,
+};
 use oxc_ast_visit::{walk, Visit};
 use std::collections::BTreeSet;
 #[cfg(test)]
@@ -139,9 +141,9 @@ impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
             }
         }
 
-        let callback_index = playwright_tests::callback_argument_index(call);
-        let callback_status = playwright_tests::test_callback_status(call);
-        if callback_status.is_none() {
+        let traversal = playwright_tests::test_callback_traversal(call, self.annotation_status);
+        if traversal.is_none() {
+            let callback_index = playwright_tests::callback_argument_index(call);
             if playwright_tests::annotation_status_for_call(call).is_some() {
                 self.apply_annotation_call(call);
                 for (index, argument) in call.arguments.iter().enumerate() {
@@ -155,12 +157,10 @@ impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
             return;
         }
 
+        let (callback_index, callback_status) = traversal.expect("checked traversal");
         for (index, argument) in call.arguments.iter().enumerate() {
-            if Some(index) == callback_index {
-                let status = callback_status
-                    .unwrap_or(playwright_tests::TestStatus::Active)
-                    .merge(self.annotation_status);
-                self.with_status(status, |visitor| {
+            if index == callback_index {
+                self.with_status(callback_status, |visitor| {
                     visitor.with_annotation_scope(|visitor| visitor.visit_argument(argument));
                 });
             } else {
@@ -177,6 +177,23 @@ impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
             if let Some(alternate) = &statement.alternate {
                 visitor.visit_statement(alternate);
             }
+        });
+    }
+
+    fn visit_conditional_expression(&mut self, expression: &ConditionalExpression<'a>) {
+        self.visit_expression(&expression.test);
+        let status = playwright_tests::status_for_if_branch(self.status);
+        self.with_status(status, |visitor| {
+            visitor.visit_expression(&expression.consequent);
+            visitor.visit_expression(&expression.alternate);
+        });
+    }
+
+    fn visit_logical_expression(&mut self, expression: &LogicalExpression<'a>) {
+        self.visit_expression(&expression.left);
+        let status = playwright_tests::status_for_if_branch(self.status);
+        self.with_status(status, |visitor| {
+            visitor.visit_expression(&expression.right)
         });
     }
 }
@@ -414,6 +431,16 @@ mod tests {
                     await page.goto('/conditional-alternate');
                 });
             }
+            featureFlag && test('logical wrapper', async ({ page }) => {
+                await page.goto('/logical-wrapper');
+            });
+            featureFlag
+                ? test('ternary consequent', async ({ page }) => {
+                    await page.goto('/ternary-consequent');
+                })
+                : test('ternary alternate', async ({ page }) => {
+                    await page.goto('/ternary-alternate');
+                });
             test.skipIf(browserName === 'webkit')('skip if', async ({ page }) => {
                 await page.goto('/skip-if');
             });
@@ -480,10 +507,13 @@ mod tests {
                 ),
                 ("/describe-skip-callback".to_string(), TestStatus::Skipped),
                 ("/fixme".to_string(), TestStatus::Skipped),
+                ("/logical-wrapper".to_string(), TestStatus::Conditional),
                 ("/scope-annotation".to_string(), TestStatus::Conditional),
                 ("/skip-false".to_string(), TestStatus::Active),
                 ("/skip-if".to_string(), TestStatus::Conditional),
                 ("/skipped".to_string(), TestStatus::Skipped),
+                ("/ternary-alternate".to_string(), TestStatus::Conditional),
+                ("/ternary-consequent".to_string(), TestStatus::Conditional),
                 ("/unrelated-skip-if".to_string(), TestStatus::Active),
             ]
         );

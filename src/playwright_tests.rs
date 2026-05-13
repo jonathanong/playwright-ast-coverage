@@ -22,7 +22,19 @@ pub struct TestPolicy {
 
 impl TestStatus {
     pub fn merge(self, other: Self) -> Self {
-        self.max(other)
+        if self.rank() >= other.rank() {
+            self
+        } else {
+            other
+        }
+    }
+
+    fn rank(self) -> u8 {
+        match self {
+            TestStatus::Active => 0,
+            TestStatus::Conditional => 1,
+            TestStatus::Skipped => 2,
+        }
     }
 }
 
@@ -56,6 +68,16 @@ pub fn test_callback_status(call: &CallExpression<'_>) -> Option<TestStatus> {
     }
 
     Some(TestStatus::Active)
+}
+
+pub fn test_callback_traversal(
+    call: &CallExpression<'_>,
+    annotation_status: TestStatus,
+) -> Option<(usize, TestStatus)> {
+    Some((
+        callback_argument_index(call)?,
+        test_callback_status(call)?.merge(annotation_status),
+    ))
 }
 
 pub fn annotation_status_for_call(call: &CallExpression<'_>) -> Option<TestStatus> {
