@@ -106,7 +106,7 @@ fn extract_href_from_selector(selector: &str) -> Option<String> {
 struct UrlVisitor<'a, 'h> {
     source: &'a str,
     navigation_helpers: &'h [String],
-    static_zero_arg_paths: &'h HashMap<String, String>,
+    static_zero_arg_paths: &'h HashMap<String, Vec<String>>,
     status: playwright_tests::TestStatus,
     annotation_status: playwright_tests::TestStatus,
     urls: BTreeSet<playwright_tests::TestOccurrence<String>>,
@@ -117,21 +117,19 @@ impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
         let callee = ast::expression_path(&call.callee);
 
         if callee_is_member_named(&call.callee, "goto") {
-            if let Some(url) = call
-                .arguments
-                .first()
-                .and_then(|arg| argument_literal(arg, self.source, self.static_zero_arg_paths))
-            {
-                if is_candidate_url(&url) {
-                    self.insert(url);
+            if let Some(argument) = call.arguments.first() {
+                for url in argument_literals(argument, self.source, self.static_zero_arg_paths) {
+                    if is_candidate_url(&url) {
+                        self.insert(url);
+                    }
                 }
             }
         } else if callee_is_member_named(&call.callee, "click") {
-            if let Some(selector) = call
-                .arguments
-                .first()
-                .and_then(|arg| argument_literal(arg, self.source, self.static_zero_arg_paths))
-            {
+            if let Some(selector) = call.arguments.first().and_then(|arg| {
+                argument_literals(arg, self.source, self.static_zero_arg_paths)
+                    .into_iter()
+                    .next()
+            }) {
                 if let Some(url) = extract_href_from_selector(&selector) {
                     self.insert(url);
                 }
@@ -141,10 +139,11 @@ impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
             || (callee_is_page_url_to_match(&call.callee) && !callee_has_not(&callee))
             || callee_matches_navigation_helper(&callee, self.navigation_helpers)
         {
-            if let Some(url) =
-                first_candidate_literal(&call.arguments, self.source, self.static_zero_arg_paths)
+            for url in candidate_literals(&call.arguments, self.source, self.static_zero_arg_paths)
             {
-                self.insert(url);
+                if is_candidate_url(&url) {
+                    self.insert(url);
+                }
             }
         }
 
@@ -275,7 +274,7 @@ fn callee_is_page_url_to_match(callee: &oxc_ast::ast::Expression<'_>) -> bool {
     let Some(expect_callee) = ast::expression_path(&expect_call.callee) else {
         return false;
     };
-    if expect_callee.last().is_none_or(|name| name != "expect") {
+    if expect_callee != ["expect"] {
         return false;
     }
 
@@ -302,11 +301,11 @@ fn expect_call_expression<'a>(
     }
 }
 
-fn first_candidate_literal(
+fn candidate_literals(
     arguments: &[Argument<'_>],
     source: &str,
-    static_zero_arg_paths: &HashMap<String, String>,
-) -> Option<String> {
+    static_zero_arg_paths: &HashMap<String, Vec<String>>,
+) -> Vec<String> {
     let mut visitor = LiteralVisitor {
         source,
         static_zero_arg_paths,
@@ -318,19 +317,21 @@ fn first_candidate_literal(
     visitor
         .literals
         .into_iter()
-        .find(|url| is_candidate_url(url))
+        .filter(|url| is_candidate_url(url))
+        .collect()
 }
 
 struct LiteralVisitor<'a> {
     source: &'a str,
-    static_zero_arg_paths: &'a HashMap<String, String>,
+    static_zero_arg_paths: &'a HashMap<String, Vec<String>>,
     literals: Vec<String>,
 }
 
 impl<'a> Visit<'a> for LiteralVisitor<'a> {
     fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
-        if let Some(url) = static_zero_arg_path_call(call, self.static_zero_arg_paths) {
-            self.literals.push(url);
+        let urls = static_zero_arg_path_call(call, self.static_zero_arg_paths);
+        if !urls.is_empty() {
+            self.literals.extend(urls);
             return;
         }
         walk::walk_call_expression(self, call);
@@ -353,25 +354,25 @@ impl<'a> Visit<'a> for LiteralVisitor<'a> {
     }
 }
 
-fn argument_literal(
+fn argument_literals(
     argument: &Argument<'_>,
     source: &str,
-    static_zero_arg_paths: &HashMap<String, String>,
-) -> Option<String> {
+    static_zero_arg_paths: &HashMap<String, Vec<String>>,
+) -> Vec<String> {
     match argument {
-        Argument::StringLiteral(literal) => Some(literal.value.to_string()),
-        Argument::TemplateLiteral(template) => Some(ast::template_literal_text(template, source)),
+        Argument::StringLiteral(literal) => vec![literal.value.to_string()],
+        Argument::TemplateLiteral(template) => vec![ast::template_literal_text(template, source)],
         Argument::CallExpression(call) => static_zero_arg_path_call(call, static_zero_arg_paths),
-        _ => None,
+        _ => Vec::new(),
     }
 }
 
-fn collect_static_zero_arg_paths(source: &str) -> HashMap<String, String> {
+fn collect_static_zero_arg_paths(source: &str) -> HashMap<String, Vec<String>> {
     let pattern = regex::Regex::new(
         r#"([A-Za-z_$][\w$]*)\s*:\s*\(\s*\)\s*=>\s*(?:"([^"`]+)"|'([^'`]+)'|`([^'"`]+)`)"#,
     )
     .expect("static route helper regex should compile");
-    let mut candidates: HashMap<String, (String, usize)> = HashMap::new();
+    let mut candidates: HashMap<String, Vec<String>> = HashMap::new();
     for captures in pattern.captures_iter(source) {
         if let Some((name, value)) = (|| {
             let name = captures.get(1)?;
@@ -381,29 +382,30 @@ fn collect_static_zero_arg_paths(source: &str) -> HashMap<String, String> {
                 .or_else(|| captures.get(4))?;
             Some((name.as_str().to_string(), value.as_str().to_string()))
         })() {
-            let entry = candidates.entry(name).or_insert((value, 0));
-            entry.1 += 1;
+            candidates.entry(name).or_default().push(value);
         }
     }
     candidates
-        .into_iter()
-        .filter_map(|(name, (value, count))| (count == 1).then_some((name, value)))
-        .collect()
 }
 
 fn static_zero_arg_path_call(
     call: &CallExpression<'_>,
-    static_zero_arg_paths: &HashMap<String, String>,
-) -> Option<String> {
+    static_zero_arg_paths: &HashMap<String, Vec<String>>,
+) -> Vec<String> {
     if !call.arguments.is_empty() {
-        return None;
+        return Vec::new();
     }
-    let path = ast::expression_path(&call.callee)?;
+    let Some(path) = ast::expression_path(&call.callee) else {
+        return Vec::new();
+    };
     if path.len() != 1 {
-        return None;
+        return Vec::new();
     }
-    let name = path.last()?;
-    static_zero_arg_paths.get(name.as_str()).cloned()
+    let name = &path[0];
+    static_zero_arg_paths
+        .get(name.as_str())
+        .cloned()
+        .unwrap_or_default()
 }
 
 fn regex_path_sample(pattern: &str) -> Option<String> {
@@ -606,10 +608,22 @@ mod tests {
             await expect(page.url()).toMatch(dynamic("42"));
             await page.waitForURL(account.path());
             await page.waitForURL(settings.path());
+            await page.waitForURL(path());
+            await page.waitForURL(getPath()());
+            await page.goto();
             await page.goto(routeName);
             "#,
         );
-        assert_eq!(urls, vec!["/orders", "/orders/42", "/orders/metrics"]);
+        assert_eq!(
+            urls,
+            vec![
+                "/account",
+                "/orders",
+                "/orders/42",
+                "/orders/metrics",
+                "/settings"
+            ]
+        );
     }
 
     #[test]
@@ -655,6 +669,7 @@ mod tests {
             await expect(page.title()).toMatch(/\/title$/);
             await assert(page.url()).toMatch(/\/assert$/);
             await getExpect()(page.url()).toMatch(/\/factory$/);
+            await helpers.expect(page.url()).toMatch(/\/helper$/);
             await expect('/literal').toMatch(/\/literal$/);
             await page.toMatch(/\/method$/);
             "#,
