@@ -171,6 +171,8 @@ At a high level, the tool checks:
 - JSX selector attributes such as `data-testid` and `data-pw` from app source.
 - Playwright selector usage from `getByTestId(...)` and CSS attribute selectors
   passed to Playwright selector methods.
+- Skipped and conditional Playwright test context, with flags to require active
+  coverage or allow skipped coverage when needed.
 - Literal Playwright config values for `testDir`, `testMatch`, `testIgnore`,
   `baseURL`, `testIdAttribute`, `projects`, and top-level config `name`.
 

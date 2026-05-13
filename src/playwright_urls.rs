@@ -1,7 +1,9 @@
-use crate::ast;
+use crate::{ast, playwright_tests};
 #[cfg(test)]
 use anyhow::Result;
-use oxc_ast::ast::{Argument, CallExpression, Program};
+use oxc_ast::ast::{
+    Argument, CallExpression, ConditionalExpression, IfStatement, LogicalExpression, Program,
+};
 use oxc_ast_visit::{walk, Visit};
 use std::collections::BTreeSet;
 #[cfg(test)]
@@ -36,14 +38,41 @@ pub fn extract_playwright_url_literals_from_path(
     })
 }
 
+#[cfg(test)]
+pub fn extract_playwright_url_occurrences(
+    source: &str,
+) -> Vec<(String, playwright_tests::TestStatus)> {
+    ast::with_program(Path::new("fixture.ts"), source, |program, source| {
+        extract_playwright_url_occurrences_from_program(program, source, &[])
+            .into_iter()
+            .map(|occurrence| (occurrence.value, occurrence.status))
+            .collect()
+    })
+    .expect("fixture should parse")
+}
+
+#[cfg(test)]
 pub fn extract_playwright_url_literals_from_program(
     program: &Program<'_>,
     source: &str,
     navigation_helpers: &[String],
 ) -> Vec<String> {
+    extract_playwright_url_occurrences_from_program(program, source, navigation_helpers)
+        .into_iter()
+        .map(|occurrence| occurrence.value)
+        .collect()
+}
+
+pub fn extract_playwright_url_occurrences_from_program(
+    program: &Program<'_>,
+    source: &str,
+    navigation_helpers: &[String],
+) -> Vec<playwright_tests::TestOccurrence<String>> {
     let mut visitor = UrlVisitor {
         source,
         navigation_helpers,
+        status: playwright_tests::TestStatus::Active,
+        annotation_status: playwright_tests::TestStatus::Active,
         urls: BTreeSet::new(),
     };
     visitor.visit_program(program);
@@ -75,7 +104,9 @@ fn extract_href_from_selector(selector: &str) -> Option<String> {
 struct UrlVisitor<'a, 'h> {
     source: &'a str,
     navigation_helpers: &'h [String],
-    urls: BTreeSet<String>,
+    status: playwright_tests::TestStatus,
+    annotation_status: playwright_tests::TestStatus,
+    urls: BTreeSet<playwright_tests::TestOccurrence<String>>,
 }
 
 impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
@@ -89,7 +120,7 @@ impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
                 .and_then(|arg| argument_literal(arg, self.source))
             {
                 if is_candidate_url(&url) {
-                    self.urls.insert(url);
+                    self.insert(url);
                 }
             }
         } else if callee_is_member_named(&call.callee, "click") {
@@ -99,18 +130,102 @@ impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
                 .and_then(|arg| argument_literal(arg, self.source))
             {
                 if let Some(url) = extract_href_from_selector(&selector) {
-                    self.urls.insert(url);
+                    self.insert(url);
                 }
             }
         } else if (callee_is_member_named(&call.callee, "toHaveURL") && !callee_has_not(&callee))
             || callee_matches_navigation_helper(&callee, self.navigation_helpers)
         {
             if let Some(url) = first_candidate_literal(&call.arguments, self.source) {
-                self.urls.insert(url);
+                self.insert(url);
             }
         }
 
-        walk::walk_call_expression(self, call);
+        let traversal = playwright_tests::test_callback_traversal(call, self.annotation_status);
+        if traversal.is_none() {
+            let callback_index = playwright_tests::callback_argument_index(call);
+            if playwright_tests::annotation_status_for_call(call).is_some() {
+                self.apply_annotation_call(call);
+                for (index, argument) in call.arguments.iter().enumerate() {
+                    if Some(index) != callback_index {
+                        self.visit_argument(argument);
+                    }
+                }
+                return;
+            }
+            walk::walk_call_expression(self, call);
+            return;
+        }
+
+        let (callback_index, callback_status) = traversal.expect("checked traversal");
+        for (index, argument) in call.arguments.iter().enumerate() {
+            if index == callback_index {
+                self.with_status(callback_status, |visitor| {
+                    visitor.with_annotation_scope(|visitor| visitor.visit_argument(argument));
+                });
+            } else {
+                self.visit_argument(argument);
+            }
+        }
+    }
+
+    fn visit_if_statement(&mut self, statement: &IfStatement<'a>) {
+        self.visit_expression(&statement.test);
+        let status = playwright_tests::status_for_if_branch(self.status);
+        self.with_status(status, |visitor| {
+            visitor.visit_statement(&statement.consequent);
+            if let Some(alternate) = &statement.alternate {
+                visitor.visit_statement(alternate);
+            }
+        });
+    }
+
+    fn visit_conditional_expression(&mut self, expression: &ConditionalExpression<'a>) {
+        self.visit_expression(&expression.test);
+        let status = playwright_tests::status_for_if_branch(self.status);
+        self.with_status(status, |visitor| {
+            visitor.visit_expression(&expression.consequent);
+            visitor.visit_expression(&expression.alternate);
+        });
+    }
+
+    fn visit_logical_expression(&mut self, expression: &LogicalExpression<'a>) {
+        self.visit_expression(&expression.left);
+        let status = playwright_tests::status_for_if_branch(self.status);
+        self.with_status(status, |visitor| {
+            visitor.visit_expression(&expression.right)
+        });
+    }
+}
+
+impl UrlVisitor<'_, '_> {
+    fn insert(&mut self, value: String) {
+        self.urls.insert(playwright_tests::TestOccurrence {
+            value,
+            status: self.status.merge(self.annotation_status),
+        });
+    }
+
+    fn with_status(&mut self, status: playwright_tests::TestStatus, visit: impl FnOnce(&mut Self)) {
+        let previous = self.status;
+        self.status = previous.merge(status);
+        visit(self);
+        self.status = previous;
+    }
+
+    fn with_annotation_scope(&mut self, visit: impl FnOnce(&mut Self)) {
+        let previous = self.annotation_status;
+        self.annotation_status = playwright_tests::TestStatus::Active;
+        visit(self);
+        self.annotation_status = previous;
+    }
+
+    fn apply_annotation_call(&mut self, call: &CallExpression<'_>) {
+        if let Some(status) = playwright_tests::annotation_status_for_call(call) {
+            let status = playwright_tests::merge_annotation_status(self.status, status);
+            self.annotation_status =
+                playwright_tests::merge_annotation_status(self.annotation_status, status);
+        }
     }
 }
 
@@ -181,6 +296,7 @@ fn argument_literal(argument: &Argument<'_>, source: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::playwright_tests::TestStatus;
     use crate::test_support::fixture_source;
 
     #[test]
@@ -297,5 +413,109 @@ mod tests {
         let src = fixture_source(&["playwright_urls", "bare-callees.ts"]);
         let urls = extract_playwright_urls(&src);
         assert!(urls.is_empty());
+    }
+
+    #[test]
+    fn marks_urls_inside_skipped_and_conditional_tests() {
+        let urls = extract_playwright_url_occurrences(
+            r#"
+            test.skip('skipped', async ({ page }) => {
+                await page.goto('/skipped');
+            });
+            if (process.env.E2E) {
+                test('conditional wrapper', async ({ page }) => {
+                    await page.goto('/conditional-wrapper');
+                });
+            } else {
+                test('conditional alternate', async ({ page }) => {
+                    await page.goto('/conditional-alternate');
+                });
+            }
+            featureFlag && test('logical wrapper', async ({ page }) => {
+                await page.goto('/logical-wrapper');
+            });
+            featureFlag
+                ? test('ternary consequent', async ({ page }) => {
+                    await page.goto('/ternary-consequent');
+                })
+                : test('ternary alternate', async ({ page }) => {
+                    await page.goto('/ternary-alternate');
+                });
+            test.skipIf(browserName === 'webkit')('skip if', async ({ page }) => {
+                await page.goto('/skip-if');
+            });
+            test.describe.skip(() => {
+                test('describe skip callback', async ({ page }) => {
+                    await page.goto('/describe-skip-callback');
+                });
+            });
+            test.fixme('fixme test', async ({ page }) => {
+                await page.goto('/fixme');
+            });
+            test('annotation', async ({ page, browserName }) => {
+                test.skip(browserName === 'webkit', 'conditional');
+                await page.goto('/conditional-annotation');
+            });
+            test.describe('scope annotation', () => {
+                test.skip(({ browserName }) => browserName === 'webkit', 'conditional');
+                test('describe scope annotation', async ({ page }) => {
+                    await page.goto('/describe-scope-annotation');
+                });
+            });
+            test('conditional skip annotation', async ({ page }) => {
+                if (process.env.SKIP_E2E) {
+                    test.skip();
+                }
+                await page.goto('/conditional-skip-call');
+            });
+            test.skip(false, 'skip false', async ({ page }) => {
+                await page.goto('/skip-false');
+            });
+            helpers.skipIf(featureFlag)(async () => {
+                await page.goto('/unrelated-skip-if');
+            });
+            test('active', async ({ page }) => {
+                await page.goto('/active');
+            });
+            test.skip(({ browserName }) => browserName === 'webkit', 'conditional');
+            test('file scope annotation', async ({ page }) => {
+                await page.goto('/scope-annotation');
+            });
+            "#,
+        );
+
+        assert_eq!(
+            urls,
+            vec![
+                ("/active".to_string(), TestStatus::Active),
+                (
+                    "/conditional-alternate".to_string(),
+                    TestStatus::Conditional
+                ),
+                (
+                    "/conditional-annotation".to_string(),
+                    TestStatus::Conditional
+                ),
+                (
+                    "/conditional-skip-call".to_string(),
+                    TestStatus::Conditional
+                ),
+                ("/conditional-wrapper".to_string(), TestStatus::Conditional),
+                (
+                    "/describe-scope-annotation".to_string(),
+                    TestStatus::Conditional
+                ),
+                ("/describe-skip-callback".to_string(), TestStatus::Skipped),
+                ("/fixme".to_string(), TestStatus::Skipped),
+                ("/logical-wrapper".to_string(), TestStatus::Conditional),
+                ("/scope-annotation".to_string(), TestStatus::Conditional),
+                ("/skip-false".to_string(), TestStatus::Active),
+                ("/skip-if".to_string(), TestStatus::Conditional),
+                ("/skipped".to_string(), TestStatus::Skipped),
+                ("/ternary-alternate".to_string(), TestStatus::Conditional),
+                ("/ternary-consequent".to_string(), TestStatus::Conditional),
+                ("/unrelated-skip-if".to_string(), TestStatus::Active),
+            ]
+        );
     }
 }

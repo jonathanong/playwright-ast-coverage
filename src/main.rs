@@ -2,6 +2,7 @@ mod ast;
 mod config;
 mod matcher;
 mod playwright_config;
+mod playwright_tests;
 mod playwright_urls;
 mod routes;
 mod selectors;
@@ -40,6 +41,12 @@ struct Cli {
 
     #[arg(long, global = true)]
     json: bool,
+
+    #[arg(long, global = true)]
+    assert_conditional_tests: bool,
+
+    #[arg(long, global = true)]
+    allow_skipped_tests: bool,
 
     #[command(subcommand)]
     command: Command,
@@ -165,6 +172,7 @@ struct TestAnalysisContext<'a> {
     app_selector_targets: &'a [AppSelectorTarget<'a>],
     navigation_helpers: &'a [String],
     selector_regexes: &'a selectors::SelectorRegexes,
+    test_policy: playwright_tests::TestPolicy,
 }
 
 type SelectorCoverageKey = (String, String, String);
@@ -224,7 +232,14 @@ fn run() -> Result<ExitCode> {
         &cli.playwright_config,
         cli.project.clone(),
     )?;
-    let analysis = analyze(&root, &settings)?;
+    let analysis = analyze_with_policy(
+        &root,
+        &settings,
+        playwright_tests::TestPolicy {
+            assert_conditional_tests: cli.assert_conditional_tests,
+            allow_skipped_tests: cli.allow_skipped_tests,
+        },
+    )?;
     match cli.command {
         Command::Check => {
             if cli.json {
@@ -260,7 +275,16 @@ fn run() -> Result<ExitCode> {
     }
 }
 
+#[cfg(test)]
 fn analyze(root: &Path, settings: &Settings) -> Result<Analysis> {
+    analyze_with_policy(root, settings, playwright_tests::TestPolicy::default())
+}
+
+fn analyze_with_policy(
+    root: &Path,
+    settings: &Settings,
+    test_policy: playwright_tests::TestPolicy,
+) -> Result<Analysis> {
     let route_root = root.join(&settings.frontend_root);
     let routes = routes::collect_routes(&route_root)?;
     if routes.is_empty() {
@@ -293,6 +317,7 @@ fn analyze(root: &Path, settings: &Settings) -> Result<Analysis> {
         app_selector_targets: &app_selector_targets,
         navigation_helpers: &settings.navigation_helpers,
         selector_regexes: &selector_regexes,
+        test_policy,
     };
 
     let edges: BTreeSet<Edge> = test_files
@@ -328,7 +353,7 @@ fn analyze_test_file(
 
     let (raw_urls, playwright_selectors) =
         ast::with_program(&test_file.path, &source, |program, source| {
-            let raw_urls = playwright_urls::extract_playwright_url_literals_from_program(
+            let raw_urls = playwright_urls::extract_playwright_url_occurrences_from_program(
                 program,
                 source,
                 context.navigation_helpers,
@@ -336,7 +361,7 @@ fn analyze_test_file(
             let playwright_selectors = if context.app_selector_targets.is_empty() {
                 Vec::new()
             } else {
-                selectors::extract_playwright_selectors_from_program(
+                selectors::extract_playwright_selector_occurrences_from_program(
                     program,
                     source,
                     context.selector_regexes,
@@ -347,7 +372,10 @@ fn analyze_test_file(
         })?;
 
     for raw_url in raw_urls {
-        let Some(url) = normalize_url(&raw_url, &base_urls) else {
+        if !context.test_policy.allows(raw_url.status) {
+            continue;
+        }
+        let Some(url) = normalize_url(&raw_url.value, &base_urls) else {
             continue;
         };
         for route in context.route_targets {
@@ -365,16 +393,19 @@ fn analyze_test_file(
     if !context.app_selector_targets.is_empty() {
         for app_selector in context.app_selector_targets {
             for playwright_selector in &playwright_selectors {
+                if !context.test_policy.allows(playwright_selector.status) {
+                    continue;
+                }
                 if app_selector
                     .selector
-                    .matches_playwright(playwright_selector)
+                    .matches_playwright(&playwright_selector.value)
                 {
                     edges.push(Edge::Selector {
                         test_file: rel_test_file.clone(),
                         app_file: app_selector.app_file.clone(),
                         attribute: app_selector.selector.attribute.clone(),
                         value: app_selector.value.clone(),
-                        selector: playwright_selector.selector.clone(),
+                        selector: playwright_selector.value.selector.clone(),
                     });
                 }
             }

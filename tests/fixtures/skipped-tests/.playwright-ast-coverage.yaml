@@ -1,0 +1,4 @@
+frontendRoot: web/app
+testInclude:
+  - tests/**/*.spec.ts
+
