@@ -744,9 +744,14 @@ fn identifier_may_be_shadowed_or_reassigned(
     let start = scope.start as usize;
     let end = span.start as usize;
     let prefix = source.get(start..end).unwrap_or("");
+    let prefix = code_only_text(prefix);
     let escaped = regex::escape(name);
     let declaration = Regex::new(&format!(r"\b(?:const|let|var)\s+{escaped}\b"))
         .expect("identifier declaration regex should compile");
+    let destructuring_declaration = Regex::new(&format!(
+        r"\b(?:const|let|var)\s+(?:\{{[^;]*\b{escaped}\b[^;]*\}}|\[[^;]*\b{escaped}\b[^;]*\])"
+    ))
+    .expect("identifier destructuring declaration regex should compile");
     let function_param = Regex::new(&format!(r"\bfunction\b[^(]*\([^)]*\b{escaped}\b"))
         .expect("function parameter regex should compile");
     let arrow_param = Regex::new(&format!(
@@ -754,13 +759,15 @@ fn identifier_may_be_shadowed_or_reassigned(
     ))
     .expect("arrow parameter regex should compile");
 
-    has_identifier_reassignment(prefix, name)
-        || declaration.is_match(prefix)
-        || function_param.is_match(prefix)
-        || arrow_param.is_match(prefix)
+    has_identifier_reassignment(&prefix, name)
+        || declaration.is_match(&prefix)
+        || destructuring_declaration.is_match(&prefix)
+        || function_param.is_match(&prefix)
+        || arrow_param.is_match(&prefix)
 }
 
 fn has_identifier_reassignment(source: &str, name: &str) -> bool {
+    let source = code_only_text(source);
     for (index, _) in source.match_indices(name) {
         let before = source[..index].chars().next_back();
         let after_index = index + name.len();
@@ -768,7 +775,22 @@ fn has_identifier_reassignment(source: &str, name: &str) -> bool {
         if before.is_some_and(is_identifier_continue) || after.is_some_and(is_identifier_continue) {
             continue;
         }
+        let before = source[..index].trim_end();
+        if before.ends_with("++") || before.ends_with("--") {
+            return true;
+        }
         let rest = source[after_index..].trim_start();
+        if rest.starts_with("++") || rest.starts_with("--") {
+            return true;
+        }
+        if [
+            "+=", "-=", "*=", "/=", "%=", "**=", "&&=", "||=", "??=", "<<=", ">>=", ">>>=",
+        ]
+        .iter()
+        .any(|operator| rest.starts_with(operator))
+        {
+            return true;
+        }
         if let Some(after_equals) = rest.strip_prefix('=') {
             if !after_equals.starts_with('=') && !after_equals.starts_with('>') {
                 return true;
@@ -780,6 +802,90 @@ fn has_identifier_reassignment(source: &str, name: &str) -> bool {
 
 fn is_identifier_continue(ch: char) -> bool {
     ch == '_' || ch == '$' || ch.is_ascii_alphanumeric()
+}
+
+fn code_only_text(source: &str) -> String {
+    let mut chars = source.chars().peekable();
+    let mut output = String::with_capacity(source.len());
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut in_template = false;
+    let mut in_line_comment = false;
+    let mut in_block_comment = false;
+    let mut escaped = false;
+
+    while let Some(ch) = chars.next() {
+        if in_line_comment {
+            if ch == '\n' {
+                in_line_comment = false;
+                output.push(ch);
+            } else {
+                output.push(' ');
+            }
+            continue;
+        }
+        if in_block_comment {
+            if ch == '*' && chars.peek().is_some_and(|next| *next == '/') {
+                output.push(' ');
+                output.push(' ');
+                chars.next();
+                in_block_comment = false;
+            } else {
+                output.push(if ch == '\n' { '\n' } else { ' ' });
+            }
+            continue;
+        }
+        if escaped {
+            escaped = false;
+            output.push(' ');
+            continue;
+        }
+        if (in_single || in_double || in_template) && ch == '\\' {
+            escaped = true;
+            output.push(' ');
+            continue;
+        }
+        if in_single {
+            in_single = ch != '\'';
+            output.push(' ');
+            continue;
+        }
+        if in_double {
+            in_double = ch != '"';
+            output.push(' ');
+            continue;
+        }
+        if in_template {
+            in_template = ch != '`';
+            output.push(' ');
+            continue;
+        }
+
+        if ch == '/' && chars.peek().is_some_and(|next| *next == '/') {
+            output.push(' ');
+            output.push(' ');
+            chars.next();
+            in_line_comment = true;
+        } else if ch == '/' && chars.peek().is_some_and(|next| *next == '*') {
+            output.push(' ');
+            output.push(' ');
+            chars.next();
+            in_block_comment = true;
+        } else if ch == '\'' {
+            output.push(' ');
+            in_single = true;
+        } else if ch == '"' {
+            output.push(' ');
+            in_double = true;
+        } else if ch == '`' {
+            output.push(' ');
+            in_template = true;
+        } else {
+            output.push(ch);
+        }
+    }
+
+    output
 }
 
 fn extract_css_attribute_selectors(
@@ -1035,6 +1141,22 @@ mod tests {
                 return <a data-pw={reassigned}>Assigned</a>;
             }
 
+            export function CompoundReassigned({ compound = 'compound-link' }) {
+                compound += '-dynamic';
+                return <a data-pw={compound}>Compound</a>;
+            }
+
+            export function DestructuredShadow({ shadowed = 'shadowed-link' }, props) {
+                const { shadowed } = props;
+                return <a data-pw={shadowed}>Shadowed</a>;
+            }
+
+            export function CommentAndStringText({ dataPw = 'comment-safe-link' }) {
+                // dataPw = makeId();
+                const message = "dataPw = makeId();";
+                return <a data-pw={dataPw}>Comment safe</a>;
+            }
+
             export function WithHelper({ dataPw = 'helper-link' }) {
                 const isReady = () => dataPw === 'helper-link';
                 return isReady() ? <a data-pw={dataPw}>Ready</a> : null;
@@ -1056,14 +1178,17 @@ mod tests {
             vec![
                 "array-link",
                 "arrow-link",
+                "comment-safe-link",
                 "direct-link",
                 "helper-link",
                 "rss-feed-link",
                 "short-link",
                 "{1 + 1}",
+                "{compound}",
                 "{dataPw}",
                 "{passThrough}",
                 "{reassigned}",
+                "{shadowed}",
                 "{value}",
             ]
         );
@@ -1408,10 +1533,37 @@ mod tests {
     #[test]
     fn identifier_reassignment_uses_identifier_boundaries_and_assignment_operator() {
         assert!(has_identifier_reassignment("dataPw = makeId();", "dataPw"));
+        assert!(has_identifier_reassignment("dataPw += '-x';", "dataPw"));
+        assert!(has_identifier_reassignment(
+            "dataPw ??= makeId();",
+            "dataPw"
+        ));
+        assert!(has_identifier_reassignment("dataPw++;", "dataPw"));
+        assert!(has_identifier_reassignment("--dataPw;", "dataPw"));
         assert!(!has_identifier_reassignment("dataPw === 'save';", "dataPw"));
         assert!(!has_identifier_reassignment("dataPw == 'save';", "dataPw"));
+        assert!(!has_identifier_reassignment(
+            "// dataPw = makeId();\nconst message = \"dataPw += '-x';\";",
+            "dataPw"
+        ));
         assert!(!has_identifier_reassignment("userid = makeId();", "id"));
         assert!(!has_identifier_reassignment("id => id", "id"));
+    }
+
+    #[test]
+    fn code_only_text_masks_comments_and_string_literals() {
+        let masked = code_only_text(
+            "const id = 'data\\'Pw';\n// dataPw = line\n/* dataPw = block\n*/ const text = \"data\\\"Pw\"; const tpl = `data\\`Pw`; dataPw += '-x';",
+        );
+
+        assert!(masked.contains("const id ="));
+        assert!(masked.contains("const text ="));
+        assert!(masked.contains("const tpl ="));
+        assert!(masked.contains("dataPw +="));
+        assert!(!has_identifier_reassignment(
+            "'dataPw = string';\n\"dataPw += string\";\n`dataPw++`;\n/* dataPw ??= block */",
+            "dataPw"
+        ));
     }
 
     #[test]

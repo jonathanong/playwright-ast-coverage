@@ -509,6 +509,9 @@ fn static_zero_arg_path_call(
     let Some(path) = ast::expression_path(&call.callee) else {
         return Vec::new();
     };
+    if path.len() != 1 {
+        return Vec::new();
+    }
     let name = &path[path.len() - 1];
     static_zero_arg_paths
         .get(name.as_str())
@@ -780,8 +783,10 @@ mod tests {
             const ignoredText = "text: () => '/string-only'";
             const account = { path: () => "/account" };
             const settings = { path: () => "/settings" };
+            const analytics = { details() { return "/analytics"; } };
             await page.waitForURL(details());
             await page.waitForURL(routes.details());
+            await page.waitForURL(analytics.details());
             await page.waitForURL("**/orders/globbed");
             await expect(page.url()).toMatch(overview());
             await expect.soft(page.url()).toMatch(/\/orders\/soft$/);
