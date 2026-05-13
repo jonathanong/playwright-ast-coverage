@@ -271,6 +271,11 @@ mod tests {
             "await expect(page).not.toHaveURL('/settings');\nawait expect(page).toHaveURL('/home');",
         );
         assert_eq!(urls, vec!["/home"]);
+        assert!(!callee_has_not(&None));
+        assert!(callee_has_not(&Some(vec![
+            "not".to_string(),
+            "toHaveURL".to_string()
+        ])));
     }
 
     #[test]
