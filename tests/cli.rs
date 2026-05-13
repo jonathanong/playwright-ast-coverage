@@ -16,6 +16,7 @@ fn coverage_json_reports_uncovered_routes() {
         .arg("--root")
         .arg(fixture("uncovered"))
         .arg("--json")
+        .arg("check")
         .assert()
         .code(1)
         .stdout(predicate::str::contains(r#""uncoveredRoutes": 1"#))
@@ -29,6 +30,7 @@ fn ignored_routes_do_not_fail_coverage() {
         .arg("--root")
         .arg(fixture("ignored"))
         .arg("--json")
+        .arg("check")
         .assert()
         .success()
         .stdout(predicate::str::contains(r#""uncoveredRoutes": 0"#));
@@ -40,6 +42,21 @@ fn coverage_text_reports_all_routes_covered() {
         .unwrap()
         .arg("--root")
         .arg(fixture("covered"))
+        .arg("check")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "All routes and selectors covered.",
+        ));
+}
+
+#[test]
+fn check_subcommand_reports_all_routes_covered() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("covered"))
+        .arg("check")
         .assert()
         .success()
         .stdout(predicate::str::contains(
@@ -54,6 +71,7 @@ fn relative_root_is_resolved() {
         .current_dir(fixture("covered"))
         .arg("--root")
         .arg(".")
+        .arg("check")
         .assert()
         .success()
         .stdout(predicate::str::contains(
@@ -68,6 +86,7 @@ fn duplicate_routes_and_selectors_are_sorted_deterministically() {
         .arg("--root")
         .arg(fixture("sort-tiebreakers"))
         .arg("--json")
+        .arg("check")
         .assert()
         .success()
         .stdout(predicate::str::contains(r#""uncoveredRoutes": 0"#))
@@ -80,6 +99,7 @@ fn coverage_text_reports_uncovered_routes() {
         .unwrap()
         .arg("--root")
         .arg(fixture("uncovered"))
+        .arg("check")
         .assert()
         .code(1)
         .stdout(predicate::str::contains("Uncovered routes:"))
@@ -87,12 +107,11 @@ fn coverage_text_reports_uncovered_routes() {
 }
 
 #[test]
-fn edge_mode_migrates_exec_routetest_case() {
+fn edges_json_outputs_route_edges() {
     Command::cargo_bin("playwright-ast-coverage")
         .unwrap()
         .arg("--root")
         .arg(fixture("codebase-intel"))
-        .arg("--mode")
         .arg("edges")
         .arg("--json")
         .assert()
@@ -113,7 +132,20 @@ fn edge_text_outputs_edges() {
         .unwrap()
         .arg("--root")
         .arg(fixture("codebase-intel"))
-        .arg("--mode")
+        .arg("edges")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "tests/e2e/users.spec.ts -> packages/web/app/users/[id]/page.tsx",
+        ));
+}
+
+#[test]
+fn edges_subcommand_outputs_edges() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("codebase-intel"))
         .arg("edges")
         .assert()
         .success()
@@ -128,10 +160,129 @@ fn reads_playwright_config_by_default() {
         .unwrap()
         .arg("--root")
         .arg(fixture("playwright-config"))
+        .arg("check")
         .assert()
         .success()
         .stdout(predicate::str::contains(
             "All routes and selectors covered.",
+        ));
+}
+
+#[test]
+fn default_discovery_reads_multiple_named_playwright_configs() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("multi-config"))
+        .arg("check")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "All routes and selectors covered.",
+        ));
+}
+
+#[test]
+fn project_filters_by_playwright_config_name() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("multi-config"))
+        .arg("--project")
+        .arg("storybook")
+        .arg("related")
+        .arg("web/app/users/[id]/page.tsx")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "playwright/storybook/user.stories.spec.ts",
+        ))
+        .stdout(predicate::str::contains("playwright/tests/home.spec.ts").not());
+}
+
+#[test]
+fn project_filter_ignores_inner_playwright_project_names() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("multi-config"))
+        .arg("--project")
+        .arg("chromium")
+        .arg("related")
+        .arg("web/app/page.tsx")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "no Playwright config found with name chromium",
+        ));
+}
+
+#[test]
+fn multi_config_requires_top_level_names() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("multi-config-missing-name"))
+        .arg("check")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("must define top-level name"));
+}
+
+#[test]
+fn multi_config_requires_unique_top_level_names() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("multi-config-duplicate-name"))
+        .arg("check")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("is duplicated"));
+}
+
+#[test]
+fn related_json_returns_direct_edge_tests() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("multi-config"))
+        .arg("--json")
+        .arg("related")
+        .arg("web/app/users/[id]/page.tsx")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            r#""tests": [
+    "playwright/storybook/user.stories.spec.ts"
+  ]"#,
+        ));
+}
+
+#[test]
+fn related_requires_at_least_one_file() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("multi-config"))
+        .arg("related")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("required"));
+}
+
+#[test]
+fn related_normalizes_dot_relative_paths() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("multi-config"))
+        .arg("related")
+        .arg("./web/app/users/[id]/page.tsx")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "playwright/storybook/user.stories.spec.ts",
         ));
 }
 
@@ -141,6 +292,7 @@ fn nonliteral_playwright_config_values_are_ignored_when_optional() {
         .unwrap()
         .arg("--root")
         .arg(fixture("nonliteral-playwright-config"))
+        .arg("check")
         .assert()
         .success()
         .stdout(predicate::str::contains(
@@ -155,6 +307,7 @@ fn navigation_helpers_cover_routes() {
         .arg("--root")
         .arg(fixture("navigation-helper"))
         .arg("--json")
+        .arg("check")
         .assert()
         .success()
         .stdout(predicate::str::contains(r#""uncoveredRoutes": 0"#))
@@ -168,6 +321,7 @@ fn scanner_edge_cases_are_covered_from_fixture() {
         .arg("--root")
         .arg(fixture("scanner-edge-cases"))
         .arg("--json")
+        .arg("check")
         .assert()
         .success()
         .stdout(predicate::str::contains(r#""uncoveredRoutes": 0"#))
@@ -188,6 +342,7 @@ fn duplicate_slash_empty_segments_do_not_cover_dynamic_routes() {
         .arg("--root")
         .arg(fixture("empty-segment-route"))
         .arg("--json")
+        .arg("check")
         .assert()
         .code(1)
         .stdout(predicate::str::contains(r#""uncoveredRoutes": 1"#))
@@ -203,6 +358,7 @@ fn selector_roots_and_excludes_are_configurable() {
         .arg("--root")
         .arg(fixture("selector-roots"))
         .arg("--json")
+        .arg("check")
         .assert()
         .success()
         .stdout(predicate::str::contains(r#""totalSelectors": 1"#))
@@ -219,6 +375,7 @@ fn missing_explicit_config_exits_with_error() {
         .arg(fixture("covered"))
         .arg("--config")
         .arg("missing.yaml")
+        .arg("check")
         .assert()
         .code(2)
         .stderr(predicate::str::contains("config file does not exist"));
@@ -232,6 +389,7 @@ fn missing_playwright_config_exits_with_error() {
         .arg(fixture("covered"))
         .arg("--playwright-config")
         .arg("missing-playwright.config.ts")
+        .arg("check")
         .assert()
         .code(2)
         .stderr(predicate::str::contains("Playwright config does not exist"));
@@ -243,6 +401,7 @@ fn missing_routes_exits_with_error() {
         .unwrap()
         .arg("--root")
         .arg(fixture("empty-app"))
+        .arg("check")
         .assert()
         .code(2)
         .stderr(predicate::str::contains("no Next.js page routes found"));
@@ -254,6 +413,7 @@ fn absolute_urls_matching_base_url_cover_routes() {
         .unwrap()
         .arg("--root")
         .arg(fixture("base-url"))
+        .arg("check")
         .assert()
         .success()
         .stdout(predicate::str::contains(
@@ -267,6 +427,7 @@ fn external_urls_without_base_url_are_ignored() {
         .unwrap()
         .arg("--root")
         .arg(fixture("external-url"))
+        .arg("check")
         .assert()
         .code(1)
         .stdout(predicate::str::contains("Uncovered routes:"));
@@ -279,6 +440,7 @@ fn missing_project_test_dir_is_skipped() {
         .arg("--root")
         .arg(fixture("missing-test-dir"))
         .arg("--json")
+        .arg("check")
         .assert()
         .code(1)
         .stdout(predicate::str::contains(r#""uncoveredRoutes": 1"#));
@@ -290,6 +452,7 @@ fn invalid_project_config_exits_with_error() {
         .unwrap()
         .arg("--root")
         .arg(fixture("invalid-project-config"))
+        .arg("check")
         .assert()
         .code(2)
         .stderr(predicate::str::contains("expected string literal"));
@@ -301,6 +464,7 @@ fn invalid_root_config_exits_with_error() {
         .unwrap()
         .arg("--root")
         .arg(fixture("invalid-root-config"))
+        .arg("check")
         .assert()
         .code(2)
         .stderr(predicate::str::contains("expected string literal"));
@@ -313,6 +477,7 @@ fn selector_coverage_reports_all_selectors_covered() {
         .arg("--root")
         .arg(fixture("selector-covered"))
         .arg("--json")
+        .arg("check")
         .assert()
         .success()
         .stdout(predicate::str::contains(r#""totalSelectors": 2"#))
@@ -327,6 +492,7 @@ fn selector_coverage_reports_uncovered_selectors() {
         .unwrap()
         .arg("--root")
         .arg(fixture("selector-uncovered"))
+        .arg("check")
         .assert()
         .code(1)
         .stdout(predicate::str::contains("Uncovered selectors:"))
@@ -340,6 +506,7 @@ fn selector_coverage_supports_fuzzy_templates() {
         .arg("--root")
         .arg(fixture("selector-fuzzy"))
         .arg("--json")
+        .arg("check")
         .assert()
         .success()
         .stdout(predicate::str::contains(r#""totalSelectors": 2"#))
@@ -355,6 +522,7 @@ fn selector_coverage_supports_custom_attributes() {
         .arg("--root")
         .arg(fixture("selector-custom"))
         .arg("--json")
+        .arg("check")
         .assert()
         .success()
         .stdout(predicate::str::contains(r#""attribute": "data-test""#))
@@ -369,6 +537,7 @@ fn selector_coverage_can_be_disabled() {
         .arg("--root")
         .arg(fixture("selector-disabled"))
         .arg("--json")
+        .arg("check")
         .assert()
         .success()
         .stdout(predicate::str::contains(r#""totalSelectors": 0"#));
@@ -381,6 +550,7 @@ fn selector_coverage_marks_unsupported_dynamic_values() {
         .arg("--root")
         .arg(fixture("selector-unsupported"))
         .arg("--json")
+        .arg("check")
         .assert()
         .code(1)
         .stdout(predicate::str::contains(r#""unsupportedDynamic": true"#))
@@ -394,6 +564,7 @@ fn get_by_test_id_uses_playwright_test_id_attribute() {
         .arg("--root")
         .arg(fixture("testid-attribute"))
         .arg("--json")
+        .arg("check")
         .assert()
         .success()
         .stdout(predicate::str::contains(r#""attribute": "data-pw""#))
@@ -401,12 +572,11 @@ fn get_by_test_id_uses_playwright_test_id_attribute() {
 }
 
 #[test]
-fn edge_mode_outputs_selector_edges() {
+fn edges_json_outputs_selector_edges() {
     Command::cargo_bin("playwright-ast-coverage")
         .unwrap()
         .arg("--root")
         .arg(fixture("selector-covered"))
-        .arg("--mode")
         .arg("edges")
         .arg("--json")
         .assert()
@@ -424,7 +594,6 @@ fn edge_text_outputs_selector_edges() {
         .unwrap()
         .arg("--root")
         .arg(fixture("selector-covered"))
-        .arg("--mode")
         .arg("edges")
         .assert()
         .success()
