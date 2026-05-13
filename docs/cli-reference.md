@@ -27,6 +27,8 @@ playwright-ast-coverage related [OPTIONS] <FILES>...
 | `--playwright-config <PLAYWRIGHT_CONFIG>` | Analyzer `playwrightConfig`, otherwise all root-level `playwright*.config.*` files under `--root` | Playwright config file. May be repeated. Relative paths are resolved from `--root`. This overrides `playwrightConfig` in analyzer config. Passing a missing file is an error. |
 | `--project <PROJECT>` | | Filter by top-level Playwright config `name`, not by `projects[].name`. |
 | `--json` | `false` | Emit pretty-printed JSON instead of text output. |
+| `--assert-conditional-tests` | `false` | Require coverage from active tests. URLs and selectors found only in conditional tests or suites do not count. |
+| `--allow-skipped-tests` | `false` | Allow URLs and selectors found in unconditionally skipped tests or suites to count. |
 | `-h`, `--help` | | Print CLI help. |
 | `-V`, `--version` | | Print package version. |
 
@@ -47,8 +49,16 @@ By default the tool:
 - analyzes `frontendRoot: app` unless configured,
 - checks route coverage and selector coverage,
 - checks `data-testid` and `data-pw` selectors unless configured,
+- counts coverage from active tests and conditionally skipped tests,
+- ignores coverage from unconditionally skipped tests and suites,
 - exits `1` when any non-ignored route or selector is uncovered,
 - exits `2` for configuration or parse errors.
+
+Skipped and conditional Playwright tests are detected statically. Unconditional
+`test.skip(...)` and `test.describe.skip(...)` coverage does not count unless
+`--allow-skipped-tests` is set. Conditional wrappers, `test.skip(condition, ...)`,
+`.skipIf(...)`, and tests or suites inside conditional branches count by default;
+set `--assert-conditional-tests` to require active coverage instead.
 
 ## Analyzer Configuration
 

@@ -368,6 +368,53 @@ fn selector_roots_and_excludes_are_configurable() {
 }
 
 #[test]
+fn skipped_tests_do_not_cover_by_default_but_conditional_tests_do() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("skipped-tests"))
+        .arg("--json")
+        .arg("check")
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains(r#""uncoveredRoutes": 1"#))
+        .stdout(predicate::str::contains(r#""uncoveredSelectors": 1"#))
+        .stdout(predicate::str::contains(r#""route": "/skipped""#))
+        .stdout(predicate::str::contains(r#""route": "/conditional""#))
+        .stdout(predicate::str::contains(r#""covered": true"#));
+}
+
+#[test]
+fn allow_skipped_tests_counts_skipped_coverage() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("skipped-tests"))
+        .arg("--allow-skipped-tests")
+        .arg("--json")
+        .arg("check")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""uncoveredRoutes": 0"#))
+        .stdout(predicate::str::contains(r#""uncoveredSelectors": 0"#));
+}
+
+#[test]
+fn assert_conditional_tests_requires_active_coverage() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("skipped-tests"))
+        .arg("--assert-conditional-tests")
+        .arg("--json")
+        .arg("check")
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains(r#""uncoveredRoutes": 2"#))
+        .stdout(predicate::str::contains(r#""uncoveredSelectors": 2"#));
+}
+
+#[test]
 fn missing_explicit_config_exits_with_error() {
     Command::cargo_bin("playwright-ast-coverage")
         .unwrap()

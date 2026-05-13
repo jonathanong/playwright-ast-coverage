@@ -1,4 +1,4 @@
-use crate::ast;
+use crate::{ast, playwright_tests};
 #[cfg(test)]
 use anyhow::Result;
 use oxc_ast_visit::Visit;
@@ -288,16 +288,35 @@ pub fn extract_playwright_selectors_with_regexes(
     })
 }
 
+#[cfg(test)]
 pub fn extract_playwright_selectors_from_program(
     program: &oxc_ast::ast::Program<'_>,
     source: &str,
     regexes: &SelectorRegexes,
     test_id_attributes: &[String],
 ) -> Vec<PlaywrightSelector> {
+    extract_playwright_selector_occurrences_from_program(
+        program,
+        source,
+        regexes,
+        test_id_attributes,
+    )
+    .into_iter()
+    .map(|occurrence| occurrence.value)
+    .collect()
+}
+
+pub fn extract_playwright_selector_occurrences_from_program(
+    program: &oxc_ast::ast::Program<'_>,
+    source: &str,
+    regexes: &SelectorRegexes,
+    test_id_attributes: &[String],
+) -> Vec<playwright_tests::TestOccurrence<PlaywrightSelector>> {
     let mut visitor = PlaywrightSelectorVisitor {
         source,
         regexes,
         test_id_attributes,
+        status: playwright_tests::TestStatus::Active,
         selectors: BTreeSet::new(),
     };
     visitor.visit_program(program);
@@ -338,7 +357,8 @@ struct PlaywrightSelectorVisitor<'a, 'r> {
     source: &'a str,
     regexes: &'r SelectorRegexes,
     test_id_attributes: &'r [String],
-    selectors: BTreeSet<PlaywrightSelector>,
+    status: playwright_tests::TestStatus,
+    selectors: BTreeSet<playwright_tests::TestOccurrence<PlaywrightSelector>>,
 }
 
 impl<'a> oxc_ast_visit::Visit<'a> for PlaywrightSelectorVisitor<'a, '_> {
@@ -348,19 +368,64 @@ impl<'a> oxc_ast_visit::Visit<'a> for PlaywrightSelectorVisitor<'a, '_> {
                 call,
                 self.source,
                 self.test_id_attributes,
-                &mut self.selectors,
+                &mut |selector| self.insert(selector),
             );
         } else if let Some(argument_mode) = selector_argument_mode(&call.callee) {
             for selector in selector_argument_literals(call, self.source, argument_mode) {
                 extract_css_attribute_selectors(
                     &selector,
                     &self.regexes.playwright_attributes,
-                    &mut self.selectors,
+                    &mut |selector| self.insert(selector),
                 );
             }
         }
 
-        oxc_ast_visit::walk::walk_call_expression(self, call);
+        self.visit_expression(&call.callee);
+        if let Some(type_arguments) = &call.type_arguments {
+            self.visit_ts_type_parameter_instantiation(type_arguments);
+        }
+        let callback_index = playwright_tests::callback_argument_index(call);
+        let callback_status = playwright_tests::test_callback_status(call);
+        for (index, argument) in call.arguments.iter().enumerate() {
+            if Some(index) == callback_index {
+                let status = callback_status
+                    .unwrap_or(playwright_tests::TestStatus::Active)
+                    .merge(
+                        playwright_tests::function_argument_annotation_status(argument)
+                            .unwrap_or(playwright_tests::TestStatus::Active),
+                    );
+                self.with_status(status, |visitor| visitor.visit_argument(argument));
+            } else {
+                self.visit_argument(argument);
+            }
+        }
+    }
+
+    fn visit_if_statement(&mut self, statement: &oxc_ast::ast::IfStatement<'a>) {
+        self.visit_expression(&statement.test);
+        let status = playwright_tests::status_for_if_branch(self.status);
+        self.with_status(status, |visitor| {
+            visitor.visit_statement(&statement.consequent);
+            if let Some(alternate) = &statement.alternate {
+                visitor.visit_statement(alternate);
+            }
+        });
+    }
+}
+
+impl PlaywrightSelectorVisitor<'_, '_> {
+    fn insert(&mut self, value: PlaywrightSelector) {
+        self.selectors.insert(playwright_tests::TestOccurrence {
+            value,
+            status: self.status,
+        });
+    }
+
+    fn with_status(&mut self, status: playwright_tests::TestStatus, visit: impl FnOnce(&mut Self)) {
+        let previous = self.status;
+        self.status = previous.merge(status);
+        visit(self);
+        self.status = previous;
     }
 }
 
@@ -411,13 +476,13 @@ fn jsx_expression_value(
 fn extract_css_attribute_selectors(
     source: &str,
     attributes: &[AttributeRegex],
-    selectors: &mut BTreeSet<PlaywrightSelector>,
+    insert: &mut impl FnMut(PlaywrightSelector),
 ) {
     for attribute in attributes {
         for captures in attribute.regex.captures_iter(source) {
             let op = captures.get(1).expect("operator capture").as_str();
             let value = first_capture(&captures, &[2, 3]).expect("value capture");
-            selectors.insert(PlaywrightSelector {
+            insert(PlaywrightSelector {
                 attribute: attribute.attribute.clone(),
                 selector: captures
                     .get(0)
@@ -488,7 +553,7 @@ fn extract_get_by_test_id_call(
     call: &oxc_ast::ast::CallExpression<'_>,
     source: &str,
     attributes: &[String],
-    selectors: &mut BTreeSet<PlaywrightSelector>,
+    insert: &mut impl FnMut(PlaywrightSelector),
 ) {
     let Some(argument) = call.arguments.first() else {
         return;
@@ -514,7 +579,7 @@ fn extract_get_by_test_id_call(
         return;
     };
     for attribute in attributes {
-        selectors.insert(PlaywrightSelector {
+        insert(PlaywrightSelector {
             attribute: attribute.clone(),
             selector: format!("getByTestId({display})"),
             matcher: matcher.clone(),
