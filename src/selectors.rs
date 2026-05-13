@@ -350,27 +350,17 @@ impl<'a> oxc_ast_visit::Visit<'a> for PlaywrightSelectorVisitor<'a, '_> {
                 self.test_id_attributes,
                 &mut self.selectors,
             );
+        } else if let Some(argument_mode) = selector_argument_mode(&call.callee) {
+            for selector in selector_argument_literals(call, self.source, argument_mode) {
+                extract_css_attribute_selectors(
+                    &selector,
+                    &self.regexes.playwright_attributes,
+                    &mut self.selectors,
+                );
+            }
         }
 
         oxc_ast_visit::walk::walk_call_expression(self, call);
-    }
-
-    fn visit_string_literal(&mut self, literal: &oxc_ast::ast::StringLiteral<'a>) {
-        extract_css_attribute_selectors(
-            literal.value.as_str(),
-            &self.regexes.playwright_attributes,
-            &mut self.selectors,
-        );
-    }
-
-    fn visit_template_literal(&mut self, template: &oxc_ast::ast::TemplateLiteral<'a>) {
-        let value = ast::template_literal_text(template, self.source);
-        extract_css_attribute_selectors(
-            &value,
-            &self.regexes.playwright_attributes,
-            &mut self.selectors,
-        );
-        oxc_ast_visit::walk::walk_template_literal(self, template);
     }
 }
 
@@ -441,13 +431,57 @@ fn extract_css_attribute_selectors(
 }
 
 fn callee_is_static_member_named(callee: &oxc_ast::ast::Expression<'_>, method: &str) -> bool {
+    callee_static_member_name(callee).is_some_and(|name| name == method)
+}
+
+fn callee_static_member_name<'a>(callee: &'a oxc_ast::ast::Expression<'a>) -> Option<&'a str> {
     match callee {
-        oxc_ast::ast::Expression::StaticMemberExpression(member) => member.property.name == method,
-        oxc_ast::ast::Expression::ParenthesizedExpression(parenthesized) => {
-            callee_is_static_member_named(&parenthesized.expression, method)
+        oxc_ast::ast::Expression::StaticMemberExpression(member) => {
+            Some(member.property.name.as_str())
         }
-        _ => false,
+        oxc_ast::ast::Expression::ParenthesizedExpression(parenthesized) => {
+            callee_static_member_name(&parenthesized.expression)
+        }
+        _ => None,
     }
+}
+
+#[derive(Clone, Copy)]
+enum SelectorArgumentMode {
+    First,
+    All,
+}
+
+fn selector_argument_mode(callee: &oxc_ast::ast::Expression<'_>) -> Option<SelectorArgumentMode> {
+    match callee_static_member_name(callee)? {
+        "dragAndDrop" => Some(SelectorArgumentMode::All),
+        "$" | "$$" | "$$eval" | "$eval" | "check" | "click" | "dblclick" | "dispatchEvent"
+        | "dragTo" | "evalOnSelector" | "evalOnSelectorAll" | "fill" | "focus" | "frameLocator"
+        | "getAttribute" | "hover" | "innerHTML" | "innerText" | "inputValue" | "isChecked"
+        | "isDisabled" | "isEditable" | "isEnabled" | "isHidden" | "isVisible" | "locator"
+        | "press" | "selectOption" | "setChecked" | "tap" | "textContent" | "type" | "uncheck"
+        | "waitForSelector" => Some(SelectorArgumentMode::First),
+        _ => None,
+    }
+}
+
+fn selector_argument_literals(
+    call: &oxc_ast::ast::CallExpression<'_>,
+    source: &str,
+    mode: SelectorArgumentMode,
+) -> Vec<String> {
+    call.arguments
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| matches!(mode, SelectorArgumentMode::All) || *index == 0)
+        .filter_map(|(_, argument)| match argument {
+            oxc_ast::ast::Argument::StringLiteral(literal) => Some(literal.value.to_string()),
+            oxc_ast::ast::Argument::TemplateLiteral(template) => {
+                Some(ast::template_literal_text(template.as_ref(), source))
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 fn extract_get_by_test_id_call(
@@ -603,6 +637,52 @@ mod tests {
         assert!(selectors
             .iter()
             .any(|selector| selector.selector == "getByTestId(/^account-/)"));
+    }
+
+    #[test]
+    fn css_attribute_selectors_must_be_used_by_playwright_selector_calls() {
+        let source = r#"
+            const unused = '[data-testid="save"]';
+            await page.locator('[data-testid="publish"]').click();
+            await page.click(`[data-pw="open"]`);
+            await page.type('[data-testid="search"]', 'query');
+            await page.$eval('[data-pw="panel"]', node => node.textContent);
+            await page.$$eval('[data-testid="items"]', nodes => nodes.length);
+            await page.frameLocator('[data-pw="frame"]').locator('[data-testid="inside"]');
+            await page.dragAndDrop('[data-testid="source"]', '[data-pw="target"]');
+        "#;
+        let selectors =
+            extract_playwright_selectors(source, &attrs(), &["data-testid".to_string()]);
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == r#"[data-testid="publish"]"#));
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == r#"[data-pw="open"]"#));
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == r#"[data-testid="search"]"#));
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == r#"[data-pw="panel"]"#));
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == r#"[data-testid="items"]"#));
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == r#"[data-pw="frame"]"#));
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == r#"[data-testid="inside"]"#));
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == r#"[data-testid="source"]"#));
+        assert!(selectors
+            .iter()
+            .any(|selector| selector.selector == r#"[data-pw="target"]"#));
+        assert!(selectors
+            .iter()
+            .all(|selector| selector.selector != r#"[data-testid="save"]"#));
     }
 
     #[test]

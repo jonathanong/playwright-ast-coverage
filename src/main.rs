@@ -141,18 +141,67 @@ struct AppSelectorTarget<'a> {
     value: String,
 }
 
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
+struct TestProjectContext {
+    base_url: Option<String>,
+    test_id_attribute: String,
+}
+
+struct DiscoveredTestFile {
+    path: PathBuf,
+    contexts: Vec<TestProjectContext>,
+}
+
+struct TestProjectDiscovery {
+    context: TestProjectContext,
+    test_dir: PathBuf,
+    include: GlobSet,
+    ignore: GlobSet,
+}
+
 struct TestAnalysisContext<'a> {
     root: &'a Path,
     route_targets: &'a [RouteTarget],
     app_selector_targets: &'a [AppSelectorTarget<'a>],
     navigation_helpers: &'a [String],
-    base_urls: &'a [String],
-    test_id_attributes: &'a [String],
     selector_regexes: &'a selectors::SelectorRegexes,
 }
 
 type SelectorCoverageKey = (String, String, String);
 type CoverageLinks = (BTreeSet<String>, BTreeSet<String>);
+
+impl TestProjectContext {
+    fn from_project(project: &playwright_config::TestProject) -> Self {
+        Self {
+            base_url: project.base_url.clone(),
+            test_id_attribute: project.test_id_attribute.clone(),
+        }
+    }
+}
+
+impl DiscoveredTestFile {
+    fn base_urls(&self) -> Vec<String> {
+        let mut urls: Vec<String> = self
+            .contexts
+            .iter()
+            .filter_map(|context| context.base_url.clone())
+            .collect();
+        urls.sort();
+        urls.dedup();
+        urls
+    }
+
+    fn test_id_attributes(&self) -> Vec<String> {
+        let mut attributes: Vec<String> = self
+            .contexts
+            .iter()
+            .map(|context| context.test_id_attribute.clone())
+            .collect();
+        attributes.sort();
+        attributes.dedup();
+        attributes
+    }
+}
 
 #[cfg(not(test))]
 fn main() -> ExitCode {
@@ -230,8 +279,6 @@ fn analyze(root: &Path, settings: &Settings) -> Result<Analysis> {
         settings.project.as_deref(),
     )?;
     let test_files = discover_test_files(root, settings, &playwright)?;
-    let base_urls = playwright.base_urls();
-    let test_id_attributes = playwright.test_id_attributes();
     let selector_regexes = selectors::compile_selector_regexes(&settings.selector_attributes);
     let app_selectors = if settings.selector_attributes.is_empty() {
         Vec::new()
@@ -245,8 +292,6 @@ fn analyze(root: &Path, settings: &Settings) -> Result<Analysis> {
         route_targets: &route_targets,
         app_selector_targets: &app_selector_targets,
         navigation_helpers: &settings.navigation_helpers,
-        base_urls: &base_urls,
-        test_id_attributes: &test_id_attributes,
         selector_regexes: &selector_regexes,
     };
 
@@ -271,13 +316,18 @@ fn analyze(root: &Path, settings: &Settings) -> Result<Analysis> {
     })
 }
 
-fn analyze_test_file(test_file: &Path, context: &TestAnalysisContext<'_>) -> Result<Vec<Edge>> {
-    let source = std::fs::read_to_string(test_file)?;
-    let rel_test_file = relative_string(context.root, test_file);
+fn analyze_test_file(
+    test_file: &DiscoveredTestFile,
+    context: &TestAnalysisContext<'_>,
+) -> Result<Vec<Edge>> {
+    let source = std::fs::read_to_string(&test_file.path)?;
+    let rel_test_file = relative_string(context.root, &test_file.path);
     let mut edges = Vec::new();
+    let base_urls = test_file.base_urls();
+    let test_id_attributes = test_file.test_id_attributes();
 
     let (raw_urls, playwright_selectors) =
-        ast::with_program(test_file, &source, |program, source| {
+        ast::with_program(&test_file.path, &source, |program, source| {
             let raw_urls = playwright_urls::extract_playwright_url_literals_from_program(
                 program,
                 source,
@@ -290,14 +340,14 @@ fn analyze_test_file(test_file: &Path, context: &TestAnalysisContext<'_>) -> Res
                     program,
                     source,
                     context.selector_regexes,
-                    context.test_id_attributes,
+                    &test_id_attributes,
                 )
             };
             (raw_urls, playwright_selectors)
         })?;
 
     for raw_url in raw_urls {
-        let Some(url) = normalize_url(&raw_url, context.base_urls) else {
+        let Some(url) = normalize_url(&raw_url, &base_urls) else {
             continue;
         };
         for route in context.route_targets {
@@ -421,46 +471,113 @@ fn discover_test_files(
     root: &Path,
     settings: &Settings,
     playwright: &playwright_config::PlaywrightConfig,
-) -> Result<Vec<PathBuf>> {
+) -> Result<Vec<DiscoveredTestFile>> {
+    let project_discovery = build_project_discovery(root, playwright)?;
+    let all_contexts = test_project_contexts(&project_discovery);
     if !settings.test_include.is_empty() {
         let include = build_globset(&settings.test_include)?;
         let exclude = build_globset(&settings.test_exclude)?;
-        return Ok(walk_files(root)
-            .into_iter()
-            .filter(|path| {
-                let rel = relative_string(root, path);
-                include.is_match(&rel) && !exclude.is_match(&rel)
-            })
-            .collect());
+        let mut files = Vec::new();
+        for path in walk_files(root).into_iter().filter(|path| {
+            let rel = relative_string(root, path);
+            include.is_match(&rel) && !exclude.is_match(&rel)
+        }) {
+            let mut contexts = matching_project_contexts(root, &project_discovery, &path);
+            if contexts.is_empty() {
+                contexts = all_contexts.clone();
+            }
+            files.push(DiscoveredTestFile { contexts, path });
+        }
+        return Ok(files);
     }
 
     let yaml_exclude = build_globset(&settings.test_exclude)?;
-    let mut files = BTreeSet::new();
+    let mut files: BTreeMap<PathBuf, BTreeSet<TestProjectContext>> = BTreeMap::new();
 
-    for project in &playwright.projects {
-        let test_dir = project.test_dir(root);
-        if !test_dir.exists() {
+    for project_discovery in &project_discovery {
+        if !project_discovery.test_dir.exists() {
             continue;
         }
-        let include = build_globset(&project.test_match)?;
-        let ignore = build_globset(&project.test_ignore)?;
 
-        for path in walk_files(&test_dir) {
+        for path in walk_files(&project_discovery.test_dir) {
             let rel_root = relative_string(root, &path);
-            let rel_test = relative_string(&test_dir, &path);
+            let rel_test = relative_string(&project_discovery.test_dir, &path);
             let abs = slash_path(&path);
-            let included = include.is_match(&rel_root)
-                || include.is_match(&rel_test)
-                || include.is_match(&abs);
-            let ignored =
-                ignore.is_match(&rel_root) || ignore.is_match(&rel_test) || ignore.is_match(&abs);
+            let included = project_discovery.include.is_match(&rel_root)
+                || project_discovery.include.is_match(&rel_test)
+                || project_discovery.include.is_match(&abs);
+            let ignored = project_discovery.ignore.is_match(&rel_root)
+                || project_discovery.ignore.is_match(&rel_test)
+                || project_discovery.ignore.is_match(&abs);
             if included && !ignored && !yaml_exclude.is_match(&rel_root) {
-                files.insert(path);
+                files
+                    .entry(path)
+                    .or_default()
+                    .insert(project_discovery.context.clone());
             }
         }
     }
 
-    Ok(files.into_iter().collect())
+    Ok(files
+        .into_iter()
+        .map(|(path, contexts)| DiscoveredTestFile {
+            path,
+            contexts: contexts.into_iter().collect(),
+        })
+        .collect())
+}
+
+fn build_project_discovery(
+    root: &Path,
+    playwright: &playwright_config::PlaywrightConfig,
+) -> Result<Vec<TestProjectDiscovery>> {
+    let mut discovery = Vec::new();
+    for project in &playwright.projects {
+        discovery.push(TestProjectDiscovery {
+            context: TestProjectContext::from_project(project),
+            test_dir: project.test_dir(root),
+            include: build_globset(&project.test_match)?,
+            ignore: build_globset(&project.test_ignore)?,
+        });
+    }
+    Ok(discovery)
+}
+
+fn test_project_contexts(projects: &[TestProjectDiscovery]) -> Vec<TestProjectContext> {
+    let mut contexts: Vec<TestProjectContext> = projects
+        .iter()
+        .map(|project| project.context.clone())
+        .collect();
+    contexts.sort();
+    contexts.dedup();
+    contexts
+}
+
+fn matching_project_contexts(
+    root: &Path,
+    projects: &[TestProjectDiscovery],
+    path: &Path,
+) -> Vec<TestProjectContext> {
+    let rel_root = relative_string(root, path);
+    let mut contexts = BTreeSet::new();
+    for project in projects {
+        if !path.starts_with(&project.test_dir) {
+            continue;
+        }
+
+        let rel_test = relative_string(&project.test_dir, path);
+        let abs = slash_path(path);
+        let included = project.include.is_match(&rel_root)
+            || project.include.is_match(&rel_test)
+            || project.include.is_match(&abs);
+        let ignored = project.ignore.is_match(&rel_root)
+            || project.ignore.is_match(&rel_test)
+            || project.ignore.is_match(&abs);
+        if included && !ignored {
+            contexts.insert(project.context.clone());
+        }
+    }
+    contexts.into_iter().collect()
 }
 
 fn build_coverage(
