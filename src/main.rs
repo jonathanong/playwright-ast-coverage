@@ -152,6 +152,13 @@ struct DiscoveredTestFile {
     contexts: Vec<TestProjectContext>,
 }
 
+struct TestProjectDiscovery {
+    context: TestProjectContext,
+    test_dir: PathBuf,
+    include: GlobSet,
+    ignore: GlobSet,
+}
+
 struct TestAnalysisContext<'a> {
     root: &'a Path,
     route_targets: &'a [RouteTarget],
@@ -465,6 +472,7 @@ fn discover_test_files(
     settings: &Settings,
     playwright: &playwright_config::PlaywrightConfig,
 ) -> Result<Vec<DiscoveredTestFile>> {
+    let project_discovery = build_project_discovery(root, playwright)?;
     if !settings.test_include.is_empty() {
         let include = build_globset(&settings.test_include)?;
         let exclude = build_globset(&settings.test_exclude)?;
@@ -474,7 +482,7 @@ fn discover_test_files(
             include.is_match(&rel) && !exclude.is_match(&rel)
         }) {
             files.push(DiscoveredTestFile {
-                contexts: matching_project_contexts(root, playwright, &path)?,
+                contexts: matching_project_contexts(root, &project_discovery, &path),
                 path,
             });
         }
@@ -484,29 +492,26 @@ fn discover_test_files(
     let yaml_exclude = build_globset(&settings.test_exclude)?;
     let mut files: BTreeMap<PathBuf, BTreeSet<TestProjectContext>> = BTreeMap::new();
 
-    for project in &playwright.projects {
-        let test_dir = project.test_dir(root);
-        if !test_dir.exists() {
+    for project_discovery in &project_discovery {
+        if !project_discovery.test_dir.exists() {
             continue;
         }
-        let include = build_globset(&project.test_match)?;
-        let ignore = build_globset(&project.test_ignore)?;
-        let project_context = TestProjectContext::from_project(project);
 
-        for path in walk_files(&test_dir) {
+        for path in walk_files(&project_discovery.test_dir) {
             let rel_root = relative_string(root, &path);
-            let rel_test = relative_string(&test_dir, &path);
+            let rel_test = relative_string(&project_discovery.test_dir, &path);
             let abs = slash_path(&path);
-            let included = include.is_match(&rel_root)
-                || include.is_match(&rel_test)
-                || include.is_match(&abs);
-            let ignored =
-                ignore.is_match(&rel_root) || ignore.is_match(&rel_test) || ignore.is_match(&abs);
+            let included = project_discovery.include.is_match(&rel_root)
+                || project_discovery.include.is_match(&rel_test)
+                || project_discovery.include.is_match(&abs);
+            let ignored = project_discovery.ignore.is_match(&rel_root)
+                || project_discovery.ignore.is_match(&rel_test)
+                || project_discovery.ignore.is_match(&abs);
             if included && !ignored && !yaml_exclude.is_match(&rel_root) {
                 files
                     .entry(path)
                     .or_default()
-                    .insert(project_context.clone());
+                    .insert(project_discovery.context.clone());
             }
         }
     }
@@ -520,29 +525,47 @@ fn discover_test_files(
         .collect())
 }
 
-fn matching_project_contexts(
+fn build_project_discovery(
     root: &Path,
     playwright: &playwright_config::PlaywrightConfig,
+) -> Result<Vec<TestProjectDiscovery>> {
+    let mut discovery = Vec::new();
+    for project in &playwright.projects {
+        discovery.push(TestProjectDiscovery {
+            context: TestProjectContext::from_project(project),
+            test_dir: project.test_dir(root),
+            include: build_globset(&project.test_match)?,
+            ignore: build_globset(&project.test_ignore)?,
+        });
+    }
+    Ok(discovery)
+}
+
+fn matching_project_contexts(
+    root: &Path,
+    projects: &[TestProjectDiscovery],
     path: &Path,
-) -> Result<Vec<TestProjectContext>> {
+) -> Vec<TestProjectContext> {
     let rel_root = relative_string(root, path);
     let mut contexts = BTreeSet::new();
-    for project in &playwright.projects {
-        let test_dir = project.test_dir(root);
-        if !path.starts_with(&test_dir) {
+    for project in projects {
+        if !path.starts_with(&project.test_dir) {
             continue;
         }
 
-        let rel_test = relative_string(&test_dir, path);
+        let rel_test = relative_string(&project.test_dir, path);
         let abs = slash_path(path);
-        let ignore = build_globset(&project.test_ignore)?;
-        let ignored =
-            ignore.is_match(&rel_root) || ignore.is_match(&rel_test) || ignore.is_match(&abs);
-        if !ignored {
-            contexts.insert(TestProjectContext::from_project(project));
+        let included = project.include.is_match(&rel_root)
+            || project.include.is_match(&rel_test)
+            || project.include.is_match(&abs);
+        let ignored = project.ignore.is_match(&rel_root)
+            || project.ignore.is_match(&rel_test)
+            || project.ignore.is_match(&abs);
+        if included && !ignored {
+            contexts.insert(project.context.clone());
         }
     }
-    Ok(contexts.into_iter().collect())
+    contexts.into_iter().collect()
 }
 
 fn build_coverage(
