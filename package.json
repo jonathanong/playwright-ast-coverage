@@ -20,6 +20,7 @@
   "files": [
     "bin/",
     "scripts/install.js",
+    "scripts/install/",
     "README.md",
     "LICENSE"
   ],
@@ -44,6 +45,6 @@
     "vitest": "^4.1.6"
   },
   "engines": {
-    "node": ">=18"
+    "node": "^20.19.0 || ^22.13.0 || >=24"
   }
 }

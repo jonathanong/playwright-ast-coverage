@@ -4,8 +4,19 @@ const { createServer } = require("node:http");
 const { mkdir, mkdtemp, readFile, rm, stat, writeFile } = require("node:fs/promises");
 const { join } = require("node:path");
 const { tmpdir } = require("node:os");
+const { pathToFileURL } = require("node:url");
 
 const { assetName, install, platformTarget } = require("./install");
+
+function assetBaseUrl(root) {
+  return pathToFileURL(join(root, "assets")).toString();
+}
+
+function executableName(target) {
+  return process.platform === "win32" || target.endsWith("windows-msvc")
+    ? "playwright-ast-coverage.exe"
+    : "playwright-ast-coverage";
+}
 
 test("rejects unsupported install targets", async () => {
   await assert.rejects(() => install({ target: null }), /Unsupported platform/);
@@ -51,7 +62,7 @@ test("installs only the requested platform binary and verifies checksum", async 
       vendorDir,
       version,
     });
-    assert.equal(installed, join(vendorDir, "playwright-ast-coverage"));
+    assert.equal(installed, join(vendorDir, executableName(target)));
     assert.deepEqual(requests.sort(), [`/${asset}`, `/${asset}.sha256`].sort());
     assert.equal(await readFile(installed, "utf8"), content.toString("utf8"));
     if (process.platform !== "win32") {
@@ -78,9 +89,9 @@ test("installs with default target and release base environment", async () => {
   await writeFile(join(root, "assets", `${asset}.sha256`), `${hash}  ${asset}\n`);
 
   try {
-    process.env.PLAYWRIGHT_AST_COVERAGE_RELEASE_BASE_URL = `file://${join(root, "assets")}`;
+    process.env.PLAYWRIGHT_AST_COVERAGE_RELEASE_BASE_URL = assetBaseUrl(root);
     const installed = await install({ vendorDir, version });
-    assert.equal(installed, join(vendorDir, "playwright-ast-coverage"));
+    assert.equal(installed, join(vendorDir, executableName(target)));
   } finally {
     if (previous === undefined) {
       delete process.env.PLAYWRIGHT_AST_COVERAGE_RELEASE_BASE_URL;
@@ -106,7 +117,7 @@ test("installs Windows assets without chmod", async () => {
 
   try {
     const installed = await install({
-      baseUrl: `file://${join(root, "assets")}`,
+      baseUrl: assetBaseUrl(root),
       target,
       vendorDir,
       version,
@@ -131,7 +142,7 @@ test("rejects checksum mismatches and cleans temporary files", async () => {
 
   try {
     await assert.rejects(
-      () => install({ baseUrl: `file://${join(root, "assets")}`, target, vendorDir, version }),
+      () => install({ baseUrl: assetBaseUrl(root), target, vendorDir, version }),
       /Checksum mismatch/,
     );
   } finally {

@@ -3,6 +3,7 @@ const { createServer } = require("node:http");
 const { mkdtemp, readFile, rm, writeFile } = require("node:fs/promises");
 const { join } = require("node:path");
 const { tmpdir } = require("node:os");
+const { pathToFileURL } = require("node:url");
 
 const { download, fetchText, isRedirectStatus } = require("./install");
 
@@ -31,7 +32,7 @@ test("downloads file URLs and fetches text over HTTP redirects", async () => {
   const address = server.address();
 
   try {
-    await download(`file://${source}`, destination);
+    await download(pathToFileURL(source).toString(), destination);
     assert.equal(await readFile(destination, "utf8"), "hello");
     assert.equal(await fetchText(`http://127.0.0.1:${address.port}/redirect`), "redirected");
     await assert.rejects(() => fetchText(`http://127.0.0.1:${address.port}/missing`), /HTTP 404/);
