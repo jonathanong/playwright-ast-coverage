@@ -1,4 +1,8 @@
 .codex/worktrees/
+/coverage/
+/node_modules/
+/packages/*/coverage/
+/packages/*/node_modules/
 /target/
 /vendor/
 *.tgz

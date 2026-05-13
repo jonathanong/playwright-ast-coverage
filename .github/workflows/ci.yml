@@ -42,8 +42,14 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: Check JavaScript formatting
+        run: npm run fmt:js:check
+
       - name: Run Clippy
-        run: cargo clippy --all-targets --all-features
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run Oxlint
+        run: npm run lint:js
 
       - name: Run npm tests
         run: npm test --ignore-scripts
@@ -56,10 +62,20 @@ jobs:
           mkdir -p target/llvm-cov
           cargo llvm-cov --all-features --fail-uncovered-lines 0 --fail-uncovered-functions 0 --show-missing-lines --lcov --output-path target/llvm-cov/lcov.info
 
-      - name: Upload coverage to Codecov
+      - name: Upload Rust coverage to Codecov
         if: ${{ env.CODECOV_TOKEN != '' }}
         uses: codecov/codecov-action@v6
         with:
           token: ${{ env.CODECOV_TOKEN }}
-          files: target/llvm-cov/lcov.info,packages/eslint-plugin-playwright-ast-coverage/coverage/lcov.info
+          files: target/llvm-cov/lcov.info
+          flags: rust
+          fail_ci_if_error: true
+
+      - name: Upload JavaScript coverage to Codecov
+        if: ${{ env.CODECOV_TOKEN != '' }}
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ env.CODECOV_TOKEN }}
+          files: coverage/lcov.info
+          flags: javascript
           fail_ci_if_error: true

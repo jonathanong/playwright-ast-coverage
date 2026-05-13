@@ -3,6 +3,9 @@
 `playwright-ast-coverage` scans a Next.js App Router project and reports route
 and selector coverage inferred from Playwright tests.
 
+For agent-oriented workflows, see [Agent Guide](agent-guide.md). For lint-time
+test-hook validation, see [ESLint and Oxlint Plugin](eslint-plugin.md).
+
 ## Commands
 
 ```sh
@@ -20,18 +23,18 @@ playwright-ast-coverage related [OPTIONS] <FILES>...
 
 ## Options
 
-| Option | Default | Description |
-| --- | --- | --- |
-| `--root <ROOT>` | `.` | Repository or package root to analyze. Relative paths are resolved from the current working directory. |
-| `--config <CONFIG>` | `.playwright-ast-coverage.{yaml,yml,json,jsonc}` under `--root`, when present | Analyzer config file. Relative paths are resolved from `--root`. Passing a missing file is an error. |
+| Option                                    | Default                                                                                           | Description                                                                                                                                                                   |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--root <ROOT>`                           | `.`                                                                                               | Repository or package root to analyze. Relative paths are resolved from the current working directory.                                                                        |
+| `--config <CONFIG>`                       | `.playwright-ast-coverage.{yaml,yml,json,jsonc}` under `--root`, when present                     | Analyzer config file. Relative paths are resolved from `--root`. Passing a missing file is an error.                                                                          |
 | `--playwright-config <PLAYWRIGHT_CONFIG>` | Analyzer `playwrightConfig`, otherwise all root-level `playwright*.config.*` files under `--root` | Playwright config file. May be repeated. Relative paths are resolved from `--root`. This overrides `playwrightConfig` in analyzer config. Passing a missing file is an error. |
-| `--project <PROJECT>` | | Filter by top-level Playwright config `name`, not by `projects[].name`. |
-| `--json` | `false` | Emit pretty-printed JSON instead of text output. |
-| `--assert-conditional-tests` | `false` | Require coverage from active tests. URLs and selectors found only in conditional tests or suites do not count. |
-| `--allow-skipped-tests` | `false` | Allow URLs and selectors found in unconditionally skipped tests or suites to count. |
-| `--assert-unique-selectors` | `false` | Fail `check` when an exact selector value is used more than once across configured selector roots. Template and unsupported dynamic values are ignored. |
-| `-h`, `--help` | | Print CLI help. |
-| `-V`, `--version` | | Print package version. |
+| `--project <PROJECT>`                     |                                                                                                   | Filter by top-level Playwright config `name`, not by `projects[].name`.                                                                                                       |
+| `--json`                                  | `false`                                                                                           | Emit pretty-printed JSON instead of text output.                                                                                                                              |
+| `--assert-conditional-tests`              | `false`                                                                                           | Require coverage from active tests. URLs and selectors found only in conditional tests or suites do not count.                                                                |
+| `--allow-skipped-tests`                   | `false`                                                                                           | Allow URLs and selectors found in unconditionally skipped tests or suites to count.                                                                                           |
+| `--assert-unique-selectors`               | `false`                                                                                           | Fail `check` when an exact selector value is used more than once across configured selector roots. Template and unsupported dynamic values are ignored.                       |
+| `-h`, `--help`                            |                                                                                                   | Print CLI help.                                                                                                                                                               |
+| `-V`, `--version`                         |                                                                                                   | Print package version.                                                                                                                                                        |
 
 Options can be written after the subcommand:
 
@@ -87,37 +90,37 @@ selectorRoots:
   - web/components
 selectorInclude: []
 selectorExclude:
-  - '**/*.test.tsx'
-  - '**/*.stories.tsx'
-  - '**/__tests__/**'
+  - "**/*.test.tsx"
+  - "**/*.stories.tsx"
+  - "**/__tests__/**"
 ```
 
-| Option | Default | Description |
-| --- | --- | --- |
-| `frontendRoot` | `app` | Next.js App Router root containing `page.ts`, `page.tsx`, `page.js`, and `page.jsx` files. Relative to `--root`. |
-| `playwrightConfig` | All root-level `playwright*.config.*` files found under `--root`, otherwise none | Playwright config path, or array of paths. Relative to `--root`. Overridden by repeated `--playwright-config`. |
-| `testInclude` | `[]` | Root-relative glob patterns for test files. When non-empty, this replaces test discovery from Playwright `testDir` and `testMatch`. |
-| `testExclude` | `[]` | Root-relative glob patterns for test files to ignore. Applied to `testInclude` discovery and also in addition to Playwright `testIgnore`. |
-| `ignoreRoutes` | `[]` | Route patterns that should count as covered even when no test URL matches them. Uses the same route matching rules as coverage. |
-| `navigationHelpers` | `[]` | Callee names for project navigation helpers. The first URL-like string literal inside each matching call is counted as a visited URL. Names can include dots, such as `testHelpers.openPath`. |
-| `selectorAttributes` | `["data-testid", "data-pw"]` | JSX attributes to collect from app source and CSS attribute selectors to detect in tests. Set this and `componentSelectorAttributes` to empty values to disable selector coverage. |
-| `componentSelectorAttributes` | `{}` | Component prop names to collect from JSX component usage and report as DOM selector attributes, such as `{ dataPw: data-pw }`. Mapped DOM attributes are also detected in Playwright CSS selectors. |
-| `selectorRoots` | `[frontendRoot]` | Root-relative directories to scan for app selectors. Use this for shared component directories outside the App Router tree. Missing roots are skipped. |
-| `selectorInclude` | `[]` | Root-relative glob patterns for app selector source files. When empty, all source files under `selectorRoots` are included before excludes. |
-| `selectorExclude` | `[]` | Root-relative glob patterns for app selector source files to ignore. Useful for unit tests, stories, and generated files. |
+| Option                        | Default                                                                          | Description                                                                                                                                                                                         |
+| ----------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `frontendRoot`                | `app`                                                                            | Next.js App Router root containing `page.ts`, `page.tsx`, `page.js`, and `page.jsx` files. Relative to `--root`.                                                                                    |
+| `playwrightConfig`            | All root-level `playwright*.config.*` files found under `--root`, otherwise none | Playwright config path, or array of paths. Relative to `--root`. Overridden by repeated `--playwright-config`.                                                                                      |
+| `testInclude`                 | `[]`                                                                             | Root-relative glob patterns for test files. When non-empty, this replaces test discovery from Playwright `testDir` and `testMatch`.                                                                 |
+| `testExclude`                 | `[]`                                                                             | Root-relative glob patterns for test files to ignore. Applied to `testInclude` discovery and also in addition to Playwright `testIgnore`.                                                           |
+| `ignoreRoutes`                | `[]`                                                                             | Route patterns that should count as covered even when no test URL matches them. Uses the same route matching rules as coverage.                                                                     |
+| `navigationHelpers`           | `[]`                                                                             | Callee names for project navigation helpers. The first URL-like string literal inside each matching call is counted as a visited URL. Names can include dots, such as `testHelpers.openPath`.       |
+| `selectorAttributes`          | `["data-testid", "data-pw"]`                                                     | JSX attributes to collect from app source and CSS attribute selectors to detect in tests. Set this and `componentSelectorAttributes` to empty values to disable selector coverage.                  |
+| `componentSelectorAttributes` | `{}`                                                                             | Component prop names to collect from JSX component usage and report as DOM selector attributes, such as `{ dataPw: data-pw }`. Mapped DOM attributes are also detected in Playwright CSS selectors. |
+| `selectorRoots`               | `[frontendRoot]`                                                                 | Root-relative directories to scan for app selectors. Use this for shared component directories outside the App Router tree. Missing roots are skipped.                                              |
+| `selectorInclude`             | `[]`                                                                             | Root-relative glob patterns for app selector source files. When empty, all source files under `selectorRoots` are included before excludes.                                                         |
+| `selectorExclude`             | `[]`                                                                             | Root-relative glob patterns for app selector source files to ignore. Useful for unit tests, stories, and generated files.                                                                           |
 
 ## Playwright Config
 
 The tool reads a limited set of literal values from Playwright config:
 
-| Playwright field | Description |
-| --- | --- |
-| `testDir` | Directory containing tests. Project values override the root value. Defaults to `.` when no Playwright config exists. |
-| `testMatch` | String glob or array of string globs for tests. Project values override the root value. JavaScript regular-expression patterns are not supported. |
-| `testIgnore` | String glob or array of string globs for ignored tests. Root and project values are combined. |
-| `use.baseURL` or `baseURL` | Literal base URL used to normalize absolute URLs such as `http://localhost:3000/users/42` to `/users/42`. Non-literal values are ignored. |
+| Playwright field                           | Description                                                                                                                                           |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `testDir`                                  | Directory containing tests. Project values override the root value. Defaults to `.` when no Playwright config exists.                                 |
+| `testMatch`                                | String glob or array of string globs for tests. Project values override the root value. JavaScript regular-expression patterns are not supported.     |
+| `testIgnore`                               | String glob or array of string globs for ignored tests. Root and project values are combined.                                                         |
+| `use.baseURL` or `baseURL`                 | Literal base URL used to normalize absolute URLs such as `http://localhost:3000/users/42` to `/users/42`. Non-literal values are ignored.             |
 | `use.testIdAttribute` or `testIdAttribute` | Attribute that Playwright `getByTestId(...)` uses. Defaults to `data-testid`; project values override the root value. Non-literal values are ignored. |
-| `projects` | Array of project objects. Each project inherits supported root options unless the project provides its own supported value. |
+| `projects`                                 | Array of project objects. Each project inherits supported root options unless the project provides its own supported value.                           |
 
 When more than one Playwright config file is analyzed, or when `--project` is
 used, each analyzed config must define a unique top-level `name`. The CLI
@@ -125,10 +128,10 @@ used, each analyzed config must define a unique top-level `name`. The CLI
 
 ```ts
 export default defineConfig({
-  name: 'storybook',
-  testDir: './playwright/storybook',
-  projects: [{ name: 'chromium' }],
-})
+  name: "storybook",
+  testDir: "./playwright/storybook",
+  projects: [{ name: "chromium" }],
+});
 ```
 
 In this example, use `--project storybook`. The inner `projects[].name`
@@ -155,35 +158,35 @@ Examples:
 testInclude:
   - tests/**/*.spec.ts
 testExclude:
-  - '**/fixtures/**'
+  - "**/fixtures/**"
 selectorInclude:
   - web/**/*.tsx
 selectorExclude:
-  - '**/*.test.tsx'
-  - '**/*.stories.tsx'
-  - '**/__tests__/**'
+  - "**/*.test.tsx"
+  - "**/*.stories.tsx"
+  - "**/__tests__/**"
 ```
 
 When Playwright config does not provide `testMatch`, these default test globs
 are used:
 
 ```yaml
-- '**/*.spec.ts'
-- '**/*.spec.tsx'
-- '**/*.spec.js'
-- '**/*.spec.jsx'
-- '**/*.spec.mts'
-- '**/*.spec.cts'
-- '**/*.spec.mjs'
-- '**/*.spec.cjs'
-- '**/*.test.ts'
-- '**/*.test.tsx'
-- '**/*.test.js'
-- '**/*.test.jsx'
-- '**/*.test.mts'
-- '**/*.test.cts'
-- '**/*.test.mjs'
-- '**/*.test.cjs'
+- "**/*.spec.ts"
+- "**/*.spec.tsx"
+- "**/*.spec.js"
+- "**/*.spec.jsx"
+- "**/*.spec.mts"
+- "**/*.spec.cts"
+- "**/*.spec.mjs"
+- "**/*.spec.cjs"
+- "**/*.test.ts"
+- "**/*.test.tsx"
+- "**/*.test.js"
+- "**/*.test.jsx"
+- "**/*.test.mts"
+- "**/*.test.cts"
+- "**/*.test.mjs"
+- "**/*.test.cjs"
 ```
 
 ## Route Matching
@@ -191,15 +194,15 @@ are used:
 Routes are derived from files named `page.ts`, `page.tsx`, `page.js`, or
 `page.jsx` under `frontendRoot`.
 
-| App Router file | Route pattern |
-| --- | --- |
-| `page.tsx` | `/` |
-| `settings/page.tsx` | `/settings` |
-| `users/[id]/page.tsx` | `/users/:id` |
-| `(admin)/settings/page.tsx` | `/settings` |
-| `docs/[...rest]/page.tsx` | `/docs/*` |
-| `shop/[[...rest]]/page.tsx` | `/shop/**` |
-| `@modal/settings/page.tsx` | `/settings` |
+| App Router file             | Route pattern |
+| --------------------------- | ------------- |
+| `page.tsx`                  | `/`           |
+| `settings/page.tsx`         | `/settings`   |
+| `users/[id]/page.tsx`       | `/users/:id`  |
+| `(admin)/settings/page.tsx` | `/settings`   |
+| `docs/[...rest]/page.tsx`   | `/docs/*`     |
+| `shop/[[...rest]]/page.tsx` | `/shop/**`    |
+| `@modal/settings/page.tsx`  | `/settings`   |
 
 Route matching rules:
 

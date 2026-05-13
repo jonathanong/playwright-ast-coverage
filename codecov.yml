@@ -1,0 +1,44 @@
+coverage:
+  status:
+    project:
+      default: off
+      rust:
+        target: 100%
+        threshold: 0%
+        flags:
+          - rust
+        if_not_found: failure
+      javascript:
+        target: 100%
+        threshold: 0%
+        flags:
+          - javascript
+        if_not_found: failure
+    patch:
+      default: off
+      rust:
+        target: 100%
+        threshold: 0%
+        flags:
+          - rust
+        if_not_found: failure
+      javascript:
+        target: 100%
+        threshold: 0%
+        flags:
+          - javascript
+        if_not_found: failure
+
+flag_management:
+  default_rules:
+    carryforward: false
+  individual_flags:
+    - name: rust
+      paths:
+        - src/
+        - tests/
+    - name: javascript
+      paths:
+        - bin/
+        - scripts/
+        - packages/eslint-plugin-playwright-ast-coverage/src/

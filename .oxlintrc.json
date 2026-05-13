@@ -1,0 +1,29 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "rules": {
+    "max-lines": [
+      "error",
+      {
+        "max": 200,
+        "skipBlankLines": true,
+        "skipComments": true
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["packages/eslint-plugin-playwright-ast-coverage/test/fixtures/**"],
+      "rules": {
+        "no-unused-vars": "off"
+      }
+    }
+  ],
+  "ignorePatterns": [
+    "coverage/**",
+    "node_modules/**",
+    "packages/**/coverage/**",
+    "packages/**/node_modules/**",
+    "target/**",
+    "vendor/**"
+  ]
+}
