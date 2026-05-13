@@ -23,8 +23,8 @@ playwright-ast-coverage related [OPTIONS] <FILES>...
 | Option | Default | Description |
 | --- | --- | --- |
 | `--root <ROOT>` | `.` | Repository or package root to analyze. Relative paths are resolved from the current working directory. |
-| `--config <CONFIG>` | `.playwright-ast-coverage.yaml` under `--root`, when present | YAML config file. Relative paths are resolved from `--root`. Passing a missing file is an error. |
-| `--playwright-config <PLAYWRIGHT_CONFIG>` | YAML `playwrightConfig`, otherwise all root-level `playwright*.config.*` files under `--root` | Playwright config file. May be repeated. Relative paths are resolved from `--root`. This overrides `playwrightConfig` in YAML. Passing a missing file is an error. |
+| `--config <CONFIG>` | `.playwright-ast-coverage.{yaml,yml,json,jsonc}` under `--root`, when present | Analyzer config file. Relative paths are resolved from `--root`. Passing a missing file is an error. |
+| `--playwright-config <PLAYWRIGHT_CONFIG>` | Analyzer `playwrightConfig`, otherwise all root-level `playwright*.config.*` files under `--root` | Playwright config file. May be repeated. Relative paths are resolved from `--root`. This overrides `playwrightConfig` in analyzer config. Passing a missing file is an error. |
 | `--project <PROJECT>` | | Filter by top-level Playwright config `name`, not by `projects[].name`. |
 | `--json` | `false` | Emit pretty-printed JSON instead of text output. |
 | `-h`, `--help` | | Print CLI help. |
@@ -41,8 +41,8 @@ playwright-ast-coverage related --project storybook 'web/app/users/[id]/page.tsx
 
 By default the tool:
 
-- reads `.playwright-ast-coverage.yaml` when present,
-- reads `playwrightConfig` from YAML when present, otherwise reads all
+- reads `.playwright-ast-coverage.{yaml,yml,json,jsonc}` when present,
+- reads `playwrightConfig` from analyzer config when present, otherwise reads all
   root-level `playwright*.config.*` files when present,
 - analyzes `frontendRoot: app` unless configured,
 - checks route coverage and selector coverage,
@@ -50,7 +50,11 @@ By default the tool:
 - exits `1` when any non-ignored route or selector is uncovered,
 - exits `2` for configuration or parse errors.
 
-## YAML Configuration
+## Analyzer Configuration
+
+Supported analyzer config filenames are `.playwright-ast-coverage.yaml`,
+`.playwright-ast-coverage.yml`, `.playwright-ast-coverage.json`, and
+`.playwright-ast-coverage.jsonc`.
 
 ```yaml
 frontendRoot: web/app
@@ -121,7 +125,7 @@ by `--project`.
 `testMatch`, and Playwright `testIgnore` use `globset` glob syntax. Paths are
 slash-normalized before matching.
 
-- YAML `testInclude`, `testExclude`, `selectorInclude`, and `selectorExclude`
+- Analyzer config `testInclude`, `testExclude`, `selectorInclude`, and `selectorExclude`
   are matched against root-relative paths, such as `tests/e2e/users.spec.ts`
   or `web/components/save-button.tsx`.
 - Playwright `testMatch` and `testIgnore` are matched against root-relative,

@@ -7,7 +7,7 @@ Only static forms described here are detected.
 ## Playwright Config
 
 The tool parses root-level `playwright*.config.*` files discovered under
-`--root`, paths from YAML `playwrightConfig`, or repeated
+`--root`, paths from analyzer config `playwrightConfig`, or repeated
 `--playwright-config` options.
 
 Supported config shapes:
