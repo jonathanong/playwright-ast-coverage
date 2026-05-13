@@ -59,14 +59,14 @@ function literalString(node) {
     return node.value;
   }
   if (node.type === "TemplateLiteral" && node.expressions.length === 0) {
-    return node.quasis.map((quasi) => quasi.value.cooked).join("");
+    return node.quasis.map((quasi) => quasi.value.raw).join("");
   }
   return null;
 }
 
 function staticTemplate(node) {
   if (node && node.type === "TemplateLiteral" && node.expressions.length > 0) {
-    return node.quasis.some((quasi) => quasi.value.cooked.length > 0);
+    return node.quasis.some((quasi) => quasi.value.raw.length > 0);
   }
   return false;
 }
@@ -460,7 +460,7 @@ const rules = {
 const plugin = {
   meta: {
     name: "eslint-plugin-playwright-ast-coverage",
-    version: "0.1.0",
+    version: require("../package.json").version,
   },
   rules,
   configs: {},
