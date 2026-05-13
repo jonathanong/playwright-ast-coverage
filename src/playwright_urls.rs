@@ -372,7 +372,7 @@ fn collect_static_zero_arg_paths(source: &str) -> HashMap<String, Vec<String>> {
         r#"([A-Za-z_$][\w$]*)\s*:\s*\(\s*\)\s*=>\s*(?:"([^"`]+)"|'([^'`]+)'|`([^'"`]+)`)"#,
     )
     .expect("static route helper regex should compile");
-    let mut candidates: HashMap<String, Vec<String>> = HashMap::new();
+    let mut candidates: HashMap<String, (Vec<String>, usize)> = HashMap::new();
     for captures in pattern.captures_iter(source) {
         if let Some((name, value)) = (|| {
             let name = captures.get(1)?;
@@ -382,10 +382,15 @@ fn collect_static_zero_arg_paths(source: &str) -> HashMap<String, Vec<String>> {
                 .or_else(|| captures.get(4))?;
             Some((name.as_str().to_string(), value.as_str().to_string()))
         })() {
-            candidates.entry(name).or_default().push(value);
+            let entry = candidates.entry(name).or_default();
+            entry.0.push(value);
+            entry.1 += 1;
         }
     }
     candidates
+        .into_iter()
+        .filter_map(|(name, (values, count))| (count == 1).then_some((name, values)))
+        .collect()
 }
 
 fn static_zero_arg_path_call(
@@ -614,16 +619,7 @@ mod tests {
             await page.goto(routeName);
             "#,
         );
-        assert_eq!(
-            urls,
-            vec![
-                "/account",
-                "/orders",
-                "/orders/42",
-                "/orders/metrics",
-                "/settings"
-            ]
-        );
+        assert_eq!(urls, vec!["/orders", "/orders/42", "/orders/metrics",]);
     }
 
     #[test]
