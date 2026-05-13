@@ -3,6 +3,11 @@
   "version": "0.1.5",
   "description": "ESLint and Oxlint rules for playwright-ast-coverage test IDs",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jonathanong/playwright-ast-coverage.git",
+    "directory": "packages/eslint-plugin-playwright-ast-coverage"
+  },
   "main": "src/index.js",
   "files": [
     "src/",
