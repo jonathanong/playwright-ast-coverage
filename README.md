@@ -75,8 +75,26 @@ coverage check looks like this:
 
 ## Install
 
+With npm:
+
 ```sh
-cargo install --path .
+npm install --save-dev playwright-ast-coverage
+npx playwright-ast-coverage check
+```
+
+The npm package installs a small JavaScript wrapper and downloads only the native
+binary for the current computer from the matching GitHub Release. The first npm
+release supports:
+
+- macOS x64 and arm64
+- Linux x64 and arm64 with glibc 2.35 or newer
+- Windows x64
+
+For unsupported platforms, or when you prefer building locally, install the Rust
+crate:
+
+```sh
+cargo install playwright-ast-coverage
 ```
 
 ## Quick Start

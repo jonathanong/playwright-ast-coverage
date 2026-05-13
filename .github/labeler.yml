@@ -10,7 +10,17 @@ dependencies:
       - any-glob-to-any-file:
           - "Cargo.toml"
           - "Cargo.lock"
+          - "package.json"
+          - "package-lock.json"
           - ".github/dependabot.yml"
+
+npm:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "package.json"
+          - "package-lock.json"
+          - "bin/**"
+          - "scripts/**/*.js"
 
 documentation:
   - changed-files:
