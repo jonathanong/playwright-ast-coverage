@@ -1,0 +1,271 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Semver bump type
+        type: choice
+        required: true
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  prepare:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+    steps:
+      - name: Check RELEASE_TOKEN is set
+        run: |
+          if [ -z "${{ secrets.RELEASE_TOKEN }}" ]; then
+            echo "::error::RELEASE_TOKEN secret is not set. This workflow requires a PAT that can push release commits and tags to main." >&2
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: main
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump versions, commit, and tag
+        id: bump
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm version "${{ inputs.bump }}" --no-git-tag-version
+          version="$(node -p "require('./package.json').version")"
+          node -e "
+            const fs = require('node:fs');
+            const version = process.argv[1];
+            const cargo = fs.readFileSync('Cargo.toml', 'utf8')
+              .replace(/^version = \".*\"$/m, \`version = \"\${version}\"\`);
+            fs.writeFileSync('Cargo.toml', cargo);
+          " "$version"
+          cargo update -w
+          git add Cargo.toml Cargo.lock package.json
+          git commit -m "chore(release): v$version"
+          git tag -a "v$version" -m "v$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Push release commit and tag
+        run: git push origin HEAD:main --follow-tags
+
+  validate:
+    name: Validate
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: v${{ needs.prepare.outputs.version }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Verify versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ needs.prepare.outputs.version }}"
+          cargo_version="$(cargo metadata --no-deps --format-version 1 | node -e "let d=''; process.stdin.on('data', c => d += c); process.stdin.on('end', () => console.log(JSON.parse(d).packages[0].version));")"
+          npm_version="$(node -p "require('./package.json').version")"
+          test "$tag" = "$cargo_version"
+          test "$tag" = "$npm_version"
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run Rust tests
+        run: cargo test --all-features
+
+      - name: Run npm tests
+        run: npm test
+
+      - name: Check Cargo package
+        run: cargo publish --dry-run --locked
+
+      - name: Check npm package
+        run: npm pack --dry-run
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs:
+      - prepare
+      - validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            artifact: playwright-ast-coverage-v${{ needs.prepare.outputs.version }}-x86_64-apple-darwin
+            binary: playwright-ast-coverage
+          - os: macos-15
+            target: aarch64-apple-darwin
+            artifact: playwright-ast-coverage-v${{ needs.prepare.outputs.version }}-aarch64-apple-darwin
+            binary: playwright-ast-coverage
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            artifact: playwright-ast-coverage-v${{ needs.prepare.outputs.version }}-x86_64-unknown-linux-gnu
+            binary: playwright-ast-coverage
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+            artifact: playwright-ast-coverage-v${{ needs.prepare.outputs.version }}-aarch64-unknown-linux-gnu
+            binary: playwright-ast-coverage
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            artifact: playwright-ast-coverage-v${{ needs.prepare.outputs.version }}-x86_64-pc-windows-msvc.exe
+            binary: playwright-ast-coverage.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: v${{ needs.prepare.outputs.version }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build binary
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Verify binary
+        shell: bash
+        run: target/${{ matrix.target }}/release/${{ matrix.binary }} --version
+
+      - name: Stage asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp "target/${{ matrix.target }}/release/${{ matrix.binary }}" "${{ matrix.artifact }}"
+          shasum -a 256 "${{ matrix.artifact }}" > "${{ matrix.artifact }}.sha256"
+
+      - name: Upload asset artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ matrix.artifact }}
+            ${{ matrix.artifact }}.sha256
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs:
+      - prepare
+      - validate
+      - build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: v${{ needs.prepare.outputs.version }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Publish Cargo crate
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.prepare.outputs.version }}"
+          if curl --fail --silent --output /dev/null "https://crates.io/api/v1/crates/playwright-ast-coverage/$version"; then
+            echo "playwright-ast-coverage $version is already published on crates.io; skipping"
+          else
+            cargo publish --locked
+          fi
+
+      - name: Download release assets
+        uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: gh release create "v${{ needs.prepare.outputs.version }}" dist/* --title "v${{ needs.prepare.outputs.version }}" --generate-notes
+
+      - name: Smoke test npm tarball install
+        shell: bash
+        env:
+          PLAYWRIGHT_AST_COVERAGE_RELEASE_BASE_URL: file://${{ github.workspace }}/dist
+        run: |
+          set -euo pipefail
+          npm pack
+          mkdir npm-smoke
+          cd npm-smoke
+          npm init -y
+          npm install "../playwright-ast-coverage-${{ needs.prepare.outputs.version }}.tgz"
+          npx playwright-ast-coverage --version
+
+      - name: Publish npm package
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.prepare.outputs.version }}"
+          if npm view "playwright-ast-coverage@$version" version >/dev/null 2>&1; then
+            echo "playwright-ast-coverage $version is already published on npm; skipping"
+          else
+            npm publish --provenance --access public
+          fi

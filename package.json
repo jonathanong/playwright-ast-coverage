@@ -1,0 +1,34 @@
+{
+  "name": "playwright-ast-coverage",
+  "version": "0.1.0",
+  "description": "Static Playwright AST coverage for Next.js App Router routes",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jonathanong/playwright-ast-coverage.git"
+  },
+  "homepage": "https://github.com/jonathanong/playwright-ast-coverage#readme",
+  "bugs": {
+    "url": "https://github.com/jonathanong/playwright-ast-coverage/issues"
+  },
+  "bin": {
+    "playwright-ast-coverage": "bin/playwright-ast-coverage.js"
+  },
+  "files": [
+    "bin/",
+    "scripts/install.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "postinstall": "node scripts/install.js",
+    "test": "node --test scripts/*.test.js",
+    "pack:check": "npm pack --dry-run"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

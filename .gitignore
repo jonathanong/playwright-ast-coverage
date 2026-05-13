@@ -1,5 +1,7 @@
 .codex/worktrees/
 /target/
+/vendor/
+*.tgz
 *.profraw
 *.profdata
 .DS_Store
