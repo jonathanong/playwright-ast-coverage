@@ -65,6 +65,7 @@ jobs:
           set -euo pipefail
           npm version "${{ inputs.bump }}" --no-git-tag-version
           version="$(node -p "require('./package.json').version")"
+          npm version "$version" --workspace eslint-plugin-playwright-ast-coverage --no-git-tag-version
           node -e "
             const fs = require('node:fs');
             const version = process.argv[1];
@@ -73,7 +74,7 @@ jobs:
             fs.writeFileSync('Cargo.toml', cargo);
           " "$version"
           cargo update -w
-          git add Cargo.toml Cargo.lock package.json
+          git add Cargo.toml Cargo.lock package.json package-lock.json packages/eslint-plugin-playwright-ast-coverage/package.json
           git commit -m "chore(release): v$version"
           git tag -a "v$version" -m "v$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -108,6 +109,9 @@ jobs:
           prefix-key: v1-rust-release
           cache-bin: "false"
 
+      - name: Install npm dependencies
+        run: npm ci --ignore-scripts
+
       - name: Verify versions
         shell: bash
         run: |
@@ -115,8 +119,10 @@ jobs:
           tag="${{ needs.prepare.outputs.version }}"
           cargo_version="$(cargo metadata --no-deps --format-version 1 | node -e "let d=''; process.stdin.on('data', c => d += c); process.stdin.on('end', () => console.log(JSON.parse(d).packages[0].version));")"
           npm_version="$(node -p "require('./package.json').version")"
+          plugin_version="$(node -p "require('./packages/eslint-plugin-playwright-ast-coverage/package.json').version")"
           test "$tag" = "$cargo_version"
           test "$tag" = "$npm_version"
+          test "$tag" = "$plugin_version"
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -135,6 +141,9 @@ jobs:
 
       - name: Check npm package
         run: npm pack --dry-run
+
+      - name: Check ESLint plugin package
+        run: npm pack --dry-run --workspace eslint-plugin-playwright-ast-coverage
 
   build:
     name: Build ${{ matrix.target }}
@@ -286,4 +295,15 @@ jobs:
             echo "playwright-ast-coverage $version is already published on npm; skipping"
           else
             npm publish --provenance --access public
+          fi
+
+      - name: Publish ESLint plugin package
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.prepare.outputs.version }}"
+          if npm view "eslint-plugin-playwright-ast-coverage@$version" version >/dev/null 2>&1; then
+            echo "eslint-plugin-playwright-ast-coverage $version is already published on npm; skipping"
+          else
+            npm publish --provenance --access public --workspace eslint-plugin-playwright-ast-coverage
           fi

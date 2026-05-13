@@ -108,6 +108,7 @@ struct DuplicateSelector {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct CoverageReport {
     summary: Summary,
     routes: Vec<CoverageRoute>,

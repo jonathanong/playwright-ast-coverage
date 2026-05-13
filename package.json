@@ -33,5 +33,11 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.6",
+    "eslint": "^10.3.0",
+    "oxlint": "^1.64.0",
+    "vitest": "^4.1.6"
   }
 }

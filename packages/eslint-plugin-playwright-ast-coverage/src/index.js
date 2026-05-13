@@ -91,7 +91,7 @@ function selectorLiteral(attribute) {
 
 function callMethodName(node) {
   if (node.callee.type === "MemberExpression" && !node.callee.computed) {
-    return node.callee.property.name || null;
+    return node.callee.property.name;
   }
   if (node.callee.type === "Identifier") {
     return node.callee.name;

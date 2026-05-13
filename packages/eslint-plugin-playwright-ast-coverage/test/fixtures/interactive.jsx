@@ -1,5 +1,6 @@
 <>
   <Comp {...props} />
+  <Comp.Button />
   <button />
   <input />
   <select />
