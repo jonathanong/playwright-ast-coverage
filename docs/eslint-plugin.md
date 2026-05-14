@@ -58,7 +58,15 @@ with `selectorAttributes`:
 `playwright-ast-coverage/literals` also supports:
 
 - `allowDefaultedProps`: boolean. Defaults to `true`. Allows a test ID passed
-  through a function prop when that prop has a string-literal default.
+  through a function prop when that prop has a string-literal default. This
+  includes function parameter defaults and local `const` destructuring defaults,
+  such as `const { "data-pw": dataPw = "save" } = props`. Local destructuring
+  defaults are only accepted when the source is rooted in a function parameter
+  whose name ends in `props`, case-insensitively, such as `props`, `buttonProps`,
+  or `variantProps`. The local const declaration must appear before the test ID
+  reference and must be in the function body or an `if`/`else` block; loop,
+  switch, try/catch, and labeled statement containers are intentionally not
+  treated as passthrough assertions.
 - `allowStaticTemplates`: boolean. Defaults to `false`. Allows template literals
   with at least one static text segment, such as `` `user-${id}` ``.
 
