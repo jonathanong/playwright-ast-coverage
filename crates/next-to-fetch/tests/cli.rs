@@ -131,3 +131,20 @@ fn test_cli_targets() {
 
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn test_cli_targets_unmatched() {
+    let root = Path::new("tests/fixtures/targets-unmatched");
+    fs::create_dir_all(root.join("app")).unwrap();
+    fs::write(root.join(".no-mistakes.yaml"), "frontendRoot: app\n").unwrap();
+    fs::write(root.join("app/page.tsx"), "fetch('/api/root')").unwrap();
+
+    let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
+    cmd.arg("--root").arg(root).arg("/missing");
+    cmd.assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("Error: targets not found: [\"/missing\"]"));
+
+    fs::remove_dir_all(root).unwrap();
+}

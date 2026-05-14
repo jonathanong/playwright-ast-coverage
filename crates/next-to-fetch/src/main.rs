@@ -548,7 +548,19 @@ mod tests {
     }
 
     #[test]
+    fn test_resolve_import_explicit_extension() {
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("lib.ts");
+        fs::write(&file, "").unwrap();
+
+        let current = dir.path().join("main.ts");
+        let resolved = resolve_import(&current, "./lib.ts").unwrap();
+        assert_eq!(resolved.canonicalize().unwrap(), file.canonicalize().unwrap());
+    }
+
+    #[test]
     fn test_resolve_import_root() {
+ Richmond: I am adding a test for explicit extension.
         assert_eq!(resolve_import(Path::new("page.ts"), "./lib"), None);
     }
 
