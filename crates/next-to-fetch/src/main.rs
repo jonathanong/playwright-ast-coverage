@@ -527,12 +527,12 @@ fn is_client_route_file(path: &Path) -> Result<bool> {
     }
 
     let source = std::fs::read_to_string(path)?;
-    Ok(ast::with_program(path, &source, |program, _| {
-        Ok(program
+    ast::with_program(path, &source, |program, _| {
+        program
             .directives
             .iter()
-            .any(|directive| directive.directive == "use client"))
-    })?)
+            .any(|directive| directive.directive == "use client")
+    })
 }
 
 fn resolve_import(current_file: &Path, specifier: &str) -> Option<PathBuf> {
