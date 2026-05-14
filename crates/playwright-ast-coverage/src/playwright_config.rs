@@ -745,6 +745,40 @@ mod tests {
     }
 
     #[test]
+    fn load_many_errors_when_config_is_missing_name_for_filter() {
+        let dir = fixture_path(&["playwright_config", "load-existing"]);
+        let config = dir.join("playwright.config.ts");
+        let err = load_many(&dir, &[config], Some("project"))
+            .err()
+            .expect("expected missing name to fail");
+        assert!(err.to_string().contains("must define top-level name"));
+    }
+
+    #[test]
+    fn validate_config_names_errors_on_duplicate_names() {
+        let path1 = PathBuf::from("a.ts");
+        let path2 = PathBuf::from("b.ts");
+        let configs = vec![
+            (
+                &path1,
+                PlaywrightConfig {
+                    name: Some("same".to_string()),
+                    projects: vec![],
+                },
+            ),
+            (
+                &path2,
+                PlaywrightConfig {
+                    name: Some("same".to_string()),
+                    projects: vec![],
+                },
+            ),
+        ];
+        let err = validate_config_names(&configs, None).err().unwrap();
+        assert!(err.to_string().contains("duplicated"));
+    }
+
+    #[test]
     fn load_existing_config_reads_and_parses() {
         let dir = fixture_path(&["playwright_config", "load-existing"]);
         let config = dir.join("playwright.config.ts");

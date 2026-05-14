@@ -776,6 +776,15 @@ mod tests {
     }
 
     #[test]
+    fn candidate_url_checks_schemes() {
+        assert!(is_candidate_url("/path"));
+        assert!(is_candidate_url("http://localhost"));
+        assert!(is_candidate_url("https://localhost"));
+        assert!(!is_candidate_url("localhost"));
+        assert!(!is_candidate_url("ws://localhost"));
+    }
+
+    #[test]
     fn extracts_configured_navigation_helper_urls() {
         let src = fixture_source(&["playwright_urls", "navigation-helpers.ts"]);
         let urls = extract_playwright_url_literals_with_helpers(

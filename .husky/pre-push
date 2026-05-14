@@ -1,22 +1,33 @@
 #!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
 
-# Get current branch name
-current_branch=$(git rev-parse --abbrev-ref HEAD)
+# Determine if we are pushing to main or if we are behind main
+remote_name=$1
 
-if [ "$current_branch" != "main" ]; then
-  # Check if ahead of main
-  ahead_count=$(git rev-list --count main..HEAD 2>/dev/null || echo 0)
-  if [ "$ahead_count" -eq 0 ]; then
-    echo "Branch is not ahead of main. Rebasing..."
-    git rebase main || { echo "Rebase failed. Please resolve conflicts manually."; exit 1; }
+while read local_ref local_sha remote_ref remote_sha
+do
+  # Get branch name from local_ref (e.g., refs/heads/main -> main)
+  branch_name="${local_ref#refs/heads/}"
+  
+  if [ "$branch_name" != "main" ]; then
+    # Ensure we have the latest from origin
+    git fetch "$remote_name" main >/dev/null 2>&1
+    
+    # Check if the commit we are pushing is behind origin/main
+    behind_count=$(git rev-list --count "$local_sha".."$remote_name"/main)
+    if [ "$behind_count" -gt 0 ]; then
+      echo "Error: Branch '$branch_name' is behind $remote_name/main by $behind_count commit(s)."
+      echo "Please rebase onto $remote_name/main before pushing."
+      exit 1
+    fi
   fi
-fi
+done
 
 echo "Running cargo fmt..."
 cargo fmt --all -- --check || exit 1
 
 echo "Running cargo clippy..."
-cargo clippy --all -- -D warnings || exit 1
+cargo clippy --all-targets --all-features -- -D warnings || exit 1
 
 echo "Running oxfmt check..."
 npm run fmt:js:check || exit 1

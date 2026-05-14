@@ -115,6 +115,12 @@ mod tests {
     }
 
     #[test]
+    fn optional_catch_all_maps_to_double_wildcard() {
+        let p = Path::new("[[...rest]]/page.tsx");
+        assert_eq!(path_to_route_pattern(p), "/**");
+    }
+
+    #[test]
     fn static_nested_path() {
         let p = Path::new("communities/page.tsx");
         assert_eq!(path_to_route_pattern(p), "/communities");
