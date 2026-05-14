@@ -702,6 +702,19 @@ fn selector_coverage_reports_uncovered_selectors() {
 }
 
 #[test]
+fn configured_id_selector_coverage_does_not_require_html_ids() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("selector-id-configured"))
+        .arg("check")
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Uncovered selectors:"))
+        .stdout(predicate::str::contains(r#"[id="save"]"#));
+}
+
+#[test]
 fn selector_coverage_supports_fuzzy_templates() {
     Command::cargo_bin("playwright-ast-coverage")
         .unwrap()

@@ -173,6 +173,8 @@ struct Analysis {
 struct UniqueSelectorPolicy {
     test_ids: bool,
     html_ids: bool,
+    aggregate: bool,
+    configured_html_id_selector: bool,
 }
 
 struct RouteTarget {
@@ -297,6 +299,8 @@ fn run() -> Result<ExitCode> {
             test_ids: cli.assert_unique_test_ids || cli.assert_unique_selectors,
             html_ids: cli.assert_unique_html_ids
                 || (cli.assert_unique_selectors && settings.html_ids),
+            aggregate: cli.assert_unique_selectors,
+            configured_html_id_selector: false,
         },
     )?;
     match cli.command {
@@ -349,8 +353,9 @@ fn analyze_with_policy(
     root: &Path,
     settings: &Settings,
     test_policy: playwright_tests::TestPolicy,
-    unique_selector_policy: UniqueSelectorPolicy,
+    mut unique_selector_policy: UniqueSelectorPolicy,
 ) -> Result<Analysis> {
+    unique_selector_policy.configured_html_id_selector = has_configured_html_id_selector(settings);
     let route_root = root.join(&settings.frontend_root);
     let routes = routes::collect_routes(&route_root)?;
     if routes.is_empty() {
@@ -391,7 +396,11 @@ fn analyze_with_policy(
     };
     let mut app_selectors: Vec<_> = app_selector_occurrences
         .iter()
-        .filter(|selector| settings.html_ids || selector.attribute != selectors::HTML_ID_ATTRIBUTE)
+        .filter(|selector| {
+            settings.html_ids
+                || unique_selector_policy.configured_html_id_selector
+                || selector.attribute != selectors::HTML_ID_ATTRIBUTE
+        })
         .cloned()
         .collect();
     app_selectors.sort();
@@ -989,8 +998,13 @@ fn build_duplicate_selectors(
         BTreeMap::new();
     for selector in app_selectors {
         if let selectors::AppSelectorValue::Exact(value) = &selector.value {
-            if selector.attribute == selectors::HTML_ID_ATTRIBUTE {
-                if policy.html_ids {
+            if policy.aggregate {
+                by_value
+                    .entry(DuplicateSelectorKey::Aggregate(value.as_str()))
+                    .or_default()
+                    .push(selector);
+            } else if selector.attribute == selectors::HTML_ID_ATTRIBUTE {
+                if policy.html_ids || (policy.test_ids && policy.configured_html_id_selector) {
                     by_value
                         .entry(DuplicateSelectorKey::HtmlId(value.as_str()))
                         .or_default()
@@ -1030,6 +1044,7 @@ fn build_duplicate_selectors(
 
 #[derive(Eq, PartialEq, Ord, PartialOrd)]
 enum DuplicateSelectorKey<'a> {
+    Aggregate(&'a str),
     TestId(&'a str),
     HtmlId(&'a str),
 }
@@ -1037,9 +1052,20 @@ enum DuplicateSelectorKey<'a> {
 impl DuplicateSelectorKey<'_> {
     fn value(&self) -> &str {
         match self {
-            Self::TestId(value) | Self::HtmlId(value) => value,
+            Self::Aggregate(value) | Self::TestId(value) | Self::HtmlId(value) => value,
         }
     }
+}
+
+fn has_configured_html_id_selector(settings: &Settings) -> bool {
+    settings
+        .selector_attributes
+        .iter()
+        .any(|attribute| attribute == selectors::HTML_ID_ATTRIBUTE)
+        || settings
+            .component_selector_attributes
+            .values()
+            .any(|attribute| attribute == selectors::HTML_ID_ATTRIBUTE)
 }
 
 fn print_coverage_text(report: &CoverageReport) {
@@ -1607,6 +1633,7 @@ mod tests {
             UniqueSelectorPolicy {
                 test_ids: true,
                 html_ids: false,
+                ..UniqueSelectorPolicy::default()
             },
         );
         assert_eq!(duplicates.len(), 4);
@@ -1638,9 +1665,67 @@ mod tests {
             UniqueSelectorPolicy {
                 test_ids: true,
                 html_ids: true,
+                ..UniqueSelectorPolicy::default()
             },
         );
         assert!(duplicates.is_empty());
+    }
+
+    #[test]
+    fn deprecated_duplicate_selector_report_preserves_aggregate_grouping() {
+        let root = Path::new("/repo");
+        let app_selectors = vec![
+            selectors::AppSelector {
+                file: PathBuf::from("/repo/web/app/a.tsx"),
+                attribute: "data-testid".to_string(),
+                value: selectors::AppSelectorValue::Exact("same".to_string()),
+            },
+            selectors::AppSelector {
+                file: PathBuf::from("/repo/web/app/b.tsx"),
+                attribute: "id".to_string(),
+                value: selectors::AppSelectorValue::Exact("same".to_string()),
+            },
+        ];
+
+        let duplicates = build_duplicate_selectors(
+            root,
+            &app_selectors,
+            UniqueSelectorPolicy {
+                test_ids: true,
+                html_ids: true,
+                aggregate: true,
+                ..UniqueSelectorPolicy::default()
+            },
+        );
+        assert_eq!(duplicates.len(), 2);
+    }
+
+    #[test]
+    fn configured_html_id_selectors_count_as_test_ids_for_uniqueness() {
+        let root = Path::new("/repo");
+        let app_selectors = vec![
+            selectors::AppSelector {
+                file: PathBuf::from("/repo/web/app/a.tsx"),
+                attribute: "id".to_string(),
+                value: selectors::AppSelectorValue::Exact("same".to_string()),
+            },
+            selectors::AppSelector {
+                file: PathBuf::from("/repo/web/app/b.tsx"),
+                attribute: "id".to_string(),
+                value: selectors::AppSelectorValue::Exact("same".to_string()),
+            },
+        ];
+
+        let duplicates = build_duplicate_selectors(
+            root,
+            &app_selectors,
+            UniqueSelectorPolicy {
+                test_ids: true,
+                configured_html_id_selector: true,
+                ..UniqueSelectorPolicy::default()
+            },
+        );
+        assert_eq!(duplicates.len(), 2);
     }
 
     #[test]
