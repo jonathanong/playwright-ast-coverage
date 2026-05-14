@@ -111,20 +111,16 @@ mod tests {
         let source_type = SourceType::from_path(Path::new("test.ts")).unwrap();
         let parsed = Parser::new(&allocator, source, source_type).parse();
         let stmt = &parsed.program.body[0];
-        if let oxc_ast::ast::Statement::ExpressionStatement(expr_stmt) = stmt {
-            if let Expression::TemplateLiteral(t) = &expr_stmt.expression {
-                assert_eq!(template_literal_text(t, source), "${a}b${c}");
-            }
-        }
+        let oxc_ast::ast::Statement::ExpressionStatement(expr_stmt) = stmt else { unreachable!() };
+        let Expression::TemplateLiteral(t) = &expr_stmt.expression else { unreachable!() };
+        assert_eq!(template_literal_text(t, source), "${a}b${c}");
 
         let source = "`no_expressions`";
         let parsed = Parser::new(&allocator, source, source_type).parse();
         let stmt = &parsed.program.body[0];
-        if let oxc_ast::ast::Statement::ExpressionStatement(expr_stmt) = stmt {
-            if let Expression::TemplateLiteral(t) = &expr_stmt.expression {
-                assert_eq!(template_literal_text(t, source), "no_expressions");
-            }
-        }
+        let oxc_ast::ast::Statement::ExpressionStatement(expr_stmt) = stmt else { unreachable!() };
+        let Expression::TemplateLiteral(t) = &expr_stmt.expression else { unreachable!() };
+        assert_eq!(template_literal_text(t, source), "no_expressions");
     }
 
     #[test]
@@ -134,31 +130,27 @@ mod tests {
         let source_type = SourceType::from_path(Path::new("test.ts")).unwrap();
         let parsed = Parser::new(&allocator, source, source_type).parse();
         let stmt = &parsed.program.body[0];
-        if let oxc_ast::ast::Statement::ExpressionStatement(expr_stmt) = stmt {
-            let path = expression_path(&expr_stmt.expression).unwrap();
-            assert_eq!(path, vec!["a", "b", "c"]);
-        }
+        let oxc_ast::ast::Statement::ExpressionStatement(expr_stmt) = stmt else { unreachable!() };
+        let path = expression_path(&expr_stmt.expression).unwrap();
+        assert_eq!(path, vec!["a", "b", "c"]);
 
         let source = "(a).b";
         let parsed = Parser::new(&allocator, source, source_type).parse();
         let stmt = &parsed.program.body[0];
-        if let oxc_ast::ast::Statement::ExpressionStatement(expr_stmt) = stmt {
-            let path = expression_path(&expr_stmt.expression).unwrap();
-            assert_eq!(path, vec!["a", "b"]);
-        }
+        let oxc_ast::ast::Statement::ExpressionStatement(expr_stmt) = stmt else { unreachable!() };
+        let path = expression_path(&expr_stmt.expression).unwrap();
+        assert_eq!(path, vec!["a", "b"]);
 
         let source = "123";
         let parsed = Parser::new(&allocator, source, source_type).parse();
         let stmt = &parsed.program.body[0];
-        if let oxc_ast::ast::Statement::ExpressionStatement(expr_stmt) = stmt {
-            assert_eq!(expression_path(&expr_stmt.expression), None);
-        }
+        let oxc_ast::ast::Statement::ExpressionStatement(expr_stmt) = stmt else { unreachable!() };
+        assert_eq!(expression_path(&expr_stmt.expression), None);
 
         let source = "a['b']";
         let parsed = Parser::new(&allocator, source, source_type).parse();
         let stmt = &parsed.program.body[0];
-        if let oxc_ast::ast::Statement::ExpressionStatement(expr_stmt) = stmt {
-            assert_eq!(expression_path(&expr_stmt.expression), None);
-        }
+        let oxc_ast::ast::Statement::ExpressionStatement(expr_stmt) = stmt else { unreachable!() };
+        assert_eq!(expression_path(&expr_stmt.expression), None);
     }
 }

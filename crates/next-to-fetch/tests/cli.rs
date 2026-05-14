@@ -45,6 +45,15 @@ fn test_cli_missing_frontend_root() {
 }
 
 #[test]
+fn test_cli_missing_root() {
+    let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
+    cmd.arg("--root").arg("non-existent-root");
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("root directory does not exist"));
+}
+
+#[test]
 fn test_cli_config_not_found() {
     let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
     cmd.arg("--config").arg("non-existent.yaml");

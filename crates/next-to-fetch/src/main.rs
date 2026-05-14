@@ -68,15 +68,13 @@ impl<'a> Visit<'a> for FetchVisitor<'a> {
                         .unwrap_or_else(|| "dynamic".to_string());
                 }
 
-                if let Some(arg) = expr.arguments.get(1) {
-                    if let Argument::ObjectExpression(obj) = arg {
-                        for prop in &obj.properties {
-                            if let oxc_ast::ast::ObjectPropertyKind::ObjectProperty(p) = prop {
-                                if let Some(name) = p.key.static_name() {
-                                    if name == "method" {
-                                        if let Expression::StringLiteral(s) = &p.value {
-                                            method = s.value.to_string();
-                                        }
+                if let Some(Argument::ObjectExpression(obj)) = expr.arguments.get(1) {
+                    for prop in &obj.properties {
+                        if let oxc_ast::ast::ObjectPropertyKind::ObjectProperty(p) = prop {
+                            if let Some(name) = p.key.static_name() {
+                                if name == "method" {
+                                    if let Expression::StringLiteral(s) = &p.value {
+                                        method = s.value.to_string();
                                     }
                                 }
                             }
@@ -90,8 +88,7 @@ impl<'a> Visit<'a> for FetchVisitor<'a> {
                     file: self.file.clone(),
                 });
             }
-        }
-        walk::walk_call_expression(self, expr);
+        } walk::walk_call_expression(self, expr);
     }
 }
 
@@ -208,8 +205,7 @@ fn resolve_import(current_file: &Path, specifier: &str) -> Option<PathBuf> {
                 return Some(index);
             }
         }
-    }
-    None
+    } None
 }
 
 fn relative_string(root: &Path, path: &Path) -> String {
@@ -246,12 +242,50 @@ mod tests {
         let source_type = oxc_span::SourceType::default();
         let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
         let stmt = &parsed.program.body[0];
-        if let Statement::ExpressionStatement(expr_stmt) = stmt {
-            if let Expression::CallExpression(call) = &expr_stmt.expression {
-                let arg = &call.arguments[0];
-                assert_eq!(extract_string_literal_from_argument(arg, source), None);
-            }
+        let Statement::ExpressionStatement(expr_stmt) = stmt else { unreachable!() };
+        let Expression::CallExpression(call) = &expr_stmt.expression else { unreachable!() };
+        let arg = &call.arguments[0];
+        assert_eq!(extract_string_literal_from_argument(arg, source), None);
+    }
+
+    #[test]
+    fn test_visitor_complex_variants() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "
+            fetch(url, options); 
+            fetch(url, { notMethod: 'POST' });
+            fetch(url, { method: methodVar });
+            fetch(url, { ...spread });
+            fetch(url, { [dynamic]: 'POST' });
+        ";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let mut visitor = FetchVisitor {
+            source,
+            file: "test.ts".to_string(),
+            fetches: Vec::new(),
+        };
+        visitor.visit_program(&parsed.program);
+        assert_eq!(visitor.fetches.len(), 5);
+        for fetch in &visitor.fetches {
+            assert_eq!(fetch.method, "GET");
         }
+    }
+
+    #[test]
+    fn test_visitor_no_args() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "fetch();";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let mut visitor = FetchVisitor {
+            source,
+            file: "test.ts".to_string(),
+            fetches: Vec::new(),
+        };
+        visitor.visit_program(&parsed.program);
+        assert_eq!(visitor.fetches.len(), 1);
+        assert_eq!(visitor.fetches[0].url, "unknown");
     }
 
     #[test]
@@ -331,6 +365,19 @@ mod tests {
         let root = Path::new("/root/a");
         let path = Path::new("/root/b");
         assert_eq!(relative_string(root, path), "/root/b");
+    }
+
+    #[test]
+    fn test_analyze_file_already_visited() {
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("file.ts");
+        fs::write(&file, "").unwrap();
+
+        let mut visited = HashSet::new();
+        visited.insert(file.canonicalize().unwrap());
+        let mut fetches = Vec::new();
+        analyze_file(&file, dir.path(), &mut visited, &mut fetches).unwrap();
+        assert!(fetches.is_empty());
     }
 
     #[test]

@@ -138,11 +138,13 @@ fn find_default_playwright_configs(root: &Path) -> Result<Vec<PathBuf>> {
 }
 
 fn is_playwright_config_name(path: &Path) -> bool {
-    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-        return false;
+    let name = match path.file_name().and_then(|name| name.to_str()) {
+        Some(name) => name,
+        None => return false,
     };
-    let Some(extension) = path.extension().and_then(|extension| extension.to_str()) else {
-        return false;
+    let extension = match path.extension().and_then(|extension| extension.to_str()) {
+        Some(extension) => extension,
+        None => return false,
     };
 
     name.starts_with("playwright")

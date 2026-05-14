@@ -202,11 +202,8 @@ mod tests {
         let err = load_config::<TestConfig>(dir.path(), None, &["test"])
             .err()
             .unwrap();
-        assert!(
-            err.to_string().contains("Is a directory")
-                || err.to_string().contains("Permission denied")
-                || err.to_string().contains("failed to read")
-        );
+        let err_str = err.to_string();
+        assert!(err_str.contains("Is a directory") || err_str.contains("Permission denied") || err_str.contains("failed to read"));
     }
 
     #[test]
@@ -214,10 +211,20 @@ mod tests {
         let err = parse_config::<TestConfig>("{\n  \"name\": \n}", Path::new("test.jsonc"))
             .err()
             .unwrap();
-        assert!(
-            err.to_string().contains("Unexpected close brace")
-                || err.to_string().contains("invalid")
-        );
+        assert!(err.to_string().contains("Unexpected close brace"));
+
+        let err = parse_config::<TestConfig>("", Path::new("test.jsonc"))
+            .err()
+            .unwrap();
+        assert!(err.to_string().contains("invalid"));
+    }
+
+    #[test]
+    fn test_parse_config_unsupported_extension() {
+        let err = parse_config::<TestConfig>("", Path::new("test.toml"))
+            .err()
+            .unwrap();
+        assert!(err.to_string().contains("unsupported config file extension"));
     }
 
     #[test]
