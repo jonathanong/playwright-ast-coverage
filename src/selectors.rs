@@ -11,11 +11,13 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 const SOURCE_EXTS: &[&str] = &["ts", "tsx", "js", "jsx", "mts", "cts", "mjs", "cjs"];
+const HTML_ID_ATTRIBUTE: &str = "id";
 
 pub struct SelectorRegexes {
     app_attributes: Vec<String>,
     component_attributes: BTreeMap<String, String>,
     playwright_attributes: Vec<AttributeRegex>,
+    html_ids: bool,
 }
 
 struct AttributeRegex {
@@ -64,15 +66,27 @@ enum SelectorMatcher {
     },
 }
 
+#[cfg(test)]
 pub fn compile_selector_regexes(
     attributes: &[String],
     component_attributes: &BTreeMap<String, String>,
+) -> SelectorRegexes {
+    compile_selector_regexes_with_html_ids(attributes, component_attributes, false)
+}
+
+pub fn compile_selector_regexes_with_html_ids(
+    attributes: &[String],
+    component_attributes: &BTreeMap<String, String>,
+    html_ids: bool,
 ) -> SelectorRegexes {
     let mut playwright_attributes: Vec<_> = attributes
         .iter()
         .chain(component_attributes.values())
         .cloned()
         .collect();
+    if html_ids {
+        playwright_attributes.push(HTML_ID_ATTRIBUTE.to_string());
+    }
     playwright_attributes.sort();
     playwright_attributes.dedup();
 
@@ -86,6 +100,7 @@ pub fn compile_selector_regexes(
                 regex: playwright_selector_regex(attribute),
             })
             .collect(),
+        html_ids,
     }
 }
 
@@ -318,6 +333,7 @@ pub fn extract_app_selectors_with_regexes(
             source,
             attributes: &regexes.app_attributes,
             component_attributes: &regexes.component_attributes,
+            html_ids: regexes.html_ids,
             scoped_static_identifier_defaults: &scoped_static_identifier_defaults,
             selectors: BTreeSet::new(),
         };
@@ -420,6 +436,7 @@ struct AppSelectorVisitor<'a, 'r> {
     source: &'a str,
     attributes: &'r [String],
     component_attributes: &'r BTreeMap<String, String>,
+    html_ids: bool,
     scoped_static_identifier_defaults: &'r [ScopedStaticIdentifierDefault],
     selectors: BTreeSet<AppSelector>,
 }
@@ -459,6 +476,9 @@ impl AppSelectorVisitor<'_, '_> {
     fn mapped_attribute<'a>(&'a self, name: &'a str, component: bool) -> Option<&'a str> {
         if self.attributes.iter().any(|attribute| attribute == name) {
             return Some(name);
+        }
+        if self.html_ids && !component && name == HTML_ID_ATTRIBUTE {
+            return Some(HTML_ID_ATTRIBUTE);
         }
         if component {
             return self.component_attributes.get(name).map(String::as_str);
@@ -554,6 +574,9 @@ impl<'a> oxc_ast_visit::Visit<'a> for PlaywrightSelectorVisitor<'a, '_> {
                     &self.regexes.playwright_attributes,
                     &mut |selector| self.insert(selector),
                 );
+                if self.regexes.html_ids {
+                    extract_css_id_selectors(&selector, &mut |selector| self.insert(selector));
+                }
             }
         }
 
@@ -1007,6 +1030,141 @@ fn extract_css_attribute_selectors(
             });
         }
     }
+}
+
+fn extract_css_id_selectors(source: &str, insert: &mut impl FnMut(PlaywrightSelector)) {
+    let mut index = 0usize;
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut bracket_depth = 0usize;
+    let mut escaped = false;
+    let mut in_comment = false;
+
+    while index < source.len() {
+        let ch = source[index..]
+            .chars()
+            .next()
+            .expect("index is inside source");
+        let ch_len = ch.len_utf8();
+
+        if escaped {
+            escaped = false;
+            index += ch_len;
+            continue;
+        }
+        if in_comment {
+            if ch == '*' && source[index + ch_len..].starts_with('/') {
+                in_comment = false;
+                index += ch_len + 1;
+            } else {
+                index += ch_len;
+            }
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            index += ch_len;
+            continue;
+        }
+        if in_single {
+            if ch == '\'' {
+                in_single = false;
+            }
+            index += ch_len;
+            continue;
+        }
+        if in_double {
+            if ch == '"' {
+                in_double = false;
+            }
+            index += ch_len;
+            continue;
+        }
+
+        match ch {
+            '\'' => in_single = true,
+            '"' => in_double = true,
+            '[' => bracket_depth += 1,
+            ']' if bracket_depth > 0 => bracket_depth -= 1,
+            '/' if source[index + ch_len..].starts_with('*') => {
+                in_comment = true;
+                index += 1;
+            }
+            '#' if bracket_depth == 0 => {
+                if let Some((raw, value, end)) = css_id_selector(source, index) {
+                    insert(PlaywrightSelector {
+                        attribute: HTML_ID_ATTRIBUTE.to_string(),
+                        selector: raw,
+                        matcher: SelectorMatcher::Exact(value),
+                    });
+                    index = end;
+                    continue;
+                }
+            }
+            _ => {}
+        }
+
+        index += ch_len;
+    }
+}
+
+fn css_id_selector(source: &str, hash_index: usize) -> Option<(String, String, usize)> {
+    let mut index = hash_index + 1;
+    let mut value = String::new();
+    while index < source.len() {
+        let ch = source[index..].chars().next()?;
+        if ch == '\\' {
+            let (decoded, next_index) = css_escape(source, index)?;
+            value.push(decoded);
+            index = next_index;
+            continue;
+        }
+        if !is_css_identifier_char(ch) {
+            break;
+        }
+        value.push(ch);
+        index += ch.len_utf8();
+    }
+
+    if value.is_empty() || source[index..].starts_with("${") {
+        return None;
+    }
+
+    Some((source[hash_index..index].to_string(), value, index))
+}
+
+fn css_escape(source: &str, slash_index: usize) -> Option<(char, usize)> {
+    let mut index = slash_index + 1;
+    let first = source[index..].chars().next()?;
+    if !first.is_ascii_hexdigit() {
+        return Some((first, index + first.len_utf8()));
+    }
+
+    let mut hex = String::new();
+    while index < source.len() && hex.len() < 6 {
+        let ch = source[index..]
+            .chars()
+            .next()
+            .expect("index is inside source");
+        if !ch.is_ascii_hexdigit() {
+            break;
+        }
+        hex.push(ch);
+        index += ch.len_utf8();
+    }
+
+    index += source[index..]
+        .chars()
+        .next()
+        .filter(|ch| ch.is_whitespace())
+        .map_or(0, char::len_utf8);
+
+    let code = u32::from_str_radix(&hex, 16).ok()?;
+    char::from_u32(code).map(|ch| (ch, index))
+}
+
+fn is_css_identifier_char(ch: char) -> bool {
+    ch == '-' || ch == '_' || ch.is_ascii_alphanumeric() || !ch.is_ascii()
 }
 
 fn callee_is_static_member_named(callee: &oxc_ast::ast::Expression<'_>, method: &str) -> bool {
@@ -1522,6 +1680,132 @@ mod tests {
         assert!(selectors
             .iter()
             .all(|selector| selector.selector != r#"[data-testid="save"]"#));
+    }
+
+    #[test]
+    fn extracts_html_ids_when_enabled() {
+        let regexes = compile_selector_regexes_with_html_ids(
+            &["data-testid".to_string()],
+            &BTreeMap::new(),
+            true,
+        );
+        let app_selectors = extract_app_selectors_with_regexes(
+            Path::new("app/page.tsx"),
+            r#"
+            export function Page({ id }) {
+                return <>
+                    <button id="save" />
+                    <button id={`user-${id}`} />
+                    <button data-testid="publish" />
+                    <CustomWidget id="internal" />
+                </>;
+            }
+            "#,
+            &regexes,
+        )
+        .unwrap();
+        let values: BTreeSet<(String, String)> = app_selectors
+            .iter()
+            .map(|selector| (selector.attribute.clone(), selector.display_value()))
+            .collect();
+        assert_eq!(
+            values,
+            BTreeSet::from([
+                ("data-testid".to_string(), "publish".to_string()),
+                ("id".to_string(), "save".to_string()),
+                ("id".to_string(), "user-${id}".to_string()),
+            ])
+        );
+
+        let playwright_selectors = extract_playwright_selectors_with_regexes(
+            Path::new("tests/app.spec.ts"),
+            r#"
+            await page.locator('#save').click();
+            await page.locator('button#user-42 .label').click();
+            await page.locator('#save, #publish').click();
+            await page.locator('[id="save"]').click();
+            "#,
+            &regexes,
+            &["data-testid".to_string()],
+        )
+        .unwrap();
+        let values: BTreeSet<(String, String)> = playwright_selectors
+            .iter()
+            .map(|selector| (selector.attribute.clone(), selector.selector.clone()))
+            .collect();
+        assert_eq!(
+            values,
+            BTreeSet::from([
+                ("id".to_string(), "#publish".to_string()),
+                ("id".to_string(), "#save".to_string()),
+                ("id".to_string(), "#user-42".to_string()),
+                ("id".to_string(), r#"[id="save"]"#.to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn css_id_selectors_ignore_hashes_inside_attribute_values_and_decode_escapes() {
+        let regexes = compile_selector_regexes_with_html_ids(&[], &BTreeMap::new(), true);
+        let selectors = extract_playwright_selectors_with_regexes(
+            Path::new("tests/app.spec.ts"),
+            r##"
+            await page.locator('a[href="#save"]').click();
+            await page.locator('#save\\:button').click();
+            await page.locator('#escaped\\20 space').click();
+            "##,
+            &regexes,
+            &["data-testid".to_string()],
+        )
+        .unwrap();
+        let values: Vec<(&str, Option<&str>)> = selectors
+            .iter()
+            .map(|selector| (selector.selector.as_str(), selector.exact_value()))
+            .collect();
+
+        assert_eq!(
+            values,
+            vec![
+                ("#escaped\\20 space", Some("escaped space")),
+                ("#save\\:button", Some("save:button")),
+            ]
+        );
+    }
+
+    #[test]
+    fn css_id_selectors_handle_escaped_hashes_quotes_empty_ids_and_hex_whitespace() {
+        let regexes = compile_selector_regexes_with_html_ids(&[], &BTreeMap::new(), true);
+        let selectors = extract_playwright_selectors_with_regexes(
+            Path::new("tests/app.spec.ts"),
+            r##"
+            await page.locator('.literal\\#hash #real').click();
+            await page.locator("a[data-label='quoted #ignored'] #quoted").click();
+            await page.locator('/* #deprecated */ #commented').click();
+            await page.locator('# .empty #after-empty').click();
+            await page.locator('#hex\\2dnext').click();
+            await page.locator('#six\\000020 spaced').click();
+            await page.locator(`#user-${id}`).click();
+            "##,
+            &regexes,
+            &["data-testid".to_string()],
+        )
+        .unwrap();
+        let values: Vec<(&str, Option<&str>)> = selectors
+            .iter()
+            .map(|selector| (selector.selector.as_str(), selector.exact_value()))
+            .collect();
+
+        assert_eq!(
+            values,
+            vec![
+                ("#after-empty", Some("after-empty")),
+                ("#commented", Some("commented")),
+                ("#hex\\2dnext", Some("hex-next")),
+                ("#quoted", Some("quoted")),
+                ("#real", Some("real")),
+                ("#six\\000020 spaced", Some("six spaced")),
+            ]
+        );
     }
 
     #[test]

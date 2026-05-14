@@ -21,6 +21,7 @@ struct FileConfig {
     navigation_helpers: Vec<String>,
     selector_attributes: Option<Vec<String>>,
     component_selector_attributes: BTreeMap<String, String>,
+    html_ids: bool,
     selector_roots: Option<Vec<String>>,
     selector_include: Vec<String>,
     selector_exclude: Vec<String>,
@@ -44,6 +45,7 @@ pub struct Settings {
     pub navigation_helpers: Vec<String>,
     pub selector_attributes: Vec<String>,
     pub component_selector_attributes: BTreeMap<String, String>,
+    pub html_ids: bool,
     pub selector_roots: Vec<String>,
     pub selector_include: Vec<String>,
     pub selector_exclude: Vec<String>,
@@ -90,6 +92,7 @@ pub fn load_settings(
             .selector_attributes
             .unwrap_or_else(default_selector_attributes),
         component_selector_attributes: file_config.component_selector_attributes,
+        html_ids: file_config.html_ids,
         selector_roots,
         selector_include: file_config.selector_include,
         selector_exclude: file_config.selector_exclude,
@@ -237,6 +240,7 @@ mod tests {
         assert!(settings.playwright_configs.is_empty());
         assert_eq!(settings.selector_attributes, vec!["data-testid", "data-pw"]);
         assert!(settings.component_selector_attributes.is_empty());
+        assert!(!settings.html_ids);
         assert_eq!(settings.selector_roots, vec!["app"]);
     }
 
@@ -288,6 +292,7 @@ mod tests {
         assert_eq!(settings.frontend_root, "web/app");
         assert_eq!(settings.test_exclude, vec!["**/skip/**"]);
         assert_eq!(settings.navigation_helpers, vec!["navigateTo"]);
+        assert!(settings.html_ids);
         assert_eq!(settings.selector_roots, vec!["web/components"]);
         assert_eq!(settings.selector_include, vec!["web/components/**/*.tsx"]);
         assert_eq!(settings.selector_exclude, vec!["**/*.test.tsx"]);

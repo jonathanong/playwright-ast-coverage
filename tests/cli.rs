@@ -705,6 +705,47 @@ fn selector_coverage_supports_component_attribute_mapping() {
 }
 
 #[test]
+fn selector_coverage_supports_optional_html_ids() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("html-ids-covered"))
+        .arg("--json")
+        .arg("check")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""attribute": "id""#))
+        .stdout(predicate::str::contains(r##""#save""##))
+        .stdout(predicate::str::contains(r#""uncoveredSelectors": 0"#));
+}
+
+#[test]
+fn selector_coverage_reports_uncovered_html_ids_when_enabled() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("html-ids-uncovered"))
+        .arg("check")
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Uncovered selectors:"))
+        .stdout(predicate::str::contains(r#"[id="publish"]"#));
+}
+
+#[test]
+fn html_ids_are_ignored_by_default() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("html-ids-default"))
+        .arg("--json")
+        .arg("check")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""totalSelectors": 0"#));
+}
+
+#[test]
 fn selector_coverage_can_be_disabled() {
     Command::cargo_bin("playwright-ast-coverage")
         .unwrap()

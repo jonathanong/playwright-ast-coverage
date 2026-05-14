@@ -48,6 +48,14 @@ component folders:
 ```yaml
 frontendRoot: web/app
 playwrightConfig: playwright.config.ts
+navigationHelpers:
+  - navigateTo
+selectorAttributes:
+  - data-testid
+  - data-pw
+componentSelectorAttributes:
+  dataPw: data-pw
+htmlIds: true
 selectorRoots:
   - web/app
   - web/components

@@ -122,6 +122,14 @@ Supported JSX forms for configured `selectorAttributes`:
 <button data-testid={id} />
 ```
 
+When `htmlIds: true` is configured, the same static, template, and unsupported
+dynamic value rules also apply to JSX `id` attributes:
+
+```tsx
+<button id="save" />
+<article id={`user-${id}`} />
+```
+
 Configured `componentSelectorAttributes` collect props from component JSX and
 report them as the mapped DOM attribute:
 
@@ -169,8 +177,18 @@ await page.locator('[data-testid*="nav"]').click();
 ```
 
 CSS attribute selectors are detected for configured `selectorAttributes` and
-mapped DOM attributes from `componentSelectorAttributes`. Supported operators
-are exact (`=`), prefix (`^=`), suffix (`$=`), and contains (`*=`).
+mapped DOM attributes from `componentSelectorAttributes`. When `htmlIds: true`
+is configured, `[id="save"]` and related `id` attribute selectors are also
+detected. Supported operators are exact (`=`), prefix (`^=`), suffix (`$=`), and
+contains (`*=`).
+
+Detected CSS ID selectors when `htmlIds: true` is configured:
+
+```ts
+await page.locator('#save').click();
+await page.locator('button#save').click();
+await page.locator('#save, #publish').click();
+```
 
 The selector string must appear as a string or template literal argument to a
 known Playwright selector method. Supported methods include `locator`, `click`,

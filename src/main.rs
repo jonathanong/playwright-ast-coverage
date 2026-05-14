@@ -341,12 +341,14 @@ fn analyze_with_policy(
         settings.project.as_deref(),
     )?;
     let test_files = discover_test_files(root, settings, &playwright)?;
-    let selector_regexes = selectors::compile_selector_regexes(
+    let selector_regexes = selectors::compile_selector_regexes_with_html_ids(
         &settings.selector_attributes,
         &settings.component_selector_attributes,
+        settings.html_ids,
     );
     let app_selector_occurrences = if settings.selector_attributes.is_empty()
         && settings.component_selector_attributes.is_empty()
+        && !settings.html_ids
     {
         Vec::new()
     } else {
@@ -1356,6 +1358,7 @@ mod tests {
             navigation_helpers: vec![],
             selector_attributes: vec!["data-testid".to_string()],
             component_selector_attributes: BTreeMap::new(),
+            html_ids: false,
             selector_roots: vec!["missing".to_string(), "web/app".to_string()],
             selector_include: vec![],
             selector_exclude: vec![],
@@ -1393,6 +1396,7 @@ mod tests {
             navigation_helpers: vec![],
             selector_attributes: vec!["data-testid".to_string(), "data-pw".to_string()],
             component_selector_attributes: BTreeMap::new(),
+            html_ids: false,
             selector_roots: vec!["web/app".to_string()],
             selector_include: vec![],
             selector_exclude: vec![],
@@ -1420,6 +1424,7 @@ mod tests {
             navigation_helpers: vec![],
             selector_attributes: vec!["data-testid".to_string()],
             component_selector_attributes: BTreeMap::new(),
+            html_ids: false,
             selector_roots: vec!["web/app".to_string()],
             selector_include: vec![],
             selector_exclude: vec![],
@@ -1468,6 +1473,7 @@ mod tests {
             navigation_helpers: vec![],
             selector_attributes: vec!["data-testid".to_string()],
             component_selector_attributes: BTreeMap::new(),
+            html_ids: false,
             selector_roots: vec!["web/app".to_string()],
             selector_include: vec![],
             selector_exclude: vec![],
@@ -1555,6 +1561,7 @@ mod tests {
             navigation_helpers: vec![],
             selector_attributes: vec!["data-testid".to_string()],
             component_selector_attributes: BTreeMap::new(),
+            html_ids: false,
             selector_roots: vec!["web/app".to_string()],
             selector_include: vec![],
             selector_exclude: vec![],
@@ -1595,6 +1602,7 @@ mod tests {
             navigation_helpers: vec![],
             selector_attributes: vec!["data-testid".to_string()],
             component_selector_attributes: BTreeMap::new(),
+            html_ids: false,
             selector_roots: vec!["web/app".to_string()],
             selector_include: vec![],
             selector_exclude: vec![],
@@ -1617,6 +1625,7 @@ mod tests {
             navigation_helpers: vec![],
             selector_attributes: vec![],
             component_selector_attributes: BTreeMap::new(),
+            html_ids: false,
             selector_roots: vec!["web/app".to_string()],
             selector_include: vec![],
             selector_exclude: vec![],
@@ -1640,6 +1649,7 @@ mod tests {
             navigation_helpers: vec![],
             selector_attributes: vec![],
             component_selector_attributes: BTreeMap::new(),
+            html_ids: false,
             selector_roots: vec!["web/app".to_string()],
             selector_include: vec![],
             selector_exclude: vec![],
@@ -1684,6 +1694,7 @@ mod tests {
             navigation_helpers: vec![],
             selector_attributes: vec![],
             component_selector_attributes: BTreeMap::new(),
+            html_ids: false,
             selector_roots: vec!["web/app".to_string()],
             selector_include: vec![],
             selector_exclude: vec![],
@@ -1717,6 +1728,7 @@ mod tests {
             navigation_helpers: vec![],
             selector_attributes: vec![],
             component_selector_attributes: BTreeMap::new(),
+            html_ids: false,
             selector_roots: vec!["web/app".to_string()],
             selector_include: vec![],
             selector_exclude: vec![],
@@ -1736,6 +1748,7 @@ mod tests {
             navigation_helpers: vec![],
             selector_attributes: vec!["data-testid".to_string()],
             component_selector_attributes: BTreeMap::new(),
+            html_ids: false,
             selector_roots: vec!["web/app".to_string()],
             selector_include: vec![],
             selector_exclude: vec![],
