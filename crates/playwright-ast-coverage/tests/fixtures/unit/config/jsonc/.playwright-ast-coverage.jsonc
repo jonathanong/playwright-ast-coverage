@@ -1,0 +1,7 @@
+{
+  // JSONC allows comments.
+  "frontendRoot": "web/jsonc-app",
+  "testExclude": [
+    "**/jsonc-skip/**",
+  ],
+}

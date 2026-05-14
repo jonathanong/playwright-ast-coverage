@@ -1,4 +1,0 @@
-frontendRoot: web/app
-selectorAttributes: []
-testInclude:
-  - tests/e2e/**/*.ts

@@ -1,0 +1,2 @@
+frontendRoot: web/app
+selectorAttributes: ['data-test', 'data-test-id']

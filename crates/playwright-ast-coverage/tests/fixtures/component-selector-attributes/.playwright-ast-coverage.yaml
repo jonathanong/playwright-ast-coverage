@@ -1,0 +1,4 @@
+frontendRoot: web/app
+selectorAttributes: []
+componentSelectorAttributes:
+  dataPw: data-pw

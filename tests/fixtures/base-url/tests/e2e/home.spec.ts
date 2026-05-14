@@ -1,5 +1,0 @@
-import { test } from '@playwright/test';
-
-test('home from base url', async ({ page }) => {
-  await page.goto('http://localhost:3000');
-});

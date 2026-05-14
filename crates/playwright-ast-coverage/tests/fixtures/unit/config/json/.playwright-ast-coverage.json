@@ -1,0 +1,4 @@
+{
+  "frontendRoot": "web/json-app",
+  "navigationHelpers": ["openJsonPath"]
+}

@@ -1,0 +1,6 @@
+frontendRoot: web/app
+testInclude:
+  - tests/**/*.spec.ts
+navigationHelpers:
+  - navigateTo
+selectorAttributes: []

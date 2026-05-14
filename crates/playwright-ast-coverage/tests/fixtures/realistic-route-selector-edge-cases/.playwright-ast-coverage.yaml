@@ -1,0 +1,10 @@
+frontendRoot: app
+testInclude:
+  - tests/**/*.spec.ts
+navigationHelpers:
+  - navigateTo
+selectorRoots:
+  - app
+selectorAttributes:
+  - data-pw
+

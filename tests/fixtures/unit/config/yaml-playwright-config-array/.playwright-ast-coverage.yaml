@@ -1,3 +1,0 @@
-playwrightConfig:
-  - playwright.config.mts
-  - playwright.storybook.config.mts
