@@ -1,0 +1,25 @@
+#!/bin/sh
+
+# Get current branch name
+current_branch=$(git rev-parse --abbrev-ref HEAD)
+
+if [ "$current_branch" != "main" ]; then
+  # Check if ahead of main
+  ahead_count=$(git rev-list --count main..HEAD 2>/dev/null || echo 0)
+  if [ "$ahead_count" -eq 0 ]; then
+    echo "Branch is not ahead of main. Rebasing..."
+    git rebase main || { echo "Rebase failed. Please resolve conflicts manually."; exit 1; }
+  fi
+fi
+
+echo "Running cargo fmt..."
+cargo fmt --all -- --check || exit 1
+
+echo "Running cargo clippy..."
+cargo clippy --all -- -D warnings || exit 1
+
+echo "Running oxfmt check..."
+npm run fmt:js:check || exit 1
+
+echo "Running oxlint..."
+npm run lint:js || exit 1
