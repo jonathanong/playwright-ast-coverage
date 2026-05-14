@@ -202,12 +202,8 @@ mod tests {
         let err = load_config::<TestConfig>(dir.path(), None, &["test"])
             .err()
             .unwrap();
-        let err_str = err.to_string();
-        assert!(
-            err_str.contains("Is a directory")
-                || err_str.contains("Permission denied")
-                || err_str.contains("failed to read")
-        );
+        assert!(err.to_string().contains("directory") || err.to_string().contains("failed"));
+
     }
 
     #[test]

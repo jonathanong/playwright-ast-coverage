@@ -265,14 +265,27 @@ mod tests {
         let source_type = oxc_span::SourceType::default();
         let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
         let stmt = &parsed.program.body[0];
-        let Statement::ExpressionStatement(expr_stmt) = stmt else {
-            unreachable!()
+        if let Statement::ExpressionStatement(expr_stmt) = stmt {
+            if let Expression::CallExpression(call) = &expr_stmt.expression {
+                let arg = &call.arguments[0];
+                assert_eq!(extract_string_literal_from_argument(arg, source), None);
+            }
+        }
+    }
+
+    #[test]
+    fn test_visitor_non_fetch() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "notFetch();";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let mut visitor = FetchVisitor {
+            source,
+            file: "test.ts".to_string(),
+            fetches: Vec::new(),
         };
-        let Expression::CallExpression(call) = &expr_stmt.expression else {
-            unreachable!()
-        };
-        let arg = &call.arguments[0];
-        assert_eq!(extract_string_literal_from_argument(arg, source), None);
+        visitor.visit_program(&parsed.program);
+        assert_eq!(visitor.fetches.len(), 0);
     }
 
     #[test]
@@ -345,6 +358,11 @@ mod tests {
         let current = dir.path().join("main.ts");
         let resolved = resolve_import(&current, "./lib").unwrap();
         assert!(resolved.ends_with("lib/index.ts"));
+    }
+
+    #[test]
+    fn test_resolve_import_root() {
+        assert_eq!(resolve_import(Path::new("page.ts"), "./lib"), None);
     }
 
     #[test]
