@@ -284,7 +284,7 @@ fn analyze_file(
     let rel_file = relative_string(root, &abs_path);
 
     let mut file_fetches = Vec::new();
-    let _ = ast::with_program(path, &source, |program, source| -> Result<()> {
+    ast::with_program(path, &source, |program, source| -> Result<()> {
         let mut visitor = FetchVisitor {
             source,
             file: rel_file,
