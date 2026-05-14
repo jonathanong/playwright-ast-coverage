@@ -30,6 +30,6 @@
     "pack:check": "npm pack --dry-run"
   },
   "dependencies": {
-    "no-mistakes-core": "workspace:*"
+    "no-mistakes-core": "file:../no-mistakes-core"
   }
 }
