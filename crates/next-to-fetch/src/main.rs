@@ -399,8 +399,7 @@ fn collect_imports(
         for stmt in &program.body {
             match stmt {
                 Statement::ImportDeclaration(import) if is_runtime_import(import) => {
-                    if let Some(resolved) =
-                        resolve_import(&abs_path, import.source.value.as_str())
+                    if let Some(resolved) = resolve_import(&abs_path, import.source.value.as_str())
                     {
                         imports.push(resolved);
                     }
