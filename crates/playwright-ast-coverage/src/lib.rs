@@ -1890,7 +1890,7 @@ mod tests {
     }
 
     #[test]
-    fn run_check_success_on_empty_app() {
+    fn run_check_errors_on_empty_app() {
         let root = fixture_path(&["config", "missing-default"]);
         let cli = Cli {
             root,
@@ -1905,7 +1905,8 @@ mod tests {
             assert_unique_selectors: false,
             command: Command::Check,
         };
-        let _ = run(cli);
+        let err = run(cli).expect_err("empty app should error");
+        assert!(err.to_string().contains("no Next.js page routes found"));
     }
 
     #[test]

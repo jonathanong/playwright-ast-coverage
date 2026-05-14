@@ -730,10 +730,7 @@ mod tests {
             regex_path_sample(r#"^\/orders\/$"#),
             Some("/orders/".to_string())
         );
-        assert_eq!(
-            regex_path_sample(r#"^\/orders\/\"#),
-            Some("/orders/".to_string())
-        );
+        assert_eq!(regex_path_sample("^\\/orders\\/\\\""), None);
         assert_eq!(regex_path_sample(r#"^\/"#), Some("/".to_string()));
         assert_eq!(regex_path_sample(r#"^\/a\xb"#), None);
         assert_eq!(regex_path_sample(r#"^"#), None);

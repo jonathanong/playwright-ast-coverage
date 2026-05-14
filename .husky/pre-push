@@ -15,20 +15,22 @@ fi
 
 while read local_ref local_sha remote_ref remote_sha
 do
-  # Only check if we are not pushing main itself
-  if [ "$local_ref" != "refs/heads/main" ]; then
-    # Skip if we're deleting the remote branch (local_sha is all zeros)
-    if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
-      continue
-    fi
+  case "$local_ref" in
+    refs/heads/*) ;;
+    *) continue ;;
+  esac
 
-    # Check if the branch being pushed is behind the push destination's main.
-    behind_count=$(git rev-list --count "$local_sha"..FETCH_HEAD)
-    if [ "$behind_count" -gt 0 ]; then
-      echo "Error: Branch '${local_ref#refs/heads/}' is behind $remote main by $behind_count commit(s)."
-      echo "Please rebase onto the push destination's main before pushing."
-      exit 1
-    fi
+  # Skip main itself and remote branch deletions.
+  if [ "$local_ref" = "refs/heads/main" ] || [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+    continue
+  fi
+
+  # Check if the branch being pushed is behind the push destination's main.
+  behind_count=$(git rev-list --count "$local_sha"..FETCH_HEAD)
+  if [ "$behind_count" -gt 0 ]; then
+    echo "Error: Branch '${local_ref#refs/heads/}' is behind $remote main by $behind_count commit(s)."
+    echo "Please rebase onto the push destination's main before pushing."
+    exit 1
   fi
 done
 
