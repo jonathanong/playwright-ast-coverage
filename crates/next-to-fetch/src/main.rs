@@ -421,8 +421,7 @@ fn collect_imports(
                     if export.export_kind == ImportOrExportKind::Type {
                         continue;
                     }
-                    if let Some(resolved) =
-                        resolve_import(&abs_path, export.source.value.as_str())
+                    if let Some(resolved) = resolve_import(&abs_path, export.source.value.as_str())
                     {
                         imports.push(resolved);
                     }
