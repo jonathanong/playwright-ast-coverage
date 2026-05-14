@@ -759,6 +759,176 @@ mod tests {
     }
 
     #[test]
+    fn test_is_route_handler_file_variants() {
+        assert!(is_route_handler_file(Path::new("route.ts")));
+        assert!(is_route_handler_file(Path::new("route")));
+        assert!(!is_route_handler_file(Path::new("page.tsx")));
+        assert!(!is_route_handler_file(Path::new("not-route.txt")));
+    }
+
+    #[test]
+    fn test_is_client_route_file_missing_file() {
+        assert!(!is_client_route_file(Path::new("does-not-exist.ts")).unwrap());
+    }
+
+    #[test]
+    fn test_resolve_target_file_errors() {
+        let dir = tempdir().unwrap();
+
+        let empty = resolve_target_file(dir.path(), "   ");
+        assert!(empty.is_err());
+        let err = empty.unwrap_err();
+        assert!(err.to_string().contains("target path cannot be empty"));
+
+        let dir_target = dir.path().join("dir");
+        fs::create_dir(&dir_target).unwrap();
+        let not_file = resolve_target_file(dir.path(), "dir");
+        assert!(not_file.is_err());
+        let err = not_file.unwrap_err();
+        assert!(err.to_string().contains("target path is not a file"));
+    }
+
+    #[test]
+    fn test_route_reaches_target_short_circuit() {
+        let dir = tempdir().unwrap();
+        let route = dir.path().join("route.ts");
+        let target = dir.path().join("target.ts");
+        fs::write(&route, "").unwrap();
+        fs::write(&target, "").unwrap();
+
+        let mut cache = HashMap::new();
+        let mut visited = HashSet::new();
+        let route_abs = route.canonicalize().unwrap();
+        let target_abs = target.canonicalize().unwrap();
+        assert!(!route_reaches_target(&route, &target_abs, &mut visited, &mut cache).unwrap());
+
+        visited.insert(route_abs);
+        let matched_direct =
+            route_reaches_target(&route, &target_abs, &mut visited, &mut cache).unwrap();
+        assert!(!matched_direct);
+    }
+
+    #[test]
+    fn test_route_reaches_target_matches_direct() {
+        let dir = tempdir().unwrap();
+        let route = dir.path().join("route.ts");
+        fs::write(&route, "").unwrap();
+
+        let mut cache = HashMap::new();
+        let mut visited = HashSet::new();
+        let route_abs = route.canonicalize().unwrap();
+        let reached = route_reaches_target(&route, &route_abs, &mut visited, &mut cache).unwrap();
+        assert!(reached);
+    }
+
+    #[test]
+    fn test_route_reaches_target_via_import() {
+        let dir = tempdir().unwrap();
+        let route = dir.path().join("route.ts");
+        let middle = dir.path().join("middle.ts");
+        let target = dir.path().join("target.ts");
+        fs::write(&route, "import { helper } from './middle';").unwrap();
+        fs::write(&middle, "import { target } from './target';").unwrap();
+        fs::write(&target, "").unwrap();
+
+        let mut cache = HashMap::new();
+        let mut visited = HashSet::new();
+        assert!(route_reaches_target(
+            &route,
+            &target.canonicalize().unwrap(),
+            &mut visited,
+            &mut cache
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn test_is_runtime_import_variants() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "
+            import type { Foo } from './foo';
+            import {} from './empty';
+            import { type Bar } from './bar';
+            import { Baz } from './baz';
+        ";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let imports = parsed
+            .program
+            .body
+            .iter()
+            .filter_map(|stmt| match stmt {
+                Statement::ImportDeclaration(import) => Some(import),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(imports.len(), 4);
+        assert!(!is_runtime_import(imports[0]));
+        assert!(is_runtime_import(imports[1]));
+        assert!(!is_runtime_import(imports[2]));
+        assert!(is_runtime_import(imports[3]));
+    }
+
+    #[test]
+    fn test_is_runtime_export_variants() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "
+            export type { Foo } from './foo';
+            export {};
+            export { type Bar } from './bar';
+            export { Baz } from './baz';
+        ";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let exports = parsed
+            .program
+            .body
+            .iter()
+            .filter_map(|stmt| match stmt {
+                Statement::ExportNamedDeclaration(export) => Some(export),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(exports.len(), 4);
+        assert!(!is_runtime_export(exports[0]));
+        assert!(is_runtime_export(exports[1]));
+        assert!(!is_runtime_export(exports[2]));
+        assert!(is_runtime_export(exports[3]));
+    }
+
+    #[test]
+    fn test_collect_imports_filters_runtime_and_type_only_imports_exports() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("pkg")).unwrap();
+
+        fs::write(dir.path().join("pkg/side-effect.ts"), "").unwrap();
+        fs::write(dir.path().join("pkg/runtime.ts"), "").unwrap();
+        fs::write(dir.path().join("pkg/runtime-all.ts"), "").unwrap();
+        fs::write(dir.path().join("pkg/types.ts"), "").unwrap();
+
+        let file = dir.path().join("pkg/index.ts");
+        fs::write(
+            &file,
+            "
+            import './side-effect';
+            import type { Foo } from './types';
+            export type { Foo } from './types';
+            export { runtimeExport } from './runtime';
+            export * from './runtime-all';
+            ",
+        )
+        .unwrap();
+
+        let mut import_cache = HashMap::new();
+        let imports = collect_imports(&file, &mut import_cache).unwrap();
+        assert_eq!(imports.len(), 3);
+        assert!(imports.iter().any(|path| path.ends_with("side-effect.ts")));
+        assert!(imports.iter().any(|path| path.ends_with("runtime.ts")));
+        assert!(imports.iter().any(|path| path.ends_with("runtime-all.ts")));
+        assert!(!imports.iter().any(|path| path.ends_with("types.ts")));
+    }
+
+    #[test]
     fn test_route_reaches_target_client_file() {
         let dir = tempdir().unwrap();
         let file = dir.path().join("client.ts");

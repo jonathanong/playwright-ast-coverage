@@ -162,6 +162,66 @@ fn test_cli_targets_imported_file() {
 }
 
 #[test]
+fn test_cli_target_match_modes() {
+    let root = Path::new("tests/fixtures/targets-match-modes");
+    fs::create_dir_all(root.join("app/users/profile")).unwrap();
+    fs::write(root.join(".no-mistakes.yaml"), "frontendRoot: app\n").unwrap();
+    fs::write(root.join("app/page.tsx"), "fetch('/api/root');").unwrap();
+    fs::write(root.join("app/users/page.tsx"), "fetch('/api/users');").unwrap();
+    fs::write(
+        root.join("app/users/profile/page.tsx"),
+        "fetch('/api/users-profile');",
+    )
+    .unwrap();
+
+    let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
+    cmd.arg("--root")
+        .arg(root)
+        .args(["app/page.tsx", "/users/", "users/profile"]);
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("### / (app/page.tsx)"))
+        .stdout(predicate::str::contains("| GET | `/api/root` |"))
+        .stdout(predicate::str::contains(
+            "### /users/profile (app/users/profile/page.tsx)",
+        ))
+        .stdout(predicate::str::contains("| GET | `/api/users-profile` |"))
+        .stdout(predicate::str::contains("| GET | `/api/users` |").not());
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn test_cli_route_handler_is_client_directive_ignored() {
+    let root = Path::new("tests/fixtures/route-handler");
+    fs::create_dir_all(root.join("app/api/hello")).unwrap();
+    fs::write(root.join(".no-mistakes.yaml"), "frontendRoot: app\n").unwrap();
+    fs::write(
+        root.join("app/api/hello/route.ts"),
+        "
+        'use client';
+        export async function GET() {
+            return Response.json({});
+        }
+        fetch('/api/hello');
+        ",
+    )
+    .unwrap();
+
+    let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
+    cmd.arg("--root").arg(root).arg("/api/hello");
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "### /api/hello (app/api/hello/route.ts)",
+        ))
+        .stdout(predicate::str::contains("| GET | `/api/hello` |"))
+        .stdout(predicate::str::contains("| S | ❌ |"));
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn test_cli_skips_type_only_imports() {
     let root = Path::new("tests/fixtures/type-only-import");
     fs::create_dir_all(root.join("app")).unwrap();
