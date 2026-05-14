@@ -47,8 +47,8 @@ playwright-ast-coverage edges --json
   matching the reported route pattern.
 - For uncovered selectors, assert the hook with `getByTestId(...)` or a supported
   CSS attribute selector.
-- For duplicate exact selectors, rename hooks so each reported value maps to one
-  element or state.
+- For duplicate exact test IDs or HTML IDs, rename hooks so each reported value
+  maps to one element or state.
 - Re-run `playwright-ast-coverage check --json` after changes.
 
 See the [CLI reference](cli-reference.md) for command options and the

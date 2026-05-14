@@ -75,5 +75,6 @@ with `selectorAttributes`:
 | `playwright-ast-coverage/prefer-get-by-test-id`       | Reports exact CSS test-id selectors passed to Playwright selector APIs.         |
 | `playwright-ast-coverage/naming-convention`           | Requires literal test IDs to match a configurable regular expression.           |
 
-Use `playwright-ast-coverage check --assert-unique-selectors` for project-wide
-selector uniqueness in CI. Lint rules are file-local.
+Use `playwright-ast-coverage check --assert-unique-test-ids` and, when needed,
+`--assert-unique-html-ids` for project-wide uniqueness in CI. Lint rules are
+file-local.
