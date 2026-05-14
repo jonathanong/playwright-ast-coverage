@@ -120,14 +120,34 @@ fn main() -> Result<()> {
             frontend_root.display()
         );
     }
-    let stems = ["page", "route", "layout"];
+    let stems = ["page", "route"];
     let routes = routes::collect_routes(&frontend_root, &stems)?;
 
     let mut reports = Vec::new();
     for route in routes {
         let mut fetches = Vec::new();
         let mut visited = HashSet::new();
+
+        // Analyze the page/route file itself
         analyze_file(&route.file, &root, &mut visited, &mut fetches)?;
+
+        // Traverse up and find parent layouts/loadings
+        let mut current = route.file.parent();
+        while let Some(parent) = current {
+            if !parent.starts_with(&frontend_root) {
+                break;
+            }
+
+            for stem in ["layout", "loading", "error", "not-found"] {
+                for ext in ["tsx", "ts", "jsx", "js"] {
+                    let layout_file = parent.join(format!("{stem}.{ext}"));
+                    if layout_file.exists() {
+                        analyze_file(&layout_file, &root, &mut visited, &mut fetches)?;
+                    }
+                }
+            }
+            current = parent.parent();
+        }
 
         fetches.sort();
         fetches.dedup();
@@ -167,7 +187,7 @@ fn analyze_file(
     let source = std::fs::read_to_string(&abs_path)?;
     let rel_file = relative_string(root, &abs_path);
 
-    ast::with_program(path, &source, |program, source| {
+    ast::with_program(path, &source, |program, source| -> Result<()> {
         let mut visitor = FetchVisitor {
             source,
             file: rel_file,
@@ -181,10 +201,11 @@ fn analyze_file(
             if let Statement::ImportDeclaration(import) = stmt {
                 let specifier = import.source.value.as_str();
                 if let Some(resolved) = resolve_import(path, specifier) {
-                    let _ = analyze_file(&resolved, root, visited, fetches);
+                    analyze_file(&resolved, root, visited, fetches)?;
                 }
             }
         }
+        Ok(())
     })?;
 
     Ok(())
