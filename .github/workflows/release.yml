@@ -129,10 +129,10 @@ jobs:
         run: |
           set -euo pipefail
           tag="${{ needs.prepare.outputs.version }}"
-          cargo_version="$(cargo metadata --no-deps --format-version 1 | node -e \"let d=''; process.stdin.on('data', c => d += c); process.stdin.on('end', () => console.log(JSON.parse(d).packages[0].version));\")"
-          npm_version="$(node -p \"require('./package.json').version\")"
-          test \"$tag\" = \"$cargo_version\"
-          test \"$tag\" = \"$npm_version\"
+          cargo_version="$(cargo metadata --no-deps --format-version 1 | node -e "let d=''; process.stdin.on('data', c => d += c); process.stdin.on('end', () => console.log(JSON.parse(d).packages[0].version));")"
+          npm_version="$(node -p "require('./package.json').version")"
+          test "$tag" = "$cargo_version"
+          test "$tag" = "$npm_version"
 
       - name: Check formatting
         run: cargo fmt --all -- --check
