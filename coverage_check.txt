@@ -1,0 +1,248 @@
+info: cargo-llvm-cov currently setting cfg(coverage); you can opt-out it by passing --no-cfg-coverage
+   Compiling playwright-ast-coverage v0.2.0 (/Users/jong/playwright-ast-coverage/crates/playwright-ast-coverage)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.98s
+     Running unittests src/lib.rs (target/llvm-cov-target/debug/deps/playwright_ast_coverage-f749ee7e43195967)
+
+running 157 tests
+test config::tests::is_playwright_config_name_handles_no_name_or_no_extension ... ok
+test config::tests::find_default_playwright_configs_missing_root_returns_empty ... ok
+test config::tests::explicit_unsupported_config_extension_errors ... ok
+test config::tests::explicit_extensionless_config_errors ... ok
+test config::tests::explicit_missing_config_errors ... ok
+test config::tests::duplicate_default_config_files_error ... ok
+test config::tests::is_playwright_config_name_handles_non_utf8 ... ok
+test config::tests::cli_playwright_config_absolute_path_is_preserved ... ok
+test config::tests::default_discovery_finds_all_root_playwright_configs ... ok
+test config::tests::missing_default_config_uses_defaults ... ok
+test config::tests::old_default_config_name_is_ignored ... ok
+test config::tests::invalid_yaml_errors ... ok
+test config::tests::jsonc_config_rejects_json5_object_keys ... ok
+test config::tests::playwright_config_name_filter_rejects_missing_extension ... ok
+test config::tests::load_settings_handles_one_playwright_config ... ok
+test config::tests::reads_json_default_config ... ok
+test config::tests::resolve_handles_absolute_paths ... ok
+test config::tests::reads_jsonc_default_config ... ok
+test config::tests::reads_yml_default_config ... ok
+test config::tests::reads_yaml_and_finds_default_playwright_config ... ok
+test config::tests::yaml_playwright_config_array_paths_are_resolved ... ok
+test config::tests::yaml_playwright_config_path_is_resolved ... ok
+test matcher::tests::dynamic_segments_reject_empty_segments ... ok
+test matcher::tests::catch_all_and_optional_catch_all_match_remaining_segments ... ok
+test matcher::tests::exact_match ... ok
+test config::tests::selector_attributes_can_be_custom_or_disabled ... ok
+test matcher::tests::fragment_stripped ... ok
+test matcher::tests::length_mismatch ... ok
+test matcher::tests::literal_mismatch ... ok
+test matcher::tests::param_match ... ok
+test matcher::tests::query_stripped ... ok
+test matcher::tests::root_slash_preserved ... ok
+test matcher::tests::trailing_slash_stripped ... ok
+test matcher::tests::wildcard_match ... ok
+test ast::tests::parser_reports_invalid_sources_and_extensions ... ok
+test playwright_config::tests::load_directory_config_path_returns_read_error ... ok
+test playwright_config::tests::array_element_object_handles_non_objects ... ok
+test playwright_config::tests::load_many_errors_when_config_is_missing_name_for_filter ... ok
+test playwright_config::tests::load_existing_config_reads_and_parses ... ok
+test playwright_config::tests::load_many_without_configs_rejects_project_filter ... ok
+test playwright_config::tests::load_many_errors_when_project_filter_matches_no_config ... ok
+test playwright_config::tests::cyclic_identifier_configs_fall_back_without_recursing ... ok
+test playwright_config::tests::ignores_non_literal_optional_playwright_values ... ok
+test playwright_config::tests::load_missing_config_errors ... ok
+test playwright_config::tests::load_without_config_uses_default_project ... ok
+test playwright_config::tests::malformed_projects_value_falls_back_to_single_project ... ok
+test playwright_config::tests::parse_accepts_spaced_property_and_escaped_string ... ok
+test playwright_config::tests::parser_handles_advanced_assignment_targets ... ok
+test playwright_config::tests::parser_handles_parenthesized_expressions ... ok
+test playwright_config::tests::parser_rejects_unsupported_required_values ... ok
+test playwright_config::tests::parser_handles_advanced_export_shapes ... ok
+test playwright_config::tests::parses_default_export_identifier ... ok
+test playwright_config::tests::parses_define_config_identifier_argument ... ok
+test playwright_config::tests::parses_commonjs_config_exports ... ok
+test playwright_config::tests::property_key_name_handles_all_cases ... ok
+test playwright_config::tests::property_key_name_handles_edge_cases ... ok
+test playwright_config::tests::parses_top_level_base_url_and_string_ignore ... ok
+test playwright_config::tests::parses_test_dir_and_match ... ok
+test playwright_config::tests::parses_projects_with_inheritance ... ok
+test playwright_config::tests::parser_handles_ast_edge_shapes ... ok
+test playwright_config::tests::resolves_identifier_backed_use_object ... ok
+test playwright_config::tests::root_options_ignore_project_values ... ok
+test playwright_config::tests::test_dir_resolves_absolute_relative_and_relative_config_dir ... ok
+test playwright_config::tests::template_literals_use_cooked_text ... ok
+test playwright_config::tests::validate_config_names_errors_on_duplicate_names ... ok
+test playwright_urls::tests::candidate_url_checks_schemes ... ok
+test playwright_urls::tests::deduplicates_urls ... ok
+test playwright_urls::tests::glob_url_sample_handles_edge_cases ... ok
+test playwright_urls::tests::empty_file_returns_empty ... ok
+test playwright_urls::tests::extracts_to_have_url_assertion_paths ... ok
+test playwright_urls::tests::callee_checks_handle_non_member_expressions ... ok
+test playwright_urls::tests::extracts_configured_navigation_helper_urls ... ok
+test playwright_urls::tests::bare_builtin_callees_are_ignored ... ok
+test playwright_urls::tests::extracts_click_href_selector ... ok
+test playwright_urls::tests::extracts_double_quoted_goto_and_backtick_single_quoted_href ... ok
+test playwright_urls::tests::extracts_page_goto_url ... ok
+test playwright_urls::tests::extracts_wait_for_url_page_url_match_and_static_route_helpers ... ok
+test playwright_urls::tests::regex_path_sample_edge_cases ... ok
+test playwright_urls::tests::samples_glob_url_patterns ... ok
+test playwright_urls::tests::samples_simple_url_regex_literals ... ok
+test playwright_urls::tests::source_offset_filter_ignores_comments_and_strings ... ok
+test playwright_urls::tests::ignores_non_href_selectors ... ok
+test routes::tests::absolute_path_components_are_ignored ... ok
+test playwright_urls::tests::ignores_negative_to_have_url_assertions ... ok
+test routes::tests::catch_all_maps_to_wildcard ... ok
+test routes::tests::collect_frontend_routes_missing_root_returns_empty ... ok
+test playwright_urls::tests::parenthesized_callee_is_supported ... ok
+test routes::tests::optional_catch_all_maps_to_double_wildcard ... ok
+test routes::tests::collect_frontend_routes_sorts_duplicate_patterns_by_file ... ok
+test routes::tests::root_page_maps_to_slash ... ok
+test routes::tests::route_group_is_skipped ... ok
+test routes::tests::collect_frontend_routes_finds_pages ... ok
+test routes::tests::slug_dynamic_segment ... ok
+test routes::tests::static_nested_path ... ok
+test playwright_urls::tests::page_url_to_match_requires_positive_page_url_expectation ... ok
+test selectors::tests::code_only_text_masks_comments_and_string_literals ... ok
+test playwright_urls::tests::helper_url_extraction_skips_non_url_literals ... ok
+test playwright_urls::tests::ignores_non_url_href_selector ... ok
+test playwright_urls::tests::ignores_external_urls ... ok
+test selectors::tests::css_escapes_handle_hex_and_non_hex ... ok
+test playwright_urls::tests::navigation_helpers_use_only_the_target_argument ... ok
+test selectors::tests::empty_internal_template_pattern_does_not_match ... ok
+test playwright_urls::tests::marks_urls_inside_skipped_and_conditional_tests ... ok
+test playwright_urls::tests::to_have_url_uses_first_url_literal_argument ... ok
+test selectors::tests::component_jsx_name_checks ... ok
+test selectors::tests::custom_test_id_attribute_maps_get_by_test_id ... ok
+test selectors::tests::css_id_selectors_ignore_hashes_inside_attribute_values_and_decode_escapes ... ok
+test selectors::tests::css_id_selectors_handle_escaped_hashes_quotes_empty_ids_and_hex_whitespace ... ok
+test selectors::tests::identifier_reassignment_uses_identifier_boundaries_and_assignment_operator ... ok
+test selectors::tests::malformed_template_is_treated_as_literal_pattern ... ok
+test selectors::tests::enclosing_shadow_binding_requires_an_open_block ... ok
+test selectors::tests::css_attribute_selectors_must_be_used_by_playwright_selector_calls ... ok
+test selectors::tests::extracts_html_ids_when_enabled ... ok
+test selectors::tests::playwright_selector_order_uses_matcher_kind_and_pattern ... ok
+test selectors::tests::extracts_static_jsx_selectors ... ok
+test selectors::tests::extracts_playwright_css_and_test_id_selectors ... ok
+test selectors::tests::extracts_template_and_unsupported_jsx_selectors ... ok
+test selectors::tests::template_exact_matching_rejects_non_matching_values ... ok
+test selectors::tests::template_without_static_parts_is_unsupported ... ok
+test selectors::tests::maps_component_selector_attributes_to_dom_attributes ... ok
+test selectors::tests::exact_and_operator_matchers_cover_static_values ... ok
+test selectors::tests::marks_selectors_inside_skipped_and_conditional_tests ... ok
+test selectors::tests::collect_app_selectors_reads_source_files_and_skips_build_dirs ... ok
+test tests::build_globset_rejects_invalid_patterns ... ok
+test tests::compiled_route_matching_handles_edge_segments ... ok
+test tests::configured_html_id_selectors_count_as_test_ids_for_uniqueness ... ok
+test tests::coverage_sort_uses_file_as_tiebreaker ... ok
+test selectors::tests::unsupported_dynamic_values_never_match ... ok
+test selectors::tests::unsupported_regex_selector_does_not_panic_or_match ... ok
+test tests::deprecated_duplicate_selector_report_preserves_aggregate_grouping ... ok
+test tests::duplicate_selector_report_includes_exact_values_only ... ok
+test tests::duplicate_selector_report_keeps_html_ids_separate_from_test_ids ... ok
+test tests::ignore_routes_match_exact_and_dynamic_patterns ... ok
+test tests::normalize_url_handles_edge_cases ... ok
+test tests::normalize_url_handles_relative_absolute_base_and_external ... ok
+test selectors::tests::template_matchers_cover_structured_dynamic_values ... ok
+test tests::related_report_matches_route_and_selector_edges ... ok
+test tests::discover_test_files_walks_shared_project_test_dir_once ... ok
+test tests::path_helpers_handle_absolute_and_relative_paths ... ok
+test tests::discover_test_files_applies_yaml_exclude_before_project_matching ... ok
+test tests::route_edges_mark_routes_covered ... ok
+test selectors::tests::mismatched_attributes_and_values_do_not_cover ... ok
+test tests::route_specificity_prefers_earlier_static_segments_and_exact_end ... ok
+test tests::run_check_success_on_empty_app ... ok
+test tests::run_errors_on_invalid_root ... ok
+test tests::selector_coverage_sort_uses_value_and_file_tiebreakers ... ok
+test tests::selector_coverage_sorts_and_counts_uncovered ... ok
+test tests::selector_edges_mark_targets_covered ... ok
+test tests::text_printers_cover_routes_and_selectors ... ok
+test tests::skipped_directories_are_detected ... ok
+test tests::collect_app_selectors_skips_missing_roots_and_non_source_files ... ok
+test tests::walk_files_returns_files_and_skips_configured_directories ... ok
+test tests::analyze_surfaces_parser_errors ... ok
+test selectors::tests::selector_parser_handles_ast_edge_shapes ... ok
+test tests::selector_index_matches_exact_template_and_fuzzy_selectors ... ok
+test tests::analyze_discovers_tests_and_builds_reports ... ok
+test selectors::tests::extracts_static_identifier_default_jsx_selectors ... ok
+
+test result: ok. 157 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running unittests src/main.rs (target/llvm-cov-target/debug/deps/playwright_ast_coverage-fe78677672cbd5b9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/cli.rs (target/llvm-cov-target/debug/deps/cli-4c8671efa70d261f)
+
+running 56 tests
+test configured_id_selector_coverage_does_not_require_html_ids ... ok
+test check_can_fail_on_duplicate_html_id_literals_without_html_id_coverage ... ok
+test check_can_fail_on_duplicate_test_id_literals ... ok
+test allow_skipped_tests_counts_skipped_coverage ... ok
+test assert_conditional_tests_requires_active_coverage ... ok
+test coverage_json_reports_uncovered_routes ... ok
+test coverage_text_reports_all_routes_covered ... ok
+test absolute_urls_matching_base_url_cover_routes ... ok
+test check_subcommand_reports_all_routes_covered ... ok
+test analysis_uses_only_matching_project_context ... ok
+test duplicate_slash_empty_segments_do_not_cover_dynamic_routes ... ok
+test edge_text_outputs_selector_edges ... ok
+test default_discovery_reads_multiple_named_playwright_configs ... ok
+test deprecated_unique_selectors_flag_still_checks_selectors ... ok
+test edges_json_outputs_route_edges ... ok
+test edges_json_outputs_selector_edges ... ok
+test edges_subcommand_outputs_edges ... ok
+test edge_text_outputs_edges ... ok
+test coverage_text_reports_uncovered_routes ... ok
+test duplicate_routes_and_selectors_are_sorted_deterministically ... ok
+test missing_explicit_config_exits_with_error ... ok
+test missing_routes_exits_with_error ... ok
+test invalid_root_config_exits_with_error ... ok
+test invalid_project_config_exits_with_error ... ok
+test missing_playwright_config_exits_with_error ... ok
+test missing_project_test_dir_is_skipped ... ok
+test multi_config_requires_top_level_names ... ok
+test external_urls_without_base_url_are_ignored ... ok
+test multi_config_requires_unique_top_level_names ... ok
+test project_filter_ignores_inner_playwright_project_names ... ok
+test html_ids_are_ignored_by_default ... ok
+test get_by_test_id_uses_playwright_test_id_attribute ... ok
+test ignored_routes_do_not_fail_coverage ... ok
+test related_requires_at_least_one_file ... ok
+test navigation_helpers_cover_routes ... ok
+test nonliteral_playwright_config_values_are_ignored_when_optional ... ok
+test project_filters_by_playwright_config_name ... ok
+test reads_playwright_config_by_default ... ok
+test related_normalizes_dot_relative_paths ... ok
+test related_json_returns_direct_edge_tests ... ok
+test selector_coverage_can_be_disabled ... ok
+test relative_root_is_resolved ... ok
+test scanner_edge_cases_are_covered_from_fixture ... ok
+test selector_coverage_marks_unsupported_dynamic_values ... ok
+test selector_coverage_reports_all_selectors_covered ... ok
+test route_specificity_keeps_static_routes_from_covering_dynamic_siblings ... ok
+test selector_coverage_reports_uncovered_selectors ... ok
+test selector_coverage_reports_uncovered_html_ids_when_enabled ... ok
+test selector_coverage_supports_component_attribute_mapping ... ok
+test selector_coverage_supports_custom_attributes ... ok
+test selector_coverage_supports_fuzzy_templates ... ok
+test selector_roots_and_excludes_are_configurable ... ok
+test selector_coverage_supports_optional_html_ids ... ok
+test test_ids_and_html_ids_with_the_same_value_are_not_duplicates ... ok
+test skipped_tests_do_not_cover_by_default_but_conditional_tests_do ... ok
+test skipped_navigation_helper_catalog_requires_allow_skipped_tests ... ok
+
+test result: ok. 56 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+Filename                      Regions    Missed Regions     Cover   Functions  Missed Functions  Executed       Lines      Missed Lines     Cover    Branches   Missed Branches     Cover
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ast.rs                            107                 1    99.07%           7                 0   100.00%          65                 0   100.00%           0                 0         -
+config.rs                         591                 6    98.98%          43                 0   100.00%         325                 0   100.00%           0                 0         -
+lib.rs                           2324                28    98.80%         105                 0   100.00%        1644                 5    99.70%           0                 0         -
+main.rs                             8                 0   100.00%           1                 0   100.00%           7                 0   100.00%           0                 0         -
+matcher.rs                        167                 0   100.00%          19                 0   100.00%          90                 0   100.00%           0                 0         -
+playwright_config.rs             1175                 4    99.66%          89                 0   100.00%         711                 2    99.72%           0                 0         -
+playwright_urls.rs               1286                11    99.14%          97                 0   100.00%         954                 2    99.79%           0                 0         -
+routes.rs                         231                 1    99.57%          18                 0   100.00%         109                 0   100.00%           0                 0         -
+selectors.rs                     2308                15    99.35%         186                 0   100.00%        1756                 1    99.94%           0                 0         -
+test_support.rs                    18                 0   100.00%           2                 0   100.00%           9                 0   100.00%           0                 0         -
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+TOTAL                            8215                66    99.20%         567                 0   100.00%        5670                10    99.82%           0                 0         -

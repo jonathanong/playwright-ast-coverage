@@ -672,6 +672,17 @@ mod tests {
             vec!["**/*.commonjs-object.js"]
         );
 
+        // Coverage for assignment_target_path error
+        let source = "(1).exports = {}";
+        let parsed = parse_from_path(
+            source,
+            Path::new("playwright.config.cjs"),
+            Path::new("/repo"),
+        )
+        .unwrap();
+        assert_eq!(parsed.projects[0].test_dir, ".");
+    }
+
         let source = fixture_source(&["playwright_config", "commonjs-define-config.cjs"]);
         let parsed = parse_from_path(
             &source,

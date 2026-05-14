@@ -1,0 +1,1236 @@
+  943|       |}
+
+/Users/jong/playwright-ast-coverage/crates/playwright-ast-coverage/src/playwright_urls.rs:
+    1|       |use crate::{ast, playwright_tests};
+    2|       |#[cfg(test)]
+    3|       |use anyhow::Result;
+    4|       |use oxc_ast::ast::{
+    5|       |    Argument, CallExpression, ConditionalExpression, IfStatement, LogicalExpression, Program,
+    6|       |};
+    7|       |use oxc_ast_visit::{walk, Visit};
+    8|       |use std::collections::{BTreeSet, HashMap};
+    9|       |#[cfg(test)]
+   10|       |use std::path::Path;
+   11|       |
+   12|       |/// Extract local URL string literals navigated to in a Playwright test file.
+   13|       |#[cfg(test)]
+   14|     15|pub fn extract_playwright_urls(source: &str) -> Vec<String> {
+   15|     15|    extract_playwright_url_literals_with_helpers(source, &[])
+   16|     15|        .into_iter()
+   17|     21|        .filter(|url| url.starts_with('/'))
+                       ^15
+   18|     15|        .collect()
+   19|     15|}
+   20|       |
+   21|       |#[cfg(test)]
+   22|     19|pub fn extract_playwright_url_literals_with_helpers(
+   23|     19|    source: &str,
+   24|     19|    navigation_helpers: &[String],
+   25|     19|) -> Vec<String> {
+   26|     19|    extract_playwright_url_literals_from_path(Path::new("fixture.ts"), source, navigation_helpers)
+   27|     19|        .expect("fixture should parse")
+   28|     19|}
+   29|       |
+   30|       |#[cfg(test)]
+   31|     19|pub fn extract_playwright_url_literals_from_path(
+   32|     19|    path: &Path,
+   33|     19|    source: &str,
+   34|     19|    navigation_helpers: &[String],
+   35|     19|) -> Result<Vec<String>> {
+   36|     19|    ast::with_program(path, source, |program, source| {
+   37|     19|        extract_playwright_url_literals_from_program(program, source, navigation_helpers)
+   38|     19|    })
+   39|     19|}
+   40|       |
+   41|       |#[cfg(test)]
+   42|      1|pub fn extract_playwright_url_occurrences(
+   43|      1|    source: &str,
+   44|      1|) -> Vec<(String, playwright_tests::TestStatus)> {
+   45|      1|    ast::with_program(Path::new("fixture.ts"), source, |program, source| {
+   46|      1|        extract_playwright_url_occurrences_from_program(program, source, &[])
+   47|      1|            .into_iter()
+   48|     16|            .map(|occurrence| (occurrence.value, occurrence.status))
+                           ^1
+   49|      1|            .collect()
+   50|      1|    })
+   51|      1|    .expect("fixture should parse")
+   52|      1|}
+   53|       |
+   54|       |#[cfg(test)]
+   55|     19|pub fn extract_playwright_url_literals_from_program(
+   56|     19|    program: &Program<'_>,
+   57|     19|    source: &str,
+   58|     19|    navigation_helpers: &[String],
+   59|     19|) -> Vec<String> {
+   60|     19|    extract_playwright_url_occurrences_from_program(program, source, navigation_helpers)
+   61|     19|        .into_iter()
+   62|     19|        .map(|occurrence| occurrence.value)
+   63|     19|        .collect()
+   64|     19|}
+   65|       |
+   66|     78|pub fn extract_playwright_url_occurrences_from_program(
+   67|     78|    program: &Program<'_>,
+   68|     78|    source: &str,
+   69|     78|    navigation_helpers: &[String],
+   70|     78|) -> Vec<playwright_tests::TestOccurrence<String>> {
+   71|     78|    let static_zero_arg_paths = collect_static_zero_arg_paths(source);
+   72|     78|    let mut visitor = UrlVisitor {
+   73|     78|        source,
+   74|     78|        navigation_helpers,
+   75|     78|        static_zero_arg_paths: &static_zero_arg_paths,
+   76|     78|        status: playwright_tests::TestStatus::Active,
+   77|     78|        annotation_status: playwright_tests::TestStatus::Active,
+   78|     78|        urls: BTreeSet::new(),
+   79|     78|    };
+   80|     78|    visitor.visit_program(program);
+   81|     78|    visitor.urls.into_iter().collect()
+   82|     78|}
+   83|       |
+   84|    241|fn is_candidate_url(url: &str) -> bool {
+   85|    241|    url.starts_with('/') || url.starts_with("http://") || url.starts_with("https://")
+                                          ^46 ^46                       ^40 ^40
+   86|    241|}
+   87|       |
+   88|       |/// Parse `a[href="/users/42"]` to `/users/42`.
+   89|     17|fn extract_href_from_selector(selector: &str) -> Option<String> {
+   90|     17|    let quoted = selector
+   91|     17|        .split("href=\"")
+   92|     17|        .nth(1)
+   93|     17|        .and_then(|rest| rest.split('"').next());
+                                       ^7              ^7
+   94|     17|    let single_quoted = selector
+   95|     17|        .split("href='")
+   96|     17|        .nth(1)
+   97|     17|        .and_then(|rest| rest.split('\'').next());
+                                       ^5               ^5
+   98|     17|    let url = quoted.or(single_quoted)?;
+                      ^12                           ^5
+   99|     12|    if is_candidate_url(url) {
+  100|     11|        Some(url.to_string())
+  101|       |    } else {
+  102|      1|        None
+  103|       |    }
+  104|     17|}
+  105|       |
+  106|       |struct UrlVisitor<'a, 'h> {
+  107|       |    source: &'a str,
+  108|       |    navigation_helpers: &'h [String],
+  109|       |    static_zero_arg_paths: &'h HashMap<String, Vec<String>>,
+  110|       |    status: playwright_tests::TestStatus,
+  111|       |    annotation_status: playwright_tests::TestStatus,
+  112|       |    urls: BTreeSet<playwright_tests::TestOccurrence<String>>,
+  113|       |}
+  114|       |
+  115|       |impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
+  116|    485|    fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
+  117|    485|        let callee = ast::expression_path(&call.callee);
+  118|       |
+  119|    485|        if callee_is_member_named(&call.callee, "goto") {
+  120|     98|            if let Some(argument) = call.arguments.first() {
+                                      ^97
+  121|     97|                for url in argument_literals(argument, self.source, self.static_zero_arg_paths) {
+                                  ^95
+  122|     95|                    if is_candidate_url(&url) {
+  123|     90|                        self.insert(url);
+  124|     90|                    }
+                                  ^5
+  125|       |                }
+  126|      1|            }
+  127|    387|        } else if callee_is_member_named(&call.callee, "click") {
+  128|     46|            if let Some(selector) = call.arguments.first().and_then(|arg| {
+                                      ^17                                               ^18
+  129|     18|                argument_literals(arg, self.source, self.static_zero_arg_paths)
+  130|     18|                    .into_iter()
+  131|     18|                    .next()
+  132|     18|            }) {
+  133|     17|                if let Some(url) = extract_href_from_selector(&selector) {
+                                          ^11
+  134|     11|                    self.insert(url);
+  135|     11|                }
+                              ^6
+  136|     29|            }
+  137|    341|        } else if (callee_is_member_named(&call.callee, "toHaveURL") && !callee_has_not(&callee))
+                                                                                      ^17
+  138|    326|            || (callee_is_playwright_wait_for_url(&call.callee) && !callee_has_not(&callee))
+                                                                                 ^14
+  139|    312|            || (callee_is_page_url_to_match(&call.callee) && !callee_has_not(&callee))
+                                                                           ^13
+  140|       |        {
+  141|     41|            for url in direct_url_pattern_literals(
+                              ^32
+  142|     41|                &call.arguments,
+  143|     41|                self.source,
+  144|     41|                self.static_zero_arg_paths,
+  145|     32|            ) {
+  146|     32|                self.insert(url);
+  147|     32|            }
+  148|    300|        } else if callee_matches_navigation_helper(&callee, self.navigation_helpers) {
+  149|     71|            for argument in &call.arguments {
+                                          ^35
+  150|     71|                let urls =
+  151|     71|                    argument_candidate_literals(argument, self.source, self.static_zero_arg_paths);
+  152|     71|                if !urls.is_empty() {
+  153|     34|                    for url in urls {
+  154|     34|                        self.insert(url);
+  155|     34|                    }
+  156|     34|                    break;
+  157|     37|                }
+  158|       |            }
+  159|    265|        }
+  160|       |
+  161|    485|        let traversal = playwright_tests::test_callback_traversal(call, self.annotation_status);
+  162|    485|        if traversal.is_none() {
+  163|    400|            let callback_index = playwright_tests::callback_argument_index(call);
+  164|    400|            if playwright_tests::annotation_status_for_call(call).is_some() {
+  165|      7|                self.apply_annotation_call(call);
+  166|     12|                for (index, argument) in call.arguments.iter().enumerate() {
+                                                       ^7                    ^7
+  167|     12|                    if Some(index) != callback_index {
+  168|     10|                        self.visit_argument(argument);
+  169|     10|                    }
+                                  ^2
+  170|       |                }
+  171|      7|                return;
+  172|    393|            }
+  173|    393|            walk::walk_call_expression(self, call);
+  174|    393|            return;
+  175|     85|        }
+  176|       |
+  177|     85|        let (callback_index, callback_status) = traversal.expect("checked traversal");
+  178|    169|        for (index, argument) in call.arguments.iter().enumerate() {
+                                               ^85                   ^85
+  179|    169|            if index == callback_index {
+  180|     85|                self.with_status(callback_status, |visitor| {
+  181|     85|                    visitor.with_annotation_scope(|visitor| visitor.visit_argument(argument));
+  182|     85|                });
+  183|     84|            } else {
+  184|     84|                self.visit_argument(argument);
+  185|     84|            }
+  186|       |        }
+  187|    485|    }
+  188|       |
+  189|      2|    fn visit_if_statement(&mut self, statement: &IfStatement<'a>) {
+  190|      2|        self.visit_expression(&statement.test);
+  191|      2|        let status = playwright_tests::status_for_if_branch(self.status);
+  192|      2|        self.with_status(status, |visitor| {
+  193|      2|            visitor.visit_statement(&statement.consequent);
+  194|      2|            if let Some(alternate) = &statement.alternate {
+                                      ^1
+  195|      1|                visitor.visit_statement(alternate);
+  196|      1|            }
+  197|      2|        });
+  198|      2|    }
+  199|       |
+  200|      2|    fn visit_conditional_expression(&mut self, expression: &ConditionalExpression<'a>) {
+  201|      2|        self.visit_expression(&expression.test);
+  202|      2|        let status = playwright_tests::status_for_if_branch(self.status);
+  203|      2|        self.with_status(status, |visitor| {
+  204|      2|            visitor.visit_expression(&expression.consequent);
+  205|      2|            visitor.visit_expression(&expression.alternate);
+  206|      2|        });
+  207|      2|    }
+  208|       |
+  209|      1|    fn visit_logical_expression(&mut self, expression: &LogicalExpression<'a>) {
+  210|      1|        self.visit_expression(&expression.left);
+  211|      1|        let status = playwright_tests::status_for_if_branch(self.status);
+  212|      1|        self.with_status(status, |visitor| {
+  213|      1|            visitor.visit_expression(&expression.right)
+  214|      1|        });
+  215|      1|    }
+  216|       |}
+  217|       |
+  218|       |impl UrlVisitor<'_, '_> {
+  219|    167|    fn insert(&mut self, value: String) {
+  220|    167|        self.urls.insert(playwright_tests::TestOccurrence {
+  221|    167|            value,
+  222|    167|            status: self.status.merge(self.annotation_status),
+  223|    167|        });
+  224|    167|    }
+  225|       |
+  226|     90|    fn with_status(&mut self, status: playwright_tests::TestStatus, visit: impl FnOnce(&mut Self)) {
+  227|     90|        let previous = self.status;
+  228|     90|        self.status = previous.merge(status);
+  229|     90|        visit(self);
+  230|     90|        self.status = previous;
+  231|     90|    }
+  232|       |
+  233|     85|    fn with_annotation_scope(&mut self, visit: impl FnOnce(&mut Self)) {
+  234|     85|        let previous = self.annotation_status;
+  235|     85|        self.annotation_status = playwright_tests::TestStatus::Active;
+  236|     85|        visit(self);
+  237|     85|        self.annotation_status = previous;
+  238|     85|    }
+  239|       |
+  240|      7|    fn apply_annotation_call(&mut self, call: &CallExpression<'_>) {
+  241|      7|        if let Some(status) = playwright_tests::annotation_status_for_call(call) {
+  242|      7|            let status = playwright_tests::merge_annotation_status(self.status, status);
+  243|      7|            self.annotation_status =
+  244|      7|                playwright_tests::merge_annotation_status(self.annotation_status, status);
+  245|      7|        }
+                      ^0
+  246|      7|    }
+  247|       |}
+  248|       |
+  249|    300|fn callee_matches_navigation_helper(callee: &Option<Vec<String>>, helpers: &[String]) -> bool {
+  250|    300|    let Some(parts) = callee else {
+                           ^295
+  251|      5|        return false;
+  252|       |    };
+  253|    295|    let full_name = parts.join(".");
+  254|    295|    helpers.iter().any(|helper| {
+                                              ^71
+  255|     71|        helper == &full_name
+  256|     37|            || (!helper.contains('.') && parts.last().is_some_and(|part| part == helper))
+                                                       ^34          ^34                ^34     ^34
+  257|     71|    })
+  258|    300|}
+  259|       |
+  260|     46|fn callee_has_not(callee: &Option<Vec<String>>) -> bool {
+  261|     46|    let Some(parts) = callee else {
+                           ^45
+  262|      1|        return false;
+  263|       |    };
+  264|     59|    parts.iter().any(|part| part == "not")
+                  ^45          ^45
+  265|     46|}
+  266|       |
+  267|  1.21k|fn callee_is_member_named(callee: &oxc_ast::ast::Expression<'_>, method: &str) -> bool {
+  268|  1.21k|    match callee {
+  269|    667|        oxc_ast::ast::Expression::StaticMemberExpression(member) => member.property.name == method,
+  270|    546|        _ => false,
+  271|       |    }
+  272|  1.21k|}
+  273|       |
+  274|    326|fn callee_is_playwright_wait_for_url(callee: &oxc_ast::ast::Expression<'_>) -> bool {
+  275|    326|    let oxc_ast::ast::Expression::StaticMemberExpression(member) = callee else {
+                                                                       ^144
+  276|    182|        return false;
+  277|       |    };
+  278|    144|    if member.property.name != "waitForURL" {
+  279|    129|        return false;
+  280|     15|    }
+  281|       |
+  282|     15|    ast::expression_path(&member.object).is_some_and(|path| {
+  283|     15|        path.last()
+  284|     15|            .is_some_and(|receiver| matches!(receiver.as_str(), "page" | "frame"))
+                                                                                       ^2
+  285|     15|    })
+  286|    326|}
+  287|       |
+  288|    312|fn callee_is_page_url_to_match(callee: &oxc_ast::ast::Expression<'_>) -> bool {
+  289|    312|    let oxc_ast::ast::Expression::StaticMemberExpression(member) = callee else {
+                                                                       ^130
+  290|    182|        return false;
+  291|       |    };
+  292|    130|    if member.property.name != "toMatch" {
+  293|    110|        return false;
+  294|     20|    }
+  295|       |
+  296|     20|    let Some(expect_call) = expect_call_expression(&member.object) else {
+                           ^19
+  297|      1|        return false;
+  298|       |    };
+  299|     19|    let Some(expect_callee) = ast::expression_path(&expect_call.callee) else {
+                           ^18
+  300|      1|        return false;
+  301|       |    };
+  302|     16|    if !matches!(
+  303|     18|        expect_callee
+  304|     18|            .iter()
+  305|     18|            .map(String::as_str)
+  306|     18|            .collect::<Vec<_>>()
+  307|     18|            .as_slice(),
+  308|     15|        ["expect"] | ["expect", "soft"]
+                                    ^3        ^2
+  309|       |    ) {
+  310|      2|        return false;
+  311|     16|    }
+  312|       |
+  313|     16|    let Some(Argument::CallExpression(url_call)) = expect_call.arguments.first() else {
+                                                    ^15
+  314|      1|        return false;
+  315|       |    };
+  316|     15|    ast::expression_path(&url_call.callee).is_some_and(|path| path == ["page", "url"])
+  317|    312|}
+  318|       |
+  319|     22|fn expect_call_expression<'a>(
+  320|     22|    expression: &'a oxc_ast::ast::Expression<'a>,
+  321|     22|) -> Option<&'a CallExpression<'a>> {
+  322|      1|    match expression {
+  323|     19|        oxc_ast::ast::Expression::CallExpression(call) => Some(call),
+  324|      1|        oxc_ast::ast::Expression::StaticMemberExpression(member)
+  325|      1|            if member.property.name == "not" =>
+  326|       |        {
+  327|      1|            expect_call_expression(&member.object)
+  328|       |        }
+  329|      1|        oxc_ast::ast::Expression::ParenthesizedExpression(parenthesized) => {
+  330|      1|            expect_call_expression(&parenthesized.expression)
+  331|       |        }
+  332|      1|        _ => None,
+  333|       |    }
+  334|     22|}
+  335|       |
+  336|     70|fn candidate_literals(
+  337|     70|    arguments: &[Argument<'_>],
+  338|     70|    source: &str,
+  339|     70|    static_zero_arg_paths: &HashMap<String, Vec<String>>,
+  340|     70|) -> Vec<String> {
+  341|     70|    let mut visitor = LiteralVisitor {
+  342|     70|        source,
+  343|     70|        static_zero_arg_paths,
+  344|     70|        literals: Vec::new(),
+  345|     70|    };
+  346|     70|    for argument in arguments {
+  347|     70|        visitor.visit_argument(argument);
+  348|     70|    }
+  349|     70|    visitor
+  350|     70|        .literals
+  351|     70|        .into_iter()
+  352|     70|        .filter(|url| is_candidate_url(url))
+                                    ^36              ^36
+  353|     70|        .collect()
+  354|     70|}
+  355|       |
+  356|     41|fn direct_url_pattern_literals(
+  357|     41|    arguments: &[Argument<'_>],
+  358|     41|    source: &str,
+  359|     41|    static_zero_arg_paths: &HashMap<String, Vec<String>>,
+  360|     41|) -> Vec<String> {
+  361|     41|    let mut visitor = LiteralVisitor {
+  362|     41|        source,
+  363|     41|        static_zero_arg_paths,
+  364|     41|        literals: Vec::new(),
+  365|     41|    };
+  366|     47|    for argument in arguments {
+                                  ^41
+  367|     47|        visitor.visit_argument(argument);
+  368|     47|    }
+  369|     41|    visitor
+  370|     41|        .literals
+  371|     41|        .into_iter()
+  372|     41|        .filter_map(|url| normalize_url_pattern(&url))
+                                        ^39                   ^39
+  373|     41|        .collect()
+  374|     41|}
+  375|       |
+  376|     39|fn normalize_url_pattern(url: &str) -> Option<String> {
+  377|     39|    if is_candidate_url(url) && !url.contains('*') {
+                                              ^31
+  378|     31|        Some(url.to_string())
+  379|       |    } else {
+  380|      8|        glob_url_sample(url)
+  381|       |    }
+  382|     39|}
+  383|       |
+  384|     20|fn glob_url_sample(glob: &str) -> Option<String> {
+  385|     20|    if !glob.contains('*') {
+  386|      9|        return None;
+  387|     11|    }
+  388|       |
+  389|     11|    let (without_scheme, was_leading_wildcard) = glob
+  390|     11|        .strip_prefix("**/")
+  391|     11|        .map(|value| (value, true))
+                                    ^4
+  392|     11|        .or_else(|| glob.strip_prefix("*/").map(|value| (value, true)))
+                                  ^7   ^7                 ^7           ^2
+  393|     11|        .unwrap_or((glob, false));
+  394|     11|    let candidate = if is_candidate_url(glob) {
+  395|      1|        glob.to_string()
+  396|     10|    } else if was_leading_wildcard {
+  397|      6|        format!("/{}", without_scheme.trim_start_matches('/'))
+  398|      4|    } else if let Some(first_slash) = without_scheme.find('/') {
+                                     ^3
+  399|      3|        let first_segment = &without_scheme[..first_slash];
+  400|      3|        if first_segment.contains('.') {
+  401|      2|            format!(
+  402|       |                "/{}",
+  403|      2|                without_scheme[first_slash + 1..].trim_start_matches('/')
+  404|       |            )
+  405|       |        } else {
+  406|      1|            format!("/{}", without_scheme.trim_start_matches('/'))
+  407|       |        }
+  408|       |    } else {
+  409|      1|        format!("/{without_scheme}")
+  410|       |    };
+  411|     11|    if candidate == "/" || candidate.contains("${") {
+                                         ^10
+  412|      2|        return None;
+  413|      9|    }
+  414|       |
+  415|      9|    let mut sample = String::new();
+  416|      9|    let mut chars = candidate.chars().peekable();
+  417|    116|    while let Some(ch) = chars.next() {
+                                 ^107
+  418|    107|        if ch == '*' {
+  419|     11|            while matches!(chars.peek(), Some('*')) {
+                                ^7
+  420|      4|                chars.next();
+  421|      4|            }
+  422|      7|            sample.push('x');
+  423|    100|        } else {
+  424|    100|            sample.push(ch);
+  425|    100|        }
+  426|       |    }
+  427|       |
+  428|      9|    is_candidate_url(&sample).then_some(sample)
+  429|     20|}
+  430|       |
+  431|       |struct LiteralVisitor<'a> {
+  432|       |    source: &'a str,
+  433|       |    static_zero_arg_paths: &'a HashMap<String, Vec<String>>,
+  434|       |    literals: Vec<String>,
+  435|       |}
+  436|       |
+  437|       |impl<'a> Visit<'a> for LiteralVisitor<'a> {
+  438|     17|    fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
+  439|     17|        let urls = static_zero_arg_path_call(call, self.static_zero_arg_paths);
+  440|     17|        if !urls.is_empty() {
+  441|      6|            self.literals.extend(urls);
+  442|      6|            return;
+  443|     11|        }
+  444|     11|        walk::walk_call_expression(self, call);
+  445|     17|    }
+  446|       |
+  447|     49|    fn visit_string_literal(&mut self, literal: &oxc_ast::ast::StringLiteral<'a>) {
+  448|     49|        self.literals.push(literal.value.to_string());
+  449|     49|    }
+  450|       |
+  451|     18|    fn visit_reg_exp_literal(&mut self, literal: &oxc_ast::ast::RegExpLiteral<'a>) {
+  452|     18|        if let Some(sample) = regex_path_sample(literal.regex.pattern.text.as_str()) {
+  453|     18|            self.literals.push(sample);
+  454|     18|        }
+                      ^0
+  455|     18|    }
+  456|       |
+  457|      2|    fn visit_template_literal(&mut self, template: &oxc_ast::ast::TemplateLiteral<'a>) {
+  458|      2|        self.literals
+  459|      2|            .push(ast::template_literal_text(template, self.source));
+  460|      2|    }
+  461|       |}
+  462|       |
+  463|    115|fn argument_literals(
+  464|    115|    argument: &Argument<'_>,
+  465|    115|    source: &str,
+  466|    115|    static_zero_arg_paths: &HashMap<String, Vec<String>>,
+  467|    115|) -> Vec<String> {
+  468|    115|    match argument {
+  469|    107|        Argument::StringLiteral(literal) => vec![literal.value.to_string()],
+  470|      5|        Argument::TemplateLiteral(template) => vec![ast::template_literal_text(template, source)],
+  471|      2|        Argument::CallExpression(call) => static_zero_arg_path_call(call, static_zero_arg_paths),
+  472|      1|        _ => Vec::new(),
+  473|       |    }
+  474|    115|}
+  475|       |
+  476|     71|fn argument_candidate_literals(
+  477|     71|    argument: &Argument<'_>,
+  478|     71|    source: &str,
+  479|     71|    static_zero_arg_paths: &HashMap<String, Vec<String>>,
+  480|     71|) -> Vec<String> {
+  481|     71|    match argument {
+  482|      1|        Argument::ObjectExpression(_) => Vec::new(),
+  483|     70|        _ => candidate_literals(
+  484|     70|            std::slice::from_ref(argument),
+  485|     70|            source,
+  486|     70|            static_zero_arg_paths,
+  487|       |        ),
+  488|       |    }
+  489|     71|}
+  490|       |
+  491|     78|fn collect_static_zero_arg_paths(source: &str) -> HashMap<String, Vec<String>> {
+  492|     78|    let pattern = regex::Regex::new(
+  493|     78|        r#"([A-Za-z_$][\w$]*)\s*:\s*\(\s*\)\s*=>\s*(?:"([^"`]+)"|'([^'`]+)'|`([^'"`]+)`)"#,
+  494|       |    )
+  495|     78|    .expect("static route helper regex should compile");
+  496|     78|    let mut candidates: HashMap<String, (Vec<String>, usize)> = HashMap::new();
+  497|     78|    for captures in pattern.captures_iter(source) {
+                      ^10
+  498|     10|        let full_match = captures.get(0).expect("full capture should exist");
+  499|     10|        if !source_offset_is_code(source, full_match.start()) {
+  500|      2|            continue;
+  501|      8|        }
+  502|      8|        if let Some((name, value)) = (|| {
+  503|      8|            let name = captures.get(1)?;
+                                                    ^0
+  504|      8|            let value = captures
+  505|      8|                .get(2)
+  506|      8|                .or_else(|| captures.get(3))
+                                          ^2       ^2
+  507|      8|                .or_else(|| captures.get(4))?;
+                                          ^1       ^1     ^0
+  508|      8|            Some((name.as_str().to_string(), value.as_str().to_string()))
+  509|      8|        })() {
+  510|      8|            let entry = candidates.entry(name).or_default();
+  511|      8|            entry.0.push(value);
+  512|      8|            entry.1 += 1;
+  513|      8|        }
+                      ^0
+  514|       |    }
+  515|     78|    candidates
+  516|     78|        .into_iter()
+  517|     78|        .filter_map(|(name, (values, count))| (count == 1).then_some((name, values)))
+                                                            ^7           ^7        ^7
+  518|     78|        .collect()
+  519|     78|}
+  520|       |
+  521|     19|fn static_zero_arg_path_call(
+  522|     19|    call: &CallExpression<'_>,
+  523|     19|    static_zero_arg_paths: &HashMap<String, Vec<String>>,
+  524|     19|) -> Vec<String> {
+  525|     19|    if !call.arguments.is_empty() {
+  526|      4|        return Vec::new();
+  527|     15|    }
+  528|     15|    let Some(path) = ast::expression_path(&call.callee) else {
+                           ^14
+  529|      1|        return Vec::new();
+  530|       |    };
+  531|     14|    if path.len() != 1 {
+  532|      4|        return Vec::new();
+  533|     10|    }
+  534|     10|    let name = &path[path.len() - 1];
+  535|     10|    static_zero_arg_paths
+  536|     10|        .get(name.as_str())
+  537|     10|        .cloned()
+  538|     10|        .unwrap_or_default()
+  539|     19|}
+  540|       |
+  541|     15|fn source_offset_is_code(source: &str, offset: usize) -> bool {
+  542|     15|    let mut chars = source.char_indices().peekable();
+  543|     15|    let mut in_single = false;
+  544|     15|    let mut in_double = false;
+  545|     15|    let mut in_template = false;
+  546|     15|    let mut in_line_comment = false;
+  547|     15|    let mut in_block_comment = false;
+  548|     15|    let mut escaped = false;
+  549|       |
+  550|  2.25k|    while let Some((index, ch)) = chars.next() {
+                                  ^2.25k ^2.25k
+  551|  2.25k|        if index >= offset {
+  552|     14|            return !in_single
+  553|     13|                && !in_double
+  554|     12|                && !in_template
+  555|     12|                && !in_line_comment
+  556|     10|                && !in_block_comment;
+  557|  2.24k|        }
+  558|       |
+  559|  2.24k|        if in_line_comment {
+  560|    115|            if ch == '\n' {
+  561|      4|                in_line_comment = false;
+  562|    111|            }
+  563|    115|            continue;
+  564|  2.12k|        }
+  565|  2.12k|        if in_block_comment {
+  566|     50|            if ch == '*' && chars.peek().is_some_and(|(_, next)| *next == '/') {
+                                          ^2    ^2     ^2                      ^2
+  567|      2|                chars.next();
+  568|      2|                in_block_comment = false;
+  569|     48|            }
+  570|     50|            continue;
+  571|  2.07k|        }
+  572|  2.07k|        if escaped {
+  573|      6|            escaped = false;
+  574|      6|            continue;
+  575|  2.07k|        }
+  576|  2.07k|        if (in_single || in_double || in_template) && ch == '\\' {
+                                       ^1.95k       ^1.66k          ^523
+  577|      6|            escaped = true;
+  578|      6|            continue;
+  579|  2.06k|        }
+  580|  2.06k|        if in_single {
+  581|    115|            in_single = ch != '\'';
+  582|    115|            continue;
+  583|  1.95k|        }
+  584|  1.95k|        if in_double {
+  585|    282|            in_double = ch != '"';
+  586|    282|            continue;
+  587|  1.66k|        }
+  588|  1.66k|        if in_template {
+  589|    120|            in_template = ch != '`';
+  590|    120|            continue;
+  591|  1.54k|        }
+  592|       |
+  593|  1.54k|        if ch == '/' && chars.peek().is_some_and(|(_, next)| *next == '/') {
+                                      ^9    ^9     ^9                      ^9
+  594|      6|            chars.next();
+  595|      6|            in_line_comment = true;
+  596|  1.54k|        } else if ch == '/' && chars.peek().is_some_and(|(_, next)| *next == '*') {
+                                             ^3    ^3     ^3                      ^3
+  597|      3|            chars.next();
+  598|      3|            in_block_comment = true;
+  599|  1.54k|        } else if ch == '\'' {
+  600|     10|            in_single = true;
+  601|  1.53k|        } else if ch == '"' {
+  602|     19|            in_double = true;
+  603|  1.51k|        } else if ch == '`' {
+  604|      8|            in_template = true;
+  605|  1.50k|        }
+  606|       |    }
+  607|       |
+  608|      1|    !in_single && !in_double && !in_template && !in_line_comment && !in_block_comment
+                                ^0            ^0              ^0                  ^0
+  609|     15|}
+  610|       |
+  611|     39|fn regex_path_sample(pattern: &str) -> Option<String> {
+  612|     39|    let pattern = pattern.trim_start_matches('^').replace(r"\/", "/");
+  613|     39|    let mut chars = pattern.chars().peekable();
+  614|     39|    let mut sample = String::new();
+  615|     39|    let mut started = pattern.starts_with("http://") || pattern.starts_with("https://");
+  616|     39|    let mut unsupported = false;
+  617|    423|    while let Some(ch) = chars.next() {
+                                 ^407
+  618|    407|        if ch == '\\' {
+  619|      9|            let Some(next) = chars.next() else {
+                                   ^6
+  620|      3|                break;
+  621|       |            };
+  622|      6|            if started && is_literal_path_char(next) && !next.is_ascii_alphanumeric() {
+                                        ^5                   ^5       ^4
+  623|      2|                sample.push(next);
+  624|      4|            } else if started {
+  625|      3|                unsupported = true;
+  626|      3|                break;
+  627|      1|            }
+  628|      3|            continue;
+  629|    398|        }
+  630|       |
+  631|    398|        if !started {
+  632|     44|            if ch == '/' {
+  633|     33|                started = true;
+  634|     33|                sample.push(ch);
+  635|     33|            }
+                          ^11
+  636|     44|            continue;
+  637|    354|        }
+  638|       |
+  639|    324|        match ch {
+  640|     10|            '[' => {
+  641|     10|                consume_regex_char_class(&mut chars);
+  642|     10|                sample.push('x');
+  643|     10|                consume_regex_quantifier(&mut chars);
+  644|     10|            }
+  645|       |            '.' => {
+  646|      4|                if sample_is_absolute_url_host(&sample) {
+  647|      2|                    sample.push('.');
+  648|      2|                } else {
+  649|      2|                    sample.push('x');
+  650|      2|                }
+  651|      4|                consume_regex_quantifier(&mut chars);
+  652|       |            }
+  653|     15|            '$' => break,
+  654|       |            '|' | '(' | ')' => {
+  655|      1|                unsupported = true;
+  656|      1|                break;
+  657|       |            }
+  658|    324|            ch if is_literal_path_char(ch) => sample.push(ch),
+                          ^323                         ^323 ^323   ^323 ^323
+  659|       |            _ => {
+  660|      1|                unsupported = true;
+  661|      1|                break;
+  662|       |            }
+  663|       |        }
+  664|       |    }
+  665|       |
+  666|     39|    if !unsupported && is_candidate_url(&sample) {
+                                     ^34              ^34
+  667|     31|        Some(sample)
+  668|       |    } else {
+  669|      8|        None
+  670|       |    }
+  671|     39|}
+  672|       |
+  673|     10|fn consume_regex_char_class(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
+  674|     10|    let mut escaped = false;
+  675|     78|    for next in chars.by_ref() {
+                              ^10   ^10
+  676|     78|        if escaped {
+  677|      1|            escaped = false;
+  678|      1|            continue;
+  679|     77|        }
+  680|     77|        if next == '\\' {
+  681|      1|            escaped = true;
+  682|      1|            continue;
+  683|     76|        }
+  684|     76|        if next == ']' {
+  685|     10|            break;
+  686|     66|        }
+  687|       |    }
+  688|     10|}
+  689|       |
+  690|     14|fn consume_regex_quantifier(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
+  691|     27|    while matches!(chars.peek(), Some('+' | '*' | '?' | '{')) {
+                        ^14
+  692|     13|        let quantifier = chars.next();
+  693|     13|        if quantifier == Some('{') {
+  694|      4|            for next in chars.by_ref() {
+                                      ^1    ^1
+  695|      4|                if next == '}' {
+  696|      1|                    break;
+  697|      3|                }
+  698|       |            }
+  699|     12|        }
+  700|       |    }
+  701|     14|}
+  702|       |
+  703|    329|fn is_literal_path_char(ch: char) -> bool {
+  704|    329|    ch.is_ascii_alphanumeric() || matches!(ch, '/' | '-' | '_' | '.' | '~' | '%' | ':')
+                                                ^2       ^47
+  705|    329|}
+  706|       |
+  707|      4|fn sample_is_absolute_url_host(sample: &str) -> bool {
+  708|      4|    let Some(after_scheme) = sample
+                           ^2
+  709|      4|        .strip_prefix("http://")
+  710|      4|        .or_else(|| sample.strip_prefix("https://"))
+  711|       |    else {
+  712|      2|        return false;
+  713|       |    };
+  714|      2|    !after_scheme.contains('/')
+  715|      4|}
+  716|       |
+  717|       |#[cfg(test)]
+  718|       |mod tests {
+  719|       |    use super::*;
+  720|       |    use crate::playwright_tests::TestStatus;
+  721|       |    use crate::test_support::fixture_source;
+  722|       |
+  723|       |    #[test]
+  724|      1|    fn regex_path_sample_edge_cases() {
+  725|      1|        assert_eq!(
+  726|      1|            regex_path_sample(r#"^\/orders"#),
+  727|      1|            Some("/orders".to_string())
+  728|       |        );
+  729|      1|        assert_eq!(
+  730|      1|            regex_path_sample(r#"^\/orders\/$"#),
+  731|      1|            Some("/orders/".to_string())
+  732|       |        );
+  733|      1|        assert_eq!(
+  734|      1|            regex_path_sample(r#"^\/orders\/\"#),
+  735|      1|            Some("/orders/".to_string())
+  736|       |        );
+  737|      1|        assert_eq!(regex_path_sample(r#"^\/"#), Some("/".to_string()));
+  738|      1|        assert_eq!(regex_path_sample(r#"^\/a\xb"#), None);
+  739|      1|        assert_eq!(regex_path_sample(r#"^"#), None);
+  740|      1|        assert_eq!(regex_path_sample(r#"^\"#), None);
+  741|      1|    }
+  742|       |
+  743|       |    #[test]
+  744|      1|    fn callee_checks_handle_non_member_expressions() {
+  745|      1|        let src = "goto('/')";
+  746|      1|        let urls = extract_playwright_urls(src);
+  747|      1|        assert!(urls.is_empty());
+  748|      1|    }
+  749|       |
+  750|       |    #[test]
+  751|      1|    fn extracts_page_goto_url() {
+  752|      1|        let src = fixture_source(&["playwright_urls", "page-goto.ts"]);
+  753|      1|        let urls = extract_playwright_urls(&src);
+  754|      1|        assert_eq!(urls, vec!["/users/42"]);
+  755|      1|    }
+  756|       |
+  757|       |    #[test]
+  758|      1|    fn extracts_click_href_selector() {
+  759|      1|        let src = fixture_source(&["playwright_urls", "click-href.ts"]);
+  760|      1|        let urls = extract_playwright_urls(&src);
+  761|      1|        assert_eq!(urls, vec!["/dashboard"]);
+  762|      1|    }
+  763|       |
+  764|       |    #[test]
+  765|      1|    fn extracts_double_quoted_goto_and_backtick_single_quoted_href() {
+  766|      1|        let src = fixture_source(&["playwright_urls", "quoted-goto-click.ts"]);
+  767|      1|        let urls = extract_playwright_urls(&src);
+  768|      1|        assert_eq!(urls, vec!["/double", "/single"]);
+  769|      1|    }
+  770|       |
+  771|       |    #[test]
+  772|      1|    fn deduplicates_urls() {
+  773|      1|        let src = fixture_source(&["playwright_urls", "duplicate-goto.ts"]);
+  774|      1|        let urls = extract_playwright_urls(&src);
+  775|      1|        assert_eq!(urls, vec!["/users/1"]);
+  776|      1|    }
+  777|       |
+  778|       |    #[test]
+  779|      1|    fn ignores_external_urls() {
+  780|      1|        let src = fixture_source(&["playwright_urls", "external-urls.ts"]);
+  781|      1|        let urls = extract_playwright_urls(&src);
+  782|      1|        assert!(urls.is_empty());
+  783|      1|    }
+  784|       |
+  785|       |    #[test]
+  786|      1|    fn ignores_non_href_selectors() {
+  787|      1|        let src = fixture_source(&["playwright_urls", "non-href-click.ts"]);
+  788|      1|        let urls = extract_playwright_urls(&src);
+  789|      1|        assert!(urls.is_empty());
+  790|      1|    }
+  791|       |
+  792|       |    #[test]
+  793|      1|    fn ignores_non_url_href_selector() {
+  794|      1|        let src = fixture_source(&["playwright_urls", "non-url-href-click.ts"]);
+  795|      1|        let urls = extract_playwright_urls(&src);
+  796|      1|        assert!(urls.is_empty());
+  797|      1|    }
+  798|       |
+  799|       |    #[test]
+  800|      1|    fn empty_file_returns_empty() {
+  801|      1|        let urls = extract_playwright_urls("");
+  802|      1|        assert!(urls.is_empty());
+  803|      1|    }
+  804|       |
+  805|       |    #[test]
+  806|      1|    fn candidate_url_checks_schemes() {
+  807|      1|        assert!(is_candidate_url("/path"));
+  808|      1|        assert!(is_candidate_url("http://localhost"));
+  809|      1|        assert!(is_candidate_url("https://localhost"));
+  810|      1|        assert!(!is_candidate_url("localhost"));
+  811|      1|        assert!(!is_candidate_url("ws://localhost"));
+  812|      1|    }
+  813|       |
+  814|       |    #[test]
+  815|      1|    fn glob_url_sample_handles_edge_cases() {
+  816|      1|        assert_eq!(glob_url_sample("/${path}"), None);
+  817|      1|        assert_eq!(
+  818|      1|            glob_url_sample("host.com/*/path"),
+  819|      1|            Some("/x/path".to_string())
+  820|       |        );
+  821|      1|        assert_eq!(glob_url_sample("*/path"), Some("/path".to_string()));
+  822|      1|    }
+  823|       |
+  824|       |    #[test]
+  825|      1|    fn extracts_configured_navigation_helper_urls() {
+  826|      1|        let src = fixture_source(&["playwright_urls", "navigation-helpers.ts"]);
+  827|      1|        let urls = extract_playwright_url_literals_with_helpers(
+  828|      1|            &src,
+  829|      1|            &["navigateTo".to_string(), "testHelpers.openPath".to_string()],
+  830|       |        );
+  831|      1|        assert_eq!(urls, vec!["/profile", "/settings", "/team"]);
+  832|      1|    }
+  833|       |
+  834|       |    #[test]
+  835|      1|    fn helper_url_extraction_skips_non_url_literals() {
+  836|      1|        let src = fixture_source(&["playwright_urls", "helper-nested-url.ts"]);
+  837|      1|        let urls = extract_playwright_url_literals_with_helpers(&src, &["navigateTo".to_string()]);
+  838|      1|        assert_eq!(urls, vec!["/dynamic"]);
+  839|      1|    }
+  840|       |
+  841|       |    #[test]
+  842|      1|    fn navigation_helpers_use_only_the_target_argument() {
+  843|      1|        let urls = extract_playwright_url_literals_with_helpers(
+  844|      1|            "navigateTo('/orders', { redirect: '/login' });",
+  845|      1|            &["navigateTo".to_string()],
+  846|       |        );
+  847|      1|        assert_eq!(urls, vec!["/orders"]);
+  848|      1|    }
+  849|       |
+  850|       |    #[test]
+  851|      1|    fn extracts_to_have_url_assertion_paths() {
+  852|      1|        let src = fixture_source(&["playwright_urls", "to-have-url.ts"]);
+  853|      1|        let urls = extract_playwright_urls(&src);
+  854|      1|        assert_eq!(
+  855|       |            urls,
+  856|      1|            vec!["/settings", "/user/${username}/rss-feed-items/viewed"]
+  857|       |        );
+  858|      1|    }
+  859|       |
+  860|       |    #[test]
+  861|      1|    fn extracts_wait_for_url_page_url_match_and_static_route_helpers() {
+  862|      1|        let urls = extract_playwright_urls(
+  863|      1|            r#"
+  864|      1|            const routes = {
+  865|      1|                details: () => "/orders/42",
+  866|      1|                overview: () => '/orders',
+  867|      1|                metrics: () => `/orders/metrics`,
+  868|      1|                dynamic: (id) => `/orders/${id}`,
+  869|      1|            };
+  870|      1|            // ghost: () => "/comment-only"
+  871|      1|            const ignoredText = "text: () => '/string-only'";
+  872|      1|            const account = { path: () => "/account" };
+  873|      1|            const settings = { path: () => "/settings" };
+  874|      1|            const analytics = { details() { return "/analytics"; } };
+  875|      1|            await page.waitForURL(details());
+  876|      1|            await page.waitForURL(routes.details());
+  877|      1|            await page.waitForURL(analytics.details());
+  878|      1|            await page.waitForURL("**/orders/globbed");
+  879|      1|            await expect(page.url()).toMatch(overview());
+  880|      1|            await expect.soft(page.url()).toMatch(/\/orders\/soft$/);
+  881|      1|            await expect(page.url()).toMatch(metrics());
+  882|      1|            await expect(page.url()).toMatch(dynamic("42"));
+  883|      1|            await page.waitForURL(account.path());
+  884|      1|            await page.waitForURL(settings.path());
+  885|      1|            await frame.waitForURL(/^https:\/\/example.com\/orders\/absolute$/);
+  886|      1|            await page.waitForURL(path());
+  887|      1|            await page.waitForURL(getPath()());
+  888|      1|            await app.waitForURL("/unrelated");
+  889|      1|            await page.goto();
+  890|      1|            await page.goto(routeName);
+  891|      1|            await page.waitForURL(ghost());
+  892|      1|            await page.waitForURL(text());
+  893|      1|            "#,
+  894|       |        );
+  895|      1|        assert_eq!(
+  896|       |            urls,
+  897|      1|            vec![
+  898|       |                "/orders",
+  899|      1|                "/orders/42",
+  900|      1|                "/orders/globbed",
+  901|      1|                "/orders/metrics",
+  902|      1|                "/orders/soft",
+  903|       |            ]
+  904|       |        );
+  905|      1|    }
+  906|       |
+  907|       |    #[test]
+  908|      1|    fn samples_simple_url_regex_literals() {
+  909|      1|        assert_eq!(
+  910|      1|            regex_path_sample(r#"^/orders/[a-z\]]+/.{2,4}$"#),
+  911|      1|            Some("/orders/x/x".to_string())
+  912|       |        );
+  913|      1|        assert_eq!(
+  914|      1|            regex_path_sample(r#"^\/orders\/.*?$"#),
+  915|      1|            Some("/orders/x".to_string())
+  916|       |        );
+  917|      1|        assert_eq!(
+  918|      1|            regex_path_sample(r#"^\/orders\/\%bad$"#),
+  919|      1|            Some("/orders/%bad".to_string())
+  920|       |        );
+  921|      1|        assert_eq!(regex_path_sample(r#"^\/orders\/\#$"#), None);
+  922|      1|        assert_eq!(
+  923|      1|            regex_path_sample(r#"^\s/orders$"#),
+  924|      1|            Some("/orders".to_string())
+  925|       |        );
+  926|      1|        assert_eq!(
+  927|      1|            regex_path_sample(r#"^\/orders\/\"#),
+  928|      1|            Some("/orders/".to_string())
+  929|       |        );
+  930|      1|        assert_eq!(
+  931|      1|            regex_path_sample(r#"^https:\/\/example.com\/orders$"#),
+  932|      1|            Some("https://example.com/orders".to_string())
+  933|       |        );
+  934|      1|        assert_eq!(
+  935|      1|            regex_path_sample(r#"^https:\/\/example\.com\/orders$"#),
+  936|      1|            Some("https://example.com/orders".to_string())
+  937|       |        );
+  938|      1|        assert_eq!(regex_path_sample(r#"^/orders/<id>$"#), None);
+  939|      1|        assert_eq!(regex_path_sample(r#"^/orders/(\d+)$"#), None);
+  940|      1|        assert_eq!(regex_path_sample(r#"^\/users\/\d+$"#), None);
+  941|      1|        assert_eq!(regex_path_sample(r#"^not-a-path$"#), None);
+  942|      1|        assert_eq!(regex_path_sample(r#"^/$"#), Some("/".to_string()));
+  943|      1|        assert_eq!(regex_path_sample(r#"^\/$"#), Some("/".to_string()));
+  944|      1|    }
+  945|       |
+  946|       |    #[test]
+  947|      1|    fn samples_glob_url_patterns() {
+  948|      1|        assert_eq!(
+  949|      1|            glob_url_sample("**/orders/*/details"),
+  950|      1|            Some("/orders/x/details".to_string())
+  951|       |        );
+  952|      1|        assert_eq!(
+  953|      1|            glob_url_sample("*/orders/**"),
+  954|      1|            Some("/orders/x".to_string())
+  955|       |        );
+  956|      1|        assert_eq!(
+  957|      1|            glob_url_sample("https://example.com/orders/**"),
+  958|      1|            Some("https://example.com/orders/x".to_string())
+  959|       |        );
+  960|      1|        assert_eq!(
+  961|      1|            glob_url_sample("example.com/orders/**"),
+  962|      1|            Some("/orders/x".to_string())
+  963|       |        );
+  964|      1|        assert_eq!(glob_url_sample("orders/**"), Some("/orders/x".to_string()));
+  965|      1|        assert_eq!(glob_url_sample("orders*"), Some("/ordersx".to_string()));
+  966|      1|        assert_eq!(glob_url_sample("**/"), None);
+  967|      1|        assert_eq!(glob_url_sample("**/${path}"), None);
+  968|      1|        assert_eq!(glob_url_sample("/orders"), None);
+  969|      1|    }
+  970|       |
+  971|       |    #[test]
+  972|      1|    fn source_offset_filter_ignores_comments_and_strings() {
+  973|      1|        let source = "'route: () => \\'/string\\'';\n/* route: () => '/block' */\n// route: () => '/line'\nconst route = () => '/real';";
+  974|      1|        assert!(!source_offset_is_code(
+  975|      1|            source,
+  976|      1|            source.find("route:").unwrap()
+  977|      1|        ));
+  978|      1|        assert!(!source_offset_is_code(
+  979|      1|            source,
+  980|      1|            source.find("block").unwrap() - 14
+  981|      1|        ));
+  982|      1|        assert!(!source_offset_is_code(
+  983|      1|            source,
+  984|      1|            source.find("line").unwrap() - 14
+  985|      1|        ));
+  986|      1|        assert!(source_offset_is_code(
+  987|      1|            source,
+  988|      1|            source.rfind("route").unwrap()
+  989|       |        ));
+  990|      1|        assert!(!source_offset_is_code(
+  991|      1|            "'unterminated",
+  992|      1|            "'unterminated".len()
+  993|      1|        ));
+  994|      1|    }
+  995|       |
+  996|       |    #[test]
+  997|      1|    fn page_url_to_match_requires_positive_page_url_expectation() {
+  998|      1|        let urls = extract_playwright_urls(
+  999|      1|            r#"
+ 1000|      1|            await expect(page.url()).toMatch(/^\/$/);
+ 1001|      1|            await (expect(page.url())).toMatch(/\/account$/);
+ 1002|      1|            await expect(page.url()).toMatch(/\/settings$/);
+ 1003|      1|            await expect.soft(page.url()).toMatch(/\/soft$/);
+ 1004|      1|            await expect(page.url()).not.toMatch(/\/blocked$/);
+ 1005|      1|            await expect(otherpage.url()).toMatch(/\/other$/);
+ 1006|      1|            await expect(page.title()).toMatch(/\/title$/);
+ 1007|      1|            await assert(page.url()).toMatch(/\/assert$/);
+ 1008|      1|            await getExpect()(page.url()).toMatch(/\/factory$/);
+ 1009|      1|            await helpers.expect(page.url()).toMatch(/\/helper$/);
+ 1010|      1|            await expect('/literal').toMatch(/\/literal$/);
+ 1011|      1|            await expect(page.url()).toMatch(`/users/${role === 'admin' ? '/admin' : '/user'}`);
+ 1012|      1|            await page.toMatch(/\/method$/);
+ 1013|      1|            "#,
+ 1014|       |        );
+ 1015|      1|        assert_eq!(
+ 1016|       |            urls,
+ 1017|      1|            vec![
+ 1018|       |                "/",
+ 1019|      1|                "/account",
+ 1020|      1|                "/settings",
+ 1021|      1|                "/soft",
+ 1022|      1|                "/users/${role === 'admin' ? '/admin' : '/user'}"
+ 1023|       |            ]
+ 1024|       |        );
+ 1025|      1|    }
+ 1026|       |
+ 1027|       |    #[test]
+ 1028|      1|    fn ignores_negative_to_have_url_assertions() {
+ 1029|      1|        let urls = extract_playwright_urls(
+ 1030|      1|            "await expect(page).not.toHaveURL('/settings');\nawait expect(page).toHaveURL('/home');",
+ 1031|       |        );
+ 1032|      1|        assert_eq!(urls, vec!["/home"]);
+ 1033|      1|        assert!(!callee_has_not(&None));
+ 1034|      1|        assert!(callee_has_not(&Some(vec![
+ 1035|      1|            "not".to_string(),
+ 1036|      1|            "toHaveURL".to_string()
+ 1037|      1|        ])));
+ 1038|      1|    }
+ 1039|       |
+ 1040|       |    #[test]
+ 1041|      1|    fn to_have_url_uses_first_url_literal_argument() {
+ 1042|      1|        let src = fixture_source(&["playwright_urls", "to-have-url-label.ts"]);
+ 1043|      1|        let urls = extract_playwright_url_literals_with_helpers(&src, &[]);
+ 1044|      1|        assert_eq!(urls, vec!["/settings"]);
+ 1045|      1|    }
+ 1046|       |
+ 1047|       |    #[test]
+ 1048|      1|    fn parenthesized_callee_is_supported() {
+ 1049|      1|        let src = fixture_source(&["playwright_urls", "parenthesized-callee.ts"]);
+ 1050|      1|        let urls = extract_playwright_urls(&src);
+ 1051|      1|        assert_eq!(urls, vec!["/settings"]);
+ 1052|      1|    }
+ 1053|       |
+ 1054|       |    #[test]
+ 1055|      1|    fn bare_builtin_callees_are_ignored() {
+ 1056|      1|        let src = fixture_source(&["playwright_urls", "bare-callees.ts"]);
+ 1057|      1|        let urls = extract_playwright_urls(&src);
+ 1058|      1|        assert!(urls.is_empty());
+ 1059|      1|    }
+ 1060|       |
+ 1061|       |    #[test]
+ 1062|      1|    fn marks_urls_inside_skipped_and_conditional_tests() {
+ 1063|      1|        let urls = extract_playwright_url_occurrences(
+ 1064|      1|            r#"
+ 1065|      1|            test.skip('skipped', async ({ page }) => {
+ 1066|      1|                await page.goto('/skipped');
+ 1067|      1|            });
+ 1068|      1|            if (process.env.E2E) {
+ 1069|      1|                test('conditional wrapper', async ({ page }) => {
+ 1070|      1|                    await page.goto('/conditional-wrapper');
+ 1071|      1|                });
+ 1072|      1|            } else {
+ 1073|      1|                test('conditional alternate', async ({ page }) => {
+ 1074|      1|                    await page.goto('/conditional-alternate');
+ 1075|      1|                });
+ 1076|      1|            }
+ 1077|      1|            featureFlag && test('logical wrapper', async ({ page }) => {
+ 1078|      1|                await page.goto('/logical-wrapper');
+ 1079|      1|            });
+ 1080|      1|            featureFlag
+ 1081|      1|                ? test('ternary consequent', async ({ page }) => {
+ 1082|      1|                    await page.goto('/ternary-consequent');
+ 1083|      1|                })
+ 1084|      1|                : test('ternary alternate', async ({ page }) => {
+ 1085|      1|                    await page.goto('/ternary-alternate');
+ 1086|      1|                });
+ 1087|      1|            test.skipIf(browserName === 'webkit')('skip if', async ({ page }) => {
+ 1088|      1|                await page.goto('/skip-if');
+ 1089|      1|            });
+ 1090|      1|            test.describe.skip(() => {
+ 1091|      1|                test('describe skip callback', async ({ page }) => {
+ 1092|      1|                    await page.goto('/describe-skip-callback');
+ 1093|      1|                });
+ 1094|      1|            });
+ 1095|      1|            test.fixme('fixme test', async ({ page }) => {
+ 1096|      1|                await page.goto('/fixme');
+ 1097|      1|            });
+ 1098|      1|            test('annotation', async ({ page, browserName }) => {
+ 1099|      1|                test.skip(browserName === 'webkit', 'conditional');
+ 1100|      1|                await page.goto('/conditional-annotation');
+ 1101|      1|            });
+ 1102|      1|            test.describe('scope annotation', () => {
+ 1103|      1|                test.skip(({ browserName }) => browserName === 'webkit', 'conditional');
+ 1104|      1|                test('describe scope annotation', async ({ page }) => {
+ 1105|      1|                    await page.goto('/describe-scope-annotation');
+ 1106|      1|                });
+ 1107|      1|            });
+ 1108|      1|            test('conditional skip annotation', async ({ page }) => {
+ 1109|      1|                if (process.env.SKIP_E2E) {
+ 1110|      1|                    test.skip();
+ 1111|      1|                }
+ 1112|      1|                await page.goto('/conditional-skip-call');
+ 1113|      1|            });
+ 1114|      1|            test.skip(false, 'skip false', async ({ page }) => {
+ 1115|      1|                await page.goto('/skip-false');
+ 1116|      1|            });
+ 1117|      1|            helpers.skipIf(featureFlag)(async () => {
+ 1118|      1|                await page.goto('/unrelated-skip-if');
+ 1119|      1|            });
+ 1120|      1|            test('active', async ({ page }) => {
+ 1121|      1|                await page.goto('/active');
+ 1122|      1|            });
+ 1123|      1|            test.skip(({ browserName }) => browserName === 'webkit', 'conditional');
+ 1124|      1|            test('file scope annotation', async ({ page }) => {
+ 1125|      1|                await page.goto('/scope-annotation');
+ 1126|      1|            });
+ 1127|      1|            "#,
+ 1128|       |        );
+ 1129|       |
+ 1130|      1|        assert_eq!(
+ 1131|       |            urls,
+ 1132|      1|            vec![
+ 1133|      1|                ("/active".to_string(), TestStatus::Active),
+ 1134|      1|                (
+ 1135|      1|                    "/conditional-alternate".to_string(),
+ 1136|      1|                    TestStatus::Conditional
+ 1137|      1|                ),
+ 1138|      1|                (
+ 1139|      1|                    "/conditional-annotation".to_string(),
+ 1140|      1|                    TestStatus::Conditional
+ 1141|      1|                ),
+ 1142|      1|                (
+ 1143|      1|                    "/conditional-skip-call".to_string(),
+ 1144|      1|                    TestStatus::Conditional
+ 1145|      1|                ),
+ 1146|      1|                ("/conditional-wrapper".to_string(), TestStatus::Conditional),
+ 1147|      1|                (
+ 1148|      1|                    "/describe-scope-annotation".to_string(),
+ 1149|      1|                    TestStatus::Conditional
+ 1150|      1|                ),
+ 1151|      1|                ("/describe-skip-callback".to_string(), TestStatus::Skipped),
+ 1152|      1|                ("/fixme".to_string(), TestStatus::Skipped),
+ 1153|      1|                ("/logical-wrapper".to_string(), TestStatus::Conditional),
+ 1154|      1|                ("/scope-annotation".to_string(), TestStatus::Conditional),
+ 1155|      1|                ("/skip-false".to_string(), TestStatus::Active),
+ 1156|      1|                ("/skip-if".to_string(), TestStatus::Conditional),
+ 1157|      1|                ("/skipped".to_string(), TestStatus::Skipped),
+ 1158|      1|                ("/ternary-alternate".to_string(), TestStatus::Conditional),
+ 1159|      1|                ("/ternary-consequent".to_string(), TestStatus::Conditional),
+ 1160|      1|                ("/unrelated-skip-if".to_string(), TestStatus::Active),
+ 1161|       |            ]
+ 1162|       |        );
+ 1163|      1|    }
+ 1164|       |}

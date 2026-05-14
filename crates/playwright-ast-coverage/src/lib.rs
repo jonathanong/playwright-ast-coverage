@@ -1927,6 +1927,44 @@ mod tests {
     }
 
     #[test]
+    fn run_errors_on_empty_routes() {
+        let root = fixture_path(&["main", "empty-app"]);
+        let cli = Cli {
+            root,
+            config: None,
+            playwright_config: vec![],
+            project: None,
+            json: false,
+            assert_conditional_tests: false,
+            allow_skipped_tests: false,
+            assert_unique_test_ids: false,
+            assert_unique_html_ids: false,
+            assert_unique_selectors: false,
+            command: Command::Check,
+        };
+        assert!(run(cli).is_err());
+    }
+
+    #[test]
+    fn run_errors_on_missing_playwright_config() {
+        let root = fixture_path(&["covered"]);
+        let cli = Cli {
+            root: root.clone(),
+            config: None,
+            playwright_config: vec![root.join("missing.config.ts")],
+            project: None,
+            json: false,
+            assert_conditional_tests: false,
+            allow_skipped_tests: false,
+            assert_unique_test_ids: false,
+            assert_unique_html_ids: false,
+            assert_unique_selectors: false,
+            command: Command::Check,
+        };
+        assert!(run(cli).is_err());
+    }
+
+    #[test]
     fn discover_test_files_walks_shared_project_test_dir_once() {
         let root = fixture_path(&["main", "analyze-basic"]);
         let settings = Settings {

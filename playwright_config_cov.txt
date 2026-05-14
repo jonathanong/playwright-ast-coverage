@@ -1,0 +1,1005 @@
+  140|       |}
+
+/Users/jong/playwright-ast-coverage/crates/playwright-ast-coverage/src/playwright_config.rs:
+    1|       |use crate::ast;
+    2|       |use anyhow::Result;
+    3|       |use oxc_ast::ast::{
+    4|       |    Argument, ArrayExpression, ArrayExpressionElement, AssignmentTarget, BindingPattern,
+    5|       |    ExportDefaultDeclarationKind, Expression, ObjectExpression, ObjectPropertyKind, Program,
+    6|       |    PropertyKey, Statement,
+    7|       |};
+    8|       |use std::collections::{BTreeMap, BTreeSet};
+    9|       |use std::path::{Path, PathBuf};
+   10|       |
+   11|       |const DEFAULT_TEST_MATCH: &[&str] = &[
+   12|       |    "**/*.spec.ts",
+   13|       |    "**/*.spec.tsx",
+   14|       |    "**/*.spec.js",
+   15|       |    "**/*.spec.jsx",
+   16|       |    "**/*.spec.mts",
+   17|       |    "**/*.spec.cts",
+   18|       |    "**/*.spec.mjs",
+   19|       |    "**/*.spec.cjs",
+   20|       |    "**/*.test.ts",
+   21|       |    "**/*.test.tsx",
+   22|       |    "**/*.test.js",
+   23|       |    "**/*.test.jsx",
+   24|       |    "**/*.test.mts",
+   25|       |    "**/*.test.cts",
+   26|       |    "**/*.test.mjs",
+   27|       |    "**/*.test.cjs",
+   28|       |];
+   29|       |const DEFAULT_TEST_ID_ATTRIBUTE: &str = "data-testid";
+   30|       |
+   31|       |pub struct PlaywrightConfig {
+   32|       |    pub name: Option<String>,
+   33|       |    pub projects: Vec<TestProject>,
+   34|       |}
+   35|       |
+   36|       |pub struct TestProject {
+   37|       |    pub config_dir: PathBuf,
+   38|       |    pub test_dir: String,
+   39|       |    pub test_match: Vec<String>,
+   40|       |    pub test_ignore: Vec<String>,
+   41|       |    pub base_url: Option<String>,
+   42|       |    pub test_id_attribute: String,
+   43|       |}
+   44|       |
+   45|       |#[derive(Default)]
+   46|       |struct ParsedOptions {
+   47|       |    name: Option<String>,
+   48|       |    test_dir: Option<String>,
+   49|       |    test_match: Option<Vec<String>>,
+   50|       |    test_ignore: Option<Vec<String>>,
+   51|       |    base_url: Option<String>,
+   52|       |    test_id_attribute: Option<String>,
+   53|       |}
+   54|       |
+   55|       |impl PlaywrightConfig {
+   56|       |    #[cfg(test)]
+   57|      1|    pub fn test_id_attributes(&self) -> Vec<String> {
+   58|      1|        let mut attributes: Vec<String> = self
+   59|      1|            .projects
+   60|      1|            .iter()
+   61|      2|            .map(|project| project.test_id_attribute.clone())
+                           ^1
+   62|      1|            .collect();
+   63|      1|        attributes.sort();
+   64|      1|        attributes.dedup();
+   65|      1|        attributes
+   66|      1|    }
+   67|       |}
+   68|       |
+   69|     65|pub fn load_many(
+   70|     65|    root: &Path,
+   71|     65|    config_paths: &[PathBuf],
+   72|     65|    config_name_filter: Option<&str>,
+   73|     65|) -> Result<PlaywrightConfig> {
+   74|     65|    if config_paths.is_empty() {
+   75|     42|        if let Some(name) = config_name_filter {
+                                  ^1
+   76|      1|            anyhow::bail!("--project requires a named Playwright config, but no config was found matching {name}");
+   77|     41|        }
+   78|     41|        return Ok(default_config(root));
+   79|     23|    }
+   80|       |
+   81|     23|    let mut configs = Vec::new();
+   82|     30|    for config_path in config_paths {
+                                     ^23
+   83|     30|        let config = load(root, config_path)?;
+                          ^27                             ^3
+   84|     27|        configs.push((config_path, config));
+   85|       |    }
+   86|       |
+   87|     20|    validate_config_names(&configs, config_name_filter)?;
+                                                                     ^3
+   88|      3|    match config_name_filter {
+   89|      2|        Some(name)
+   90|      3|            if !configs
+   91|      3|                .iter()
+   92|      5|                .any(|(_, config)| config.name.as_deref() == Some(name)) =>
+                               ^3                                                    ^2
+   93|       |        {
+   94|      2|            return Err(missing_config_name_error(name));
+   95|       |        }
+   96|     15|        _ => {}
+   97|       |    }
+   98|       |
+   99|     15|    let mut projects = Vec::new();
+  100|     19|    for (_, config) in configs {
+                                     ^15
+  101|     19|        if config_name_filter.is_some_and(|name| config.name.as_deref() != Some(name)) {
+                                                               ^2                        ^2
+  102|      1|            continue;
+  103|     18|        }
+  104|     18|        projects.extend(config.projects);
+  105|       |    }
+  106|       |
+  107|     15|    Ok(PlaywrightConfig {
+  108|     15|        name: config_name_filter.map(str::to_string),
+  109|     15|        projects,
+  110|     15|    })
+  111|     65|}
+  112|       |
+  113|      2|fn missing_config_name_error(name: &str) -> anyhow::Error {
+  114|      2|    anyhow::Error::msg(format!("no Playwright config found with name {name}"))
+  115|      2|}
+  116|       |
+  117|       |impl TestProject {
+  118|     65|    pub fn test_dir(&self, root: &Path) -> PathBuf {
+  119|     65|        let path = Path::new(&self.test_dir);
+  120|     65|        if path.is_absolute() {
+  121|      1|            path.to_path_buf()
+  122|     64|        } else if self.config_dir.is_absolute() {
+  123|     63|            self.config_dir.join(path)
+  124|       |        } else {
+  125|      1|            root.join(&self.config_dir).join(path)
+  126|       |        }
+  127|     65|    }
+  128|       |}
+  129|       |
+  130|     33|pub fn load(root: &Path, config_path: &Path) -> Result<PlaywrightConfig> {
+  131|     33|    if !config_path.exists() {
+  132|      2|        anyhow::bail!(
+  133|       |            "Playwright config does not exist: {}",
+  134|      2|            config_path.display()
+  135|       |        );
+  136|     31|    }
+  137|       |
+  138|     31|    let source = std::fs::read_to_string(config_path)?;
+                      ^30                                          ^1
+  139|     30|    parse_from_path(&source, config_path, config_path.parent().unwrap_or(root))
+  140|     33|}
+  141|       |
+  142|     41|fn default_config(root: &Path) -> PlaywrightConfig {
+  143|     41|    PlaywrightConfig {
+  144|     41|        name: None,
+  145|     41|        projects: vec![TestProject {
+  146|     41|            config_dir: root.to_path_buf(),
+  147|     41|            test_dir: ".".to_string(),
+  148|     41|            test_match: default_test_match(),
+  149|     41|            test_ignore: Vec::new(),
+  150|     41|            base_url: None,
+  151|     41|            test_id_attribute: DEFAULT_TEST_ID_ATTRIBUTE.to_string(),
+  152|     41|        }],
+  153|     41|    }
+  154|     41|}
+  155|       |
+  156|       |#[cfg(test)]
+  157|     28|fn parse(source: &str, config_dir: &Path) -> Result<PlaywrightConfig> {
+  158|     28|    parse_from_path(source, Path::new("playwright.config.ts"), config_dir)
+  159|     28|}
+  160|       |
+  161|     60|fn parse_from_path(source: &str, path: &Path, config_dir: &Path) -> Result<PlaywrightConfig> {
+  162|     60|    ast::with_program(path, source, |program, source| {
+  163|     60|        parse_program(program, source, config_dir)
+  164|     60|    })?
+                    ^0
+  165|     60|}
+  166|       |
+  167|     60|fn parse_program(
+  168|     60|    program: &Program<'_>,
+  169|     60|    source: &str,
+  170|     60|    config_dir: &Path,
+  171|     60|) -> Result<PlaywrightConfig> {
+  172|     60|    let bindings = top_level_object_bindings(program);
+  173|     60|    let Some(root_object) = default_export_object(program) else {
+                           ^55
+  174|      5|        return Ok(PlaywrightConfig {
+  175|      5|            name: None,
+  176|      5|            projects: vec![merge_project(config_dir, &ParsedOptions::default(), None)],
+  177|      5|        });
+  178|       |    };
+  179|     55|    let root_options = parse_options(root_object, source, &bindings)?;
+                      ^50                                                         ^5
+  180|     50|    let project_objects = project_objects(root_object);
+  181|       |
+  182|     50|    if project_objects.is_empty() {
+  183|     32|        return Ok(PlaywrightConfig {
+  184|     32|            name: root_options.name.clone(),
+  185|     32|            projects: vec![merge_project(config_dir, &root_options, None)],
+  186|     32|        });
+  187|     18|    }
+  188|       |
+  189|     18|    let mut projects = Vec::new();
+  190|     20|    for project_object in project_objects {
+                                        ^18
+  191|     20|        projects.push(merge_project(
+                               ^18  ^18
+  192|     20|            config_dir,
+  193|     20|            &root_options,
+  194|     20|            Some(parse_options(project_object, source, &bindings)?),
+                                                                               ^2
+  195|       |        ));
+  196|       |    }
+  197|       |
+  198|     16|    Ok(PlaywrightConfig {
+  199|     16|        name: root_options.name,
+  200|     16|        projects,
+  201|     16|    })
+  202|     60|}
+  203|       |
+  204|     21|fn validate_config_names(
+  205|     21|    configs: &[(&PathBuf, PlaywrightConfig)],
+  206|     21|    config_name_filter: Option<&str>,
+  207|     21|) -> Result<()> {
+  208|     21|    if configs.len() <= 1 && config_name_filter.is_none() {
+                                           ^13                ^13
+  209|     11|        return Ok(());
+  210|     10|    }
+  211|       |
+  212|     10|    let mut seen = BTreeMap::new();
+  213|     18|    for (path, config) in configs {
+                                        ^10
+  214|     18|        let Some(name) = config.name.as_deref() else {
+                               ^16
+  215|      2|            anyhow::bail!(
+  216|       |                "Playwright config {} must define top-level name when multiple configs are analyzed or --project is used",
+  217|      2|                path.display()
+  218|       |            );
+  219|       |        };
+  220|     16|        if let Some(previous) = seen.insert(name.to_string(), path.display().to_string()) {
+                                  ^2
+  221|      2|            anyhow::bail!(
+  222|       |                "Playwright config name {name} is duplicated by {} and {}",
+  223|       |                previous,
+  224|      2|                path.display()
+  225|       |            );
+  226|     14|        }
+  227|       |    }
+  228|      6|    Ok(())
+  229|     21|}
+  230|       |
+  231|     55|fn merge_project(
+  232|     55|    config_dir: &Path,
+  233|     55|    root: &ParsedOptions,
+  234|     55|    project: Option<ParsedOptions>,
+  235|     55|) -> TestProject {
+  236|     55|    let project = project.unwrap_or_default();
+  237|       |
+  238|       |    TestProject {
+  239|     55|        config_dir: config_dir.to_path_buf(),
+  240|     55|        test_dir: project
+  241|     55|            .test_dir
+  242|     55|            .or_else(|| root.test_dir.clone())
+                                      ^49           ^49
+  243|     55|            .unwrap_or_else(|| ".".to_string()),
+                                             ^13 ^13
+  244|     55|        test_match: project
+  245|     55|            .test_match
+  246|     55|            .or_else(|| root.test_match.clone())
+                                      ^47             ^47
+  247|     55|            .unwrap_or_else(default_test_match),
+  248|     55|        test_ignore: combine(root.test_ignore.clone(), project.test_ignore),
+  249|     55|        base_url: project.base_url.or_else(|| root.base_url.clone()),
+                                                            ^53           ^53
+  250|     55|        test_id_attribute: project
+  251|     55|            .test_id_attribute
+  252|     55|            .or_else(|| root.test_id_attribute.clone())
+                                      ^52                    ^52
+  253|     55|            .unwrap_or_else(|| DEFAULT_TEST_ID_ATTRIBUTE.to_string()),
+                                             ^35                       ^35
+  254|       |    }
+  255|     55|}
+  256|       |
+  257|     75|fn parse_options(
+  258|     75|    object: &ObjectExpression<'_>,
+  259|     75|    source: &str,
+  260|     75|    bindings: &BTreeMap<String, &Expression<'_>>,
+  261|     75|) -> Result<ParsedOptions> {
+  262|     75|    let use_object = property_expression(object, "use").and_then(|value| {
+                                                                                       ^26
+  263|     26|        let mut seen = BTreeSet::new();
+  264|     26|        expression_config_object(value, bindings, &mut seen)
+  265|     26|    });
+  266|       |
+  267|       |    Ok(ParsedOptions {
+  268|     75|        name: property_expression(object, "name").and_then(|value| optional_string(value, source)),
+                                                                                 ^29             ^29    ^29
+  269|     75|        test_dir: property_expression(object, "testDir")
+  270|     75|            .map(|value| required_string(value, source, "testDir"))
+                                       ^46             ^46    ^46     ^46
+  271|     75|            .transpose()?,
+                                      ^3
+  272|     72|        test_match: property_expression(object, "testMatch")
+  273|     72|            .map(|value| required_string_or_array(value, source, "testMatch"))
+                                       ^25                      ^25    ^25     ^25
+  274|     72|            .transpose()?,
+                                      ^3
+  275|     69|        test_ignore: property_expression(object, "testIgnore")
+  276|     69|            .map(|value| required_string_or_array(value, source, "testIgnore"))
+                                       ^4                       ^4     ^4      ^4
+  277|     69|            .transpose()?,
+                                      ^1
+  278|     68|        base_url: use_object
+  279|     68|            .and_then(|value| property_expression(value, "baseURL"))
+                                            ^25                 ^25    ^25
+  280|     68|            .or_else(|| property_expression(object, "baseURL"))
+                                      ^46                 ^46     ^46
+  281|     68|            .and_then(|value| optional_string(value, source)),
+                                            ^23             ^23    ^23
+  282|     68|        test_id_attribute: use_object
+  283|     68|            .and_then(|value| property_expression(value, "testIdAttribute"))
+                                            ^25                 ^25    ^25
+  284|     68|            .or_else(|| property_expression(object, "testIdAttribute"))
+                                      ^48                 ^48     ^48
+  285|     68|            .and_then(|value| optional_string(value, source)),
+                                            ^21             ^21    ^21
+  286|       |    })
+  287|     75|}
+  288|       |
+  289|     55|fn combine(left: Option<Vec<String>>, right: Option<Vec<String>>) -> Vec<String> {
+  290|     55|    let mut values = left.unwrap_or_default();
+  291|     55|    values.extend(right.unwrap_or_default());
+  292|     55|    values
+  293|     55|}
+  294|       |
+  295|     76|fn default_test_match() -> Vec<String> {
+  296|     76|    DEFAULT_TEST_MATCH
+  297|     76|        .iter()
+  298|  1.21k|        .map(|pattern| pattern.to_string())
+                       ^76
+  299|     76|        .collect()
+  300|     76|}
+  301|       |
+  302|     60|fn default_export_object<'a>(program: &'a Program<'a>) -> Option<&'a ObjectExpression<'a>> {
+  303|     60|    let bindings = top_level_object_bindings(program);
+  304|       |
+  305|     79|    for statement in &program.body {
+                                   ^60
+  306|     79|        if let Statement::ExportDefaultDeclaration(export) = statement {
+                                                                 ^57
+  307|     57|            return export_config_object(&export.declaration, &bindings);
+  308|     22|        }
+  309|       |
+  310|     22|        if let Some(object) = commonjs_config_object(statement, &bindings) {
+                                  ^2
+  311|      2|            return Some(object);
+  312|     20|        }
+  313|       |    }
+  314|      1|    None
+  315|     60|}
+  316|       |
+  317|    120|fn top_level_object_bindings<'a>(program: &'a Program<'a>) -> BTreeMap<String, &'a Expression<'a>> {
+  318|    120|    let mut bindings = BTreeMap::new();
+  319|    158|    for statement in &program.body {
+                                   ^120
+  320|    158|        let Statement::VariableDeclaration(declaration) = statement else {
+                                                         ^30
+  321|    128|            continue;
+  322|       |        };
+  323|     30|        for declarator in &declaration.declarations {
+  324|     26|            let (Some(name), Some(init)) =
+  325|     30|                (binding_identifier_name(&declarator.id), &declarator.init)
+  326|       |            else {
+  327|      4|                continue;
+  328|       |            };
+  329|     26|            bindings.insert(name.to_string(), init);
+  330|       |        }
+  331|       |    }
+  332|    120|    bindings
+  333|    120|}
+  334|       |
+  335|     30|fn binding_identifier_name<'a>(binding: &'a BindingPattern<'a>) -> Option<&'a str> {
+  336|     30|    match binding {
+  337|     28|        BindingPattern::BindingIdentifier(identifier) => Some(identifier.name.as_str()),
+  338|      2|        _ => None,
+  339|       |    }
+  340|     30|}
+  341|       |
+  342|     57|fn export_config_object<'a>(
+  343|     57|    export: &'a ExportDefaultDeclarationKind<'a>,
+  344|     57|    bindings: &BTreeMap<String, &'a Expression<'a>>,
+  345|     57|) -> Option<&'a ObjectExpression<'a>> {
+  346|     57|    match export {
+  347|     44|        ExportDefaultDeclarationKind::ObjectExpression(object) => Some(object),
+  348|      8|        ExportDefaultDeclarationKind::CallExpression(call) => {
+  349|      8|            call.arguments.first().and_then(|argument| {
+  350|      8|                let mut seen = BTreeSet::new();
+  351|      8|                argument_config_object(argument, bindings, &mut seen)
+  352|      8|            })
+  353|       |        }
+  354|      2|        ExportDefaultDeclarationKind::Identifier(identifier) => {
+  355|      2|            let mut seen = BTreeSet::new();
+  356|      2|            identifier_config_object(identifier.name.as_str(), bindings, &mut seen)
+  357|       |        }
+  358|      2|        ExportDefaultDeclarationKind::ParenthesizedExpression(parenthesized) => {
+  359|      2|            let mut seen = BTreeSet::new();
+  360|      2|            expression_config_object(&parenthesized.expression, bindings, &mut seen)
+  361|       |        }
+  362|      1|        _ => None,
+  363|       |    }
+  364|     57|}
+  365|       |
+  366|     22|fn commonjs_config_object<'a>(
+  367|     22|    statement: &'a Statement<'a>,
+  368|     22|    bindings: &BTreeMap<String, &'a Expression<'a>>,
+  369|     22|) -> Option<&'a ObjectExpression<'a>> {
+  370|     22|    let Statement::ExpressionStatement(statement) = statement else {
+                                                     ^5
+  371|     17|        return None;
+  372|       |    };
+  373|      5|    let Expression::AssignmentExpression(assignment) = &statement.expression else {
+                                                       ^4
+  374|      1|        return None;
+  375|       |    };
+  376|      4|    if assignment_target_path(&assignment.left)
+  377|      4|        .as_deref()
+  378|      4|        .is_none_or(|parts| parts != ["module", "exports"])
+                                          ^3       ^3
+  379|       |    {
+  380|      2|        return None;
+  381|      2|    }
+  382|      2|    let mut seen = BTreeSet::new();
+  383|      2|    expression_config_object(&assignment.right, bindings, &mut seen)
+  384|     22|}
+  385|       |
+  386|      4|fn assignment_target_path(target: &AssignmentTarget<'_>) -> Option<Vec<String>> {
+  387|      4|    match target {
+  388|      3|        AssignmentTarget::StaticMemberExpression(member) => {
+  389|      3|            let mut parts = ast::expression_path(&member.object)?;
+                                                                              ^0
+  390|      3|            parts.push(member.property.name.to_string());
+  391|      3|            Some(parts)
+  392|       |        }
+  393|      1|        _ => None,
+  394|       |    }
+  395|      4|}
+  396|       |
+  397|     10|fn argument_config_object<'a>(
+  398|     10|    argument: &'a Argument<'a>,
+  399|     10|    bindings: &BTreeMap<String, &'a Expression<'a>>,
+  400|     10|    seen: &mut BTreeSet<String>,
+  401|     10|) -> Option<&'a ObjectExpression<'a>> {
+  402|     10|    match argument {
+  403|      5|        Argument::ObjectExpression(object) => Some(object),
+  404|      3|        Argument::Identifier(identifier) => {
+  405|      3|            identifier_config_object(identifier.name.as_str(), bindings, seen)
+  406|       |        }
+  407|      1|        Argument::ParenthesizedExpression(parenthesized) => {
+  408|      1|            expression_config_object(&parenthesized.expression, bindings, seen)
+  409|       |        }
+  410|      1|        _ => None,
+  411|       |    }
+  412|     10|}
+  413|       |
+  414|     39|fn expression_config_object<'a>(
+  415|     39|    expression: &'a Expression<'a>,
+  416|     39|    bindings: &BTreeMap<String, &'a Expression<'a>>,
+  417|     39|    seen: &mut BTreeSet<String>,
+  418|     39|) -> Option<&'a ObjectExpression<'a>> {
+  419|     39|    match expression {
+  420|     31|        Expression::ObjectExpression(object) => Some(object),
+  421|      3|        Expression::Identifier(identifier) => {
+  422|      3|            identifier_config_object(identifier.name.as_str(), bindings, seen)
+  423|       |        }
+  424|      3|        Expression::CallExpression(call) => call
+  425|      3|            .arguments
+  426|      3|            .first()
+  427|      3|            .and_then(|argument| argument_config_object(argument, bindings, seen)),
+                                               ^2                     ^2        ^2        ^2
+  428|      1|        Expression::ParenthesizedExpression(parenthesized) => {
+  429|      1|            expression_config_object(&parenthesized.expression, bindings, seen)
+  430|       |        }
+  431|      1|        _ => None,
+  432|       |    }
+  433|     39|}
+  434|       |
+  435|      8|fn identifier_config_object<'a>(
+  436|      8|    name: &str,
+  437|      8|    bindings: &BTreeMap<String, &'a Expression<'a>>,
+  438|      8|    seen: &mut BTreeSet<String>,
+  439|      8|) -> Option<&'a ObjectExpression<'a>> {
+  440|      8|    if !seen.insert(name.to_string()) {
+  441|      1|        return None;
+  442|      7|    }
+  443|      7|    let object = bindings
+  444|      7|        .get(name)
+  445|      7|        .and_then(|expression| expression_config_object(expression, bindings, seen));
+  446|      7|    seen.remove(name);
+  447|      7|    object
+  448|      8|}
+  449|       |
+  450|    560|fn property_expression<'a>(
+  451|    560|    object: &'a ObjectExpression<'a>,
+  452|    560|    name: &str,
+  453|    560|) -> Option<&'a Expression<'a>> {
+  454|    975|    for property in &object.properties {
+                                  ^560
+  455|    975|        let ObjectPropertyKind::ObjectProperty(property) = property else {
+                                                             ^969
+  456|      6|            continue;
+  457|       |        };
+  458|    969|        if property.computed || property.method {
+                                              ^949
+  459|     26|            continue;
+  460|    943|        }
+  461|    943|        if property_key_name(&property.key).as_deref() == Some(name) {
+  462|    194|            return Some(&property.value);
+  463|    749|        }
+  464|       |    }
+  465|    366|    None
+  466|    560|}
+  467|       |
+  468|    943|fn property_key_name(key: &PropertyKey<'_>) -> Option<String> {
+  469|    943|    match key {
+  470|    924|        PropertyKey::StaticIdentifier(identifier) => Some(identifier.name.to_string()),
+  471|     13|        PropertyKey::StringLiteral(literal) => Some(literal.value.to_string()),
+  472|      6|        _ => None,
+  473|       |    }
+  474|    943|}
+  475|       |
+  476|     50|fn project_objects<'a>(root: &'a ObjectExpression<'a>) -> Vec<&'a ObjectExpression<'a>> {
+  477|     50|    let Some(Expression::ArrayExpression(projects)) = property_expression(root, "projects") else {
+                                                       ^19
+  478|     31|        return Vec::new();
+  479|       |    };
+  480|     19|    projects
+  481|     19|        .elements
+  482|     19|        .iter()
+  483|     19|        .filter_map(array_element_object)
+  484|     19|        .collect()
+  485|     50|}
+  486|       |
+  487|     22|fn array_element_object<'a>(
+  488|     22|    element: &'a ArrayExpressionElement<'a>,
+  489|     22|) -> Option<&'a ObjectExpression<'a>> {
+  490|     22|    match element {
+  491|     20|        ArrayExpressionElement::ObjectExpression(object) => Some(object),
+  492|      2|        _ => None,
+  493|       |    }
+  494|     22|}
+  495|       |
+  496|     46|fn required_string(expression: &Expression<'_>, source: &str, name: &str) -> Result<String> {
+  497|     46|    optional_string(expression, source)
+  498|     46|        .ok_or_else(|| anyhow::anyhow!("expected string literal for {name}"))
+                                     ^3
+  499|     46|}
+  500|       |
+  501|    152|fn optional_string(expression: &Expression<'_>, source: &str) -> Option<String> {
+  502|      3|    match expression {
+  503|    126|        Expression::StringLiteral(literal) => Some(literal.value.to_string()),
+  504|      3|        Expression::TemplateLiteral(template) if template.expressions.is_empty() => {
+  505|      3|            Some(ast::template_literal_text(template, source))
+  506|       |        }
+  507|      4|        Expression::ParenthesizedExpression(parenthesized) => {
+  508|      4|            optional_string(&parenthesized.expression, source)
+  509|       |        }
+  510|     19|        _ => None,
+  511|       |    }
+  512|    152|}
+  513|       |
+  514|     29|fn required_string_or_array(
+  515|     29|    expression: &Expression<'_>,
+  516|     29|    source: &str,
+  517|     29|    name: &str,
+  518|     29|) -> Result<Vec<String>> {
+  519|     29|    if let Some(value) = optional_string(expression, source) {
+                              ^17
+  520|     17|        return Ok(vec![value]);
+  521|     12|    }
+  522|     12|    let Some(Expression::ArrayExpression(array)) = parenthesized_expression(expression) else {
+                                                       ^9
+  523|      3|        anyhow::bail!("expected string literal or string array for {name}");
+  524|       |    };
+  525|      9|    string_array(array, source, name)
+  526|     29|}
+  527|       |
+  528|     13|fn parenthesized_expression<'a>(expression: &'a Expression<'a>) -> Option<&'a Expression<'a>> {
+  529|     13|    match expression {
+  530|      1|        Expression::ParenthesizedExpression(parenthesized) => {
+  531|      1|            parenthesized_expression(&parenthesized.expression)
+  532|       |        }
+  533|     12|        _ => Some(expression),
+  534|       |    }
+  535|     13|}
+  536|       |
+  537|      9|fn string_array(array: &ArrayExpression<'_>, source: &str, name: &str) -> Result<Vec<String>> {
+  538|      9|    let mut values = Vec::new();
+  539|      9|    let mut saw_regex = false;
+  540|     11|    for element in &array.elements {
+                                 ^9
+  541|      2|        match element {
+  542|      6|            ArrayExpressionElement::StringLiteral(literal) => {
+  543|      6|                values.push(literal.value.to_string())
+  544|       |            }
+  545|      2|            ArrayExpressionElement::TemplateLiteral(template)
+  546|      2|                if template.expressions.is_empty() =>
+  547|      2|            {
+  548|      2|                values.push(ast::template_literal_text(template, source));
+  549|      2|            }
+  550|      2|            ArrayExpressionElement::RegExpLiteral(_) => saw_regex = true,
+  551|      1|            _ => {}
+  552|       |        }
+  553|       |    }
+  554|      9|    if values.is_empty() && saw_regex {
+                                          ^1
+  555|      1|        anyhow::bail!("regular-expression {name} patterns are not supported; use string globs");
+  556|      8|    }
+  557|      8|    Ok(values)
+  558|      9|}
+  559|       |
+  560|       |#[cfg(test)]
+  561|       |mod tests {
+  562|       |    use super::*;
+  563|       |    use crate::test_support::{fixture_path, fixture_source};
+  564|       |
+  565|       |    #[test]
+  566|      1|    fn parses_test_dir_and_match() {
+  567|      1|        let source = fixture_source(&["playwright_config", "test-dir-and-match.ts"]);
+  568|      1|        let parsed = parse(&source, Path::new("/repo")).unwrap();
+  569|      1|        assert_eq!(parsed.name, None);
+  570|      1|        assert_eq!(parsed.projects[0].test_dir, "./tests/e2e");
+  571|      1|        assert_eq!(parsed.projects[0].test_match, vec!["**/*.spec.ts"]);
+  572|      1|    }
+  573|       |
+  574|       |    #[test]
+  575|      1|    fn parser_handles_parenthesized_expressions() {
+  576|      1|        let source = "export default ({ testDir: 'parenthesized' });";
+  577|      1|        let parsed = parse(source, Path::new("/repo")).unwrap();
+  578|      1|        assert_eq!(parsed.projects[0].test_dir, "parenthesized");
+  579|      1|    }
+  580|       |
+  581|       |    #[test]
+  582|      1|    fn property_key_name_handles_edge_cases() {
+  583|      1|        let source = "export default { ['computed']: 'value' };";
+  584|      1|        let parsed = parse(source, Path::new("/repo")).unwrap();
+  585|      1|        assert_eq!(parsed.projects[0].test_dir, "."); // default if not found
+  586|      1|    }
+  587|       |
+  588|       |    #[test]
+  589|      1|    fn array_element_object_handles_non_objects() {
+  590|      1|        let source = "export default { projects: [1] };";
+  591|      1|        let parsed = parse(source, Path::new("/repo")).unwrap();
+  592|      1|        assert_eq!(parsed.projects.len(), 1); // falls back to single project if projects array is invalid
+  593|      1|    }
+  594|       |
+  595|       |    #[test]
+  596|      1|    fn property_key_name_handles_all_cases() {
+  597|      1|        let source = "export default { testDir: 'v1', 'testMatch': 'v2', [1+1]: 'v3' };";
+  598|      1|        let parsed = parse(source, Path::new("/repo")).unwrap();
+  599|      1|        assert!(!parsed.projects.is_empty());
+  600|      1|    }
+  601|       |
+  602|       |    #[test]
+  603|      1|    fn parser_handles_advanced_assignment_targets() {
+  604|      1|        let source = "export default { use: { baseURL: (x = 'y') } };";
+  605|      1|        let parsed = parse(source, Path::new("/repo")).unwrap();
+  606|      1|        assert!(!parsed.projects.is_empty());
+  607|      1|    }
+  608|       |
+  609|       |    #[test]
+  610|      1|    fn parses_projects_with_inheritance() {
+  611|      1|        let source = fixture_source(&["playwright_config", "projects-with-inheritance.ts"]);
+  612|      1|        let parsed = parse(&source, Path::new("/repo")).unwrap();
+  613|      1|        assert_eq!(parsed.projects.len(), 2);
+  614|      1|        assert_eq!(parsed.projects[0].test_dir, "./tests");
+  615|      1|        assert_eq!(parsed.projects[0].test_ignore, vec!["**/skip/**"]);
+  616|      1|        assert_eq!(
+  617|      1|            parsed.projects[0].base_url.as_deref(),
+  618|       |            Some("http://localhost:3000")
+  619|       |        );
+  620|      1|        assert_eq!(parsed.projects[0].test_id_attribute, "data-pw");
+  621|      1|        assert_eq!(parsed.projects[1].test_dir, "./e2e");
+  622|      1|        assert_eq!(parsed.projects[1].test_match, vec!["**/*.pw.ts"]);
+  623|      1|        assert_eq!(parsed.projects[1].test_id_attribute, "data-test");
+  624|      1|        assert_eq!(parsed.test_id_attributes(), vec!["data-pw", "data-test"]);
+  625|      1|    }
+  626|       |
+  627|       |    #[test]
+  628|      1|    fn parses_top_level_base_url_and_string_ignore() {
+  629|      1|        let source = fixture_source(&["playwright_config", "top-level-base-url.ts"]);
+  630|      1|        let parsed = parse(&source, Path::new("/repo")).unwrap();
+  631|      1|        assert_eq!(
+  632|      1|            parsed.projects[0].base_url.as_deref(),
+  633|       |            Some("http://localhost:5173")
+  634|       |        );
+  635|      1|        assert_eq!(parsed.projects[0].test_ignore, vec!["**/skip/**"]);
+  636|      1|        assert_eq!(parsed.projects[0].test_id_attribute, "data-test-id");
+  637|      1|    }
+  638|       |
+  639|       |    #[test]
+  640|      1|    fn parses_default_export_identifier() {
+  641|      1|        let source = fixture_source(&["playwright_config", "default-identifier.ts"]);
+  642|      1|        let parsed = parse(&source, Path::new("/repo")).unwrap();
+  643|      1|        assert_eq!(parsed.projects[0].test_dir, "./identifier-tests");
+  644|      1|        assert_eq!(parsed.projects[0].test_match, vec!["**/*.identifier.ts"]);
+  645|      1|        assert_eq!(
+  646|      1|            parsed.projects[0].base_url.as_deref(),
+  647|       |            Some("http://localhost:4100")
+  648|       |        );
+  649|      1|        assert_eq!(parsed.projects[0].test_id_attribute, "data-identifier");
+  650|      1|    }
+  651|       |
+  652|       |    #[test]
+  653|      1|    fn parses_define_config_identifier_argument() {
+  654|      1|        let source = fixture_source(&["playwright_config", "define-config-identifier.ts"]);
+  655|      1|        let parsed = parse(&source, Path::new("/repo")).unwrap();
+  656|      1|        assert_eq!(parsed.projects[0].test_dir, "./define-config-tests");
+  657|      1|        assert_eq!(parsed.projects[0].test_match, vec!["**/*.define-config.ts"]);
+  658|      1|    }
+  659|       |
+  660|       |    #[test]
+  661|      1|    fn parses_commonjs_config_exports() {
+  662|      1|        let source = fixture_source(&["playwright_config", "commonjs-object.cjs"]);
+  663|      1|        let parsed = parse_from_path(
+  664|      1|            &source,
+  665|      1|            Path::new("playwright.config.cjs"),
+  666|      1|            Path::new("/repo"),
+  667|       |        )
+  668|      1|        .unwrap();
+  669|      1|        assert_eq!(parsed.projects[0].test_dir, "./commonjs-object-tests");
+  670|      1|        assert_eq!(
+  671|      1|            parsed.projects[0].test_match,
+  672|      1|            vec!["**/*.commonjs-object.js"]
+  673|       |        );
+  674|       |
+  675|      1|        let source = fixture_source(&["playwright_config", "commonjs-define-config.cjs"]);
+  676|      1|        let parsed = parse_from_path(
+  677|      1|            &source,
+  678|      1|            Path::new("playwright.config.cjs"),
+  679|      1|            Path::new("/repo"),
+  680|       |        )
+  681|      1|        .unwrap();
+  682|      1|        assert_eq!(
+  683|      1|            parsed.projects[0].test_dir,
+  684|       |            "./commonjs-define-config-tests"
+  685|       |        );
+  686|      1|        assert_eq!(
+  687|      1|            parsed.projects[0].test_match,
+  688|      1|            vec!["**/*.commonjs-define-config.js"]
+  689|       |        );
+  690|      1|        assert_eq!(
+  691|      1|            parsed.projects[0].base_url.as_deref(),
+  692|       |            Some("http://localhost:5100")
+  693|       |        );
+  694|      1|    }
+  695|       |
+  696|       |    #[test]
+  697|      1|    fn resolves_identifier_backed_use_object() {
+  698|      1|        let source = fixture_source(&["playwright_config", "use-identifier.ts"]);
+  699|      1|        let parsed = parse(&source, Path::new("/repo")).unwrap();
+  700|      1|        assert_eq!(parsed.projects[0].test_dir, "./use-identifier-tests");
+  701|      1|        assert_eq!(
+  702|      1|            parsed.projects[0].base_url.as_deref(),
+  703|       |            Some("http://localhost:6200")
+  704|       |        );
+  705|      1|        assert_eq!(parsed.projects[0].test_id_attribute, "data-shared");
+  706|      1|    }
+  707|       |
+  708|       |    #[test]
+  709|      1|    fn cyclic_identifier_configs_fall_back_without_recursing() {
+  710|      1|        let source = fixture_source(&["playwright_config", "cyclic-config.ts"]);
+  711|      1|        let parsed = parse(&source, Path::new("/repo")).unwrap();
+  712|      1|        assert_eq!(parsed.projects[0].test_dir, ".");
+  713|      1|    }
+  714|       |
+  715|       |    #[test]
+  716|      1|    fn template_literals_use_cooked_text() {
+  717|      1|        let source = fixture_source(&["playwright_config", "cooked-template.ts"]);
+  718|      1|        let parsed = parse(&source, Path::new("/repo")).unwrap();
+  719|      1|        assert_eq!(parsed.projects[0].test_dir, r#"tests\e2e"#);
+  720|      1|        assert_eq!(parsed.projects[0].test_match, vec![r#"**\/*.spec.ts"#]);
+  721|      1|    }
+  722|       |
+  723|       |    #[test]
+  724|      1|    fn parser_handles_advanced_export_shapes() {
+  725|      1|        let source = fixture_source(&["playwright_config", "advanced-export-shapes.ts"]);
+  726|      1|        let parsed = parse(&source, Path::new("/repo")).unwrap();
+  727|      1|        assert_eq!(parsed.projects[0].test_dir, "./advanced-export-tests");
+  728|      1|        assert_eq!(
+  729|      1|            parsed.projects[0].test_match,
+  730|      1|            vec!["**/*.advanced-export.ts"]
+  731|       |        );
+  732|       |
+  733|      1|        let source = fixture_source(&["playwright_config", "non-object-binding.ts"]);
+  734|      1|        let parsed = parse(&source, Path::new("/repo")).unwrap();
+  735|      1|        assert_eq!(parsed.projects[0].test_dir, ".");
+  736|      1|    }
+  737|       |
+  738|       |    #[test]
+  739|      1|    fn ignores_non_literal_optional_playwright_values() {
+  740|      1|        let source = fixture_source(&["playwright_config", "nonliteral-optional-values.ts"]);
+  741|      1|        let parsed = parse(&source, Path::new("/repo")).unwrap();
+  742|      1|        assert_eq!(parsed.projects[0].test_dir, "./tests");
+  743|      1|        assert_eq!(parsed.projects[0].base_url, None);
+  744|      1|        assert_eq!(parsed.projects[0].test_id_attribute, "data-testid");
+  745|      1|    }
+  746|       |
+  747|       |    #[test]
+  748|      1|    fn load_without_config_uses_default_project() {
+  749|      1|        let parsed = load_many(Path::new("/repo"), &[], None).unwrap();
+  750|      1|        assert_eq!(parsed.projects[0].test_dir, ".");
+  751|      1|        assert!(parsed.projects[0]
+  752|      1|            .test_match
+  753|      1|            .contains(&"**/*.spec.ts".to_string()));
+  754|      1|    }
+  755|       |
+  756|       |    #[test]
+  757|      1|    fn load_many_without_configs_rejects_project_filter() {
+  758|      1|        let err = load_many(Path::new("/repo"), &[], Some("storybook"))
+  759|      1|            .err()
+  760|      1|            .expect("expected project filter without config to fail");
+  761|      1|        assert!(err.to_string().contains("--project requires"));
+  762|      1|    }
+  763|       |
+  764|       |    #[test]
+  765|      1|    fn load_missing_config_errors() {
+  766|      1|        let err = load(Path::new("/repo"), Path::new("/repo/missing.ts"))
+  767|      1|            .err()
+  768|      1|            .expect("expected missing config to fail");
+  769|      1|        assert!(err.to_string().contains("does not exist"));
+  770|      1|    }
+  771|       |
+  772|       |    #[test]
+  773|      1|    fn load_many_errors_when_project_filter_matches_no_config() {
+  774|      1|        let dir = fixture_path(&["config", "multi-playwright-config"]);
+  775|      1|        let config = dir.join("playwright.config.mts");
+  776|      1|        let err = load_many(&dir, &[config], Some("missing"))
+  777|      1|            .err()
+  778|      1|            .expect("expected missing config name to fail");
+  779|      1|        assert!(err.to_string().contains("no Playwright config found"));
+  780|      1|    }
+  781|       |
+  782|       |    #[test]
+  783|      1|    fn load_many_errors_when_config_is_missing_name_for_filter() {
+  784|      1|        let dir = fixture_path(&["playwright_config", "load-existing"]);
+  785|      1|        let config = dir.join("playwright.config.ts");
+  786|      1|        let err = load_many(&dir, &[config], Some("project"))
+  787|      1|            .err()
+  788|      1|            .expect("expected missing name to fail");
+  789|      1|        assert!(err.to_string().contains("must define top-level name"));
+  790|      1|    }
+  791|       |
+  792|       |    #[test]
+  793|      1|    fn validate_config_names_errors_on_duplicate_names() {
+  794|      1|        let path1 = PathBuf::from("a.ts");
+  795|      1|        let path2 = PathBuf::from("b.ts");
+  796|      1|        let configs = vec![
+  797|      1|            (
+  798|      1|                &path1,
+  799|      1|                PlaywrightConfig {
+  800|      1|                    name: Some("same".to_string()),
+  801|      1|                    projects: vec![],
+  802|      1|                },
+  803|      1|            ),
+  804|      1|            (
+  805|      1|                &path2,
+  806|      1|                PlaywrightConfig {
+  807|      1|                    name: Some("same".to_string()),
+  808|      1|                    projects: vec![],
+  809|      1|                },
+  810|      1|            ),
+  811|       |        ];
+  812|      1|        let err = validate_config_names(&configs, None).err().unwrap();
+  813|      1|        assert!(err.to_string().contains("duplicated"));
+  814|      1|    }
+  815|       |
+  816|       |    #[test]
+  817|      1|    fn load_existing_config_reads_and_parses() {
+  818|      1|        let dir = fixture_path(&["playwright_config", "load-existing"]);
+  819|      1|        let config = dir.join("playwright.config.ts");
+  820|      1|        let parsed = load(&dir, &config).unwrap();
+  821|      1|        assert_eq!(parsed.projects[0].test_dir, "./tests");
+  822|      1|    }
+  823|       |
+  824|       |    #[test]
+  825|      1|    fn load_directory_config_path_returns_read_error() {
+  826|      1|        let dir = fixture_path(&["playwright_config", "load-existing"]);
+  827|      1|        let err = load(&dir, &dir)
+  828|      1|            .err()
+  829|      1|            .expect("expected directory config path to fail");
+  830|      1|        assert!(!err.to_string().is_empty());
+  831|      1|    }
+  832|       |
+  833|       |    #[test]
+  834|      1|    fn test_dir_resolves_absolute_relative_and_relative_config_dir() {
+  835|      1|        let absolute = TestProject {
+  836|      1|            config_dir: PathBuf::from("/repo"),
+  837|      1|            test_dir: "/tmp/tests".to_string(),
+  838|      1|            test_match: vec![],
+  839|      1|            test_ignore: vec![],
+  840|      1|            base_url: None,
+  841|      1|            test_id_attribute: "data-testid".to_string(),
+  842|      1|        };
+  843|      1|        assert_eq!(
+  844|      1|            absolute.test_dir(Path::new("/repo")),
+  845|      1|            PathBuf::from("/tmp/tests")
+  846|       |        );
+  847|       |
+  848|      1|        let absolute_config_relative_test_dir = TestProject {
+  849|      1|            config_dir: PathBuf::from("/repo"),
+  850|      1|            test_dir: "tests".to_string(),
+  851|      1|            test_match: vec![],
+  852|      1|            test_ignore: vec![],
+  853|      1|            base_url: None,
+  854|      1|            test_id_attribute: "data-testid".to_string(),
+  855|      1|        };
+  856|      1|        assert_eq!(
+  857|      1|            absolute_config_relative_test_dir.test_dir(Path::new("/repo")),
+  858|      1|            PathBuf::from("/repo/tests")
+  859|       |        );
+  860|       |
+  861|      1|        let relative_config = TestProject {
+  862|      1|            config_dir: PathBuf::from("config"),
+  863|      1|            test_dir: "tests".to_string(),
+  864|      1|            test_match: vec![],
+  865|      1|            test_ignore: vec![],
+  866|      1|            base_url: None,
+  867|      1|            test_id_attribute: "data-testid".to_string(),
+  868|      1|        };
+  869|      1|        assert_eq!(
+  870|      1|            relative_config.test_dir(Path::new("/repo")),
+  871|      1|            PathBuf::from("/repo/config/tests")
+  872|       |        );
+  873|      1|    }
+  874|       |
+  875|       |    #[test]
+  876|      1|    fn parse_accepts_spaced_property_and_escaped_string() {
+  877|      1|        let source = fixture_source(&["playwright_config", "spaced-property.ts"]);
+  878|      1|        let parsed = parse(&source, Path::new("/repo")).unwrap();
+  879|      1|        assert_eq!(parsed.projects[0].test_dir, r#"tests\e2e"#);
+  880|      1|    }
+  881|       |
+  882|       |    #[test]
+  883|      1|    fn parser_rejects_unsupported_required_values() {
+  884|      1|        assert!(parse("export default { testDir: 123 }", Path::new("/repo")).is_err());
+  885|      1|        assert!(parse("export default { testIgnore: 123 }", Path::new("/repo")).is_err());
+  886|      1|        assert!(parse(
+  887|      1|            "export default { testMatch: [/.*\\.spec\\.ts/] }",
+  888|      1|            Path::new("/repo")
+  889|      1|        )
+  890|      1|        .is_err());
+  891|      1|        assert!(parse("export default { testMatch: 123 }", Path::new("/repo")).is_err());
+  892|      1|        assert!(parse(
+  893|      1|            "export default { projects: [{ testDir: 123 }] }",
+  894|      1|            Path::new("/repo")
+  895|      1|        )
+  896|      1|        .is_err());
+  897|      1|    }
+  898|       |
+  899|       |    #[test]
+  900|      1|    fn malformed_projects_value_falls_back_to_single_project() {
+  901|      1|        let parsed = parse(
+  902|      1|            "export default { projects: makeProjects() }",
+  903|      1|            Path::new("/repo"),
+  904|       |        )
+  905|      1|        .unwrap();
+  906|      1|        assert_eq!(parsed.projects.len(), 1);
+  907|      1|    }
+  908|       |
+  909|       |    #[test]
+  910|      1|    fn root_options_ignore_project_values() {
+  911|      1|        let source = fixture_source(&["playwright_config", "project-values-only.ts"]);
+  912|      1|        let parsed = parse(&source, Path::new("/repo")).unwrap();
+  913|      1|        assert_eq!(parsed.projects[0].test_dir, "./project-tests");
+  914|      1|        assert_eq!(parsed.projects[0].test_match, vec!["**/*.project.ts"]);
+  915|      1|    }
+  916|       |
+  917|       |    #[test]
+  918|      1|    fn parser_handles_ast_edge_shapes() {
+  919|      1|        let source = fixture_source(&["playwright_config", "no-default-export.ts"]);
+  920|      1|        let parsed = parse(&source, Path::new("/repo")).unwrap();
+  921|      1|        assert_eq!(parsed.projects[0].test_dir, ".");
+  922|       |
+  923|      1|        let source = fixture_source(&["playwright_config", "non-object-default.ts"]);
+  924|      1|        let parsed = parse(&source, Path::new("/repo")).unwrap();
+  925|      1|        assert_eq!(parsed.projects[0].test_dir, ".");
+  926|       |
+  927|      1|        let source = fixture_source(&["playwright_config", "default-function.ts"]);
+  928|      1|        let parsed = parse(&source, Path::new("/repo")).unwrap();
+  929|      1|        assert_eq!(parsed.projects[0].test_dir, ".");
+  930|       |
+  931|      1|        let source = fixture_source(&["playwright_config", "edge-shapes.ts"]);
+  932|      1|        let parsed = parse(&source, Path::new("/repo")).unwrap();
+  933|      1|        assert_eq!(parsed.projects.len(), 1);
+  934|      1|        assert_eq!(parsed.projects[0].test_dir, "./project-tests");
+  935|      1|        assert_eq!(parsed.projects[0].test_match, vec!["**/*.project.ts"]);
+  936|      1|        assert_eq!(parsed.projects[0].test_ignore, vec!["**/skip/**"]);
+  937|      1|        assert_eq!(
+  938|      1|            parsed.projects[0].base_url.as_deref(),
+  939|       |            Some("http://localhost:3000")
+  940|       |        );
+  941|      1|        assert_eq!(parsed.projects[0].test_id_attribute, "data-test");
+  942|      1|    }
+  943|       |}

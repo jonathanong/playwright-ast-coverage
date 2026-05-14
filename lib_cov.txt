@@ -1,0 +1,2271 @@
+  480|       |}
+
+/Users/jong/playwright-ast-coverage/crates/playwright-ast-coverage/src/lib.rs:
+    1|       |mod ast;
+    2|       |mod config;
+    3|       |mod matcher;
+    4|       |mod playwright_config;
+    5|       |mod playwright_tests;
+    6|       |mod playwright_urls;
+    7|       |mod routes;
+    8|       |mod selectors;
+    9|       |#[cfg(test)]
+   10|       |mod test_support;
+   11|       |
+   12|       |use anyhow::Context;
+   13|       |use anyhow::Result;
+   14|       |use clap::{Parser, Subcommand};
+   15|       |use config::Settings;
+   16|       |use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
+   17|       |use rayon::prelude::*;
+   18|       |use routes::Route;
+   19|       |use serde::Serialize;
+   20|       |use std::collections::{BTreeMap, BTreeSet, HashMap};
+   21|       |use std::path::{Path, PathBuf};
+   22|       |use std::process::ExitCode;
+   23|       |use walkdir::WalkDir;
+   24|       |
+   25|       |#[derive(Parser, Clone)]
+   26|       |#[command(author, version, about)]
+   27|       |pub struct Cli {
+   28|       |    #[arg(long, default_value = ".", global = true)]
+   29|       |    pub root: PathBuf,
+   30|       |
+   31|       |    #[arg(long, global = true)]
+   32|       |    pub config: Option<PathBuf>,
+   33|       |
+   34|       |    #[arg(long, global = true)]
+   35|       |    pub playwright_config: Vec<PathBuf>,
+   36|       |
+   37|       |    #[arg(long, global = true)]
+   38|       |    pub project: Option<String>,
+   39|       |
+   40|       |    #[arg(long, global = true)]
+   41|       |    pub json: bool,
+   42|       |
+   43|       |    #[arg(long, global = true)]
+   44|       |    pub assert_conditional_tests: bool,
+   45|       |
+   46|       |    #[arg(long, global = true)]
+   47|       |    pub allow_skipped_tests: bool,
+   48|       |
+   49|       |    #[arg(
+   50|       |        long,
+   51|       |        global = true,
+   52|       |        help = "Fail check when exact test ID values are used more than once"
+   53|       |    )]
+   54|       |    pub assert_unique_test_ids: bool,
+   55|       |
+   56|       |    #[arg(
+   57|       |        long,
+   58|       |        global = true,
+   59|       |        help = "Fail check when exact HTML id values are used more than once"
+   60|       |    )]
+   61|       |    pub assert_unique_html_ids: bool,
+   62|       |
+   63|       |    #[arg(
+   64|       |        long,
+   65|       |        global = true,
+   66|       |        help = "Deprecated: use --assert-unique-test-ids and --assert-unique-html-ids"
+   67|       |    )]
+   68|       |    pub assert_unique_selectors: bool,
+   69|       |
+   70|       |    #[command(subcommand)]
+   71|       |    pub command: Command,
+   72|       |}
+   73|       |
+   74|       |#[derive(Subcommand, Clone)]
+   75|       |pub enum Command {
+   76|       |    Check,
+   77|       |    Edges,
+   78|       |    Related {
+   79|       |        #[arg(required = true, num_args = 1..)]
+   80|       |        files: Vec<PathBuf>,
+   81|       |    },
+   82|       |}
+   83|       |
+   84|       |#[derive(Serialize)]
+   85|       |#[serde(rename_all = "camelCase")]
+   86|       |struct Summary {
+   87|       |    total_routes: usize,
+   88|       |    covered_routes: usize,
+   89|       |    uncovered_routes: usize,
+   90|       |    total_selectors: usize,
+   91|       |    covered_selectors: usize,
+   92|       |    uncovered_selectors: usize,
+   93|       |    duplicate_selectors: usize,
+   94|       |}
+   95|       |
+   96|       |#[derive(Serialize)]
+   97|       |#[serde(rename_all = "camelCase")]
+   98|       |struct CoverageRoute {
+   99|       |    route: String,
+  100|       |    file: String,
+  101|       |    covered: bool,
+  102|       |    tests: Vec<String>,
+  103|       |    urls: Vec<String>,
+  104|       |}
+  105|       |
+  106|       |#[derive(Serialize)]
+  107|       |#[serde(rename_all = "camelCase")]
+  108|       |struct CoverageSelector {
+  109|       |    attribute: String,
+  110|       |    value: String,
+  111|       |    file: String,
+  112|       |    covered: bool,
+  113|       |    unsupported_dynamic: bool,
+  114|       |    tests: Vec<String>,
+  115|       |    selectors: Vec<String>,
+  116|       |}
+  117|       |
+  118|       |#[derive(Serialize)]
+  119|       |#[serde(rename_all = "camelCase")]
+  120|       |struct DuplicateSelector {
+  121|       |    attribute: String,
+  122|       |    value: String,
+  123|       |    file: String,
+  124|       |}
+  125|       |
+  126|       |#[derive(Serialize)]
+  127|       |#[serde(rename_all = "camelCase")]
+  128|       |struct CoverageReport {
+  129|       |    summary: Summary,
+  130|       |    routes: Vec<CoverageRoute>,
+  131|       |    selectors: Vec<CoverageSelector>,
+  132|       |    duplicate_selectors: Vec<DuplicateSelector>,
+  133|       |}
+  134|       |
+  135|       |#[derive(Eq, PartialEq, Ord, PartialOrd, Serialize)]
+  136|       |#[serde(tag = "kind", rename_all = "camelCase")]
+  137|       |enum Edge {
+  138|       |    #[serde(rename_all = "camelCase")]
+  139|       |    Route {
+  140|       |        test_file: String,
+  141|       |        route_file: String,
+  142|       |        route: String,
+  143|       |        url: String,
+  144|       |    },
+  145|       |    #[serde(rename_all = "camelCase")]
+  146|       |    Selector {
+  147|       |        test_file: String,
+  148|       |        app_file: String,
+  149|       |        attribute: String,
+  150|       |        value: String,
+  151|       |        selector: String,
+  152|       |    },
+  153|       |}
+  154|       |
+  155|       |#[derive(Serialize)]
+  156|       |struct EdgeReport {
+  157|       |    edges: Vec<Edge>,
+  158|       |}
+  159|       |
+  160|       |#[derive(Serialize)]
+  161|       |struct RelatedReport {
+  162|       |    tests: Vec<String>,
+  163|       |}
+  164|       |
+  165|       |#[derive(Serialize)]
+  166|       |#[serde(rename_all = "camelCase")]
+  167|       |struct Analysis {
+  168|       |    coverage: CoverageReport,
+  169|       |    edges: EdgeReport,
+  170|       |}
+  171|       |
+  172|       |#[derive(Clone, Copy, Default)]
+  173|       |struct UniqueSelectorPolicy {
+  174|       |    test_ids: bool,
+  175|       |    html_ids: bool,
+  176|       |    aggregate: bool,
+  177|       |    configured_html_id_selector: bool,
+  178|       |}
+  179|       |
+  180|       |struct RouteTarget {
+  181|       |    route_file: String,
+  182|       |    pattern: String,
+  183|       |    segments: Vec<String>,
+  184|       |}
+  185|       |
+  186|       |struct AppSelectorTarget<'a> {
+  187|       |    selector: &'a selectors::AppSelector,
+  188|       |    app_file: String,
+  189|       |    value: String,
+  190|       |}
+  191|       |
+  192|       |#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
+  193|       |struct TestProjectContext {
+  194|       |    base_url: Option<String>,
+  195|       |    test_id_attribute: String,
+  196|       |}
+  197|       |
+  198|       |struct DiscoveredTestFile {
+  199|       |    path: PathBuf,
+  200|       |    contexts: Vec<TestProjectContext>,
+  201|       |}
+  202|       |
+  203|       |struct TestProjectDiscovery {
+  204|       |    context: TestProjectContext,
+  205|       |    test_dir: PathBuf,
+  206|       |    include: GlobSet,
+  207|       |    ignore: GlobSet,
+  208|       |}
+  209|       |
+  210|       |struct TestAnalysisContext<'a> {
+  211|       |    root: &'a Path,
+  212|       |    route_index: &'a RouteIndex,
+  213|       |    app_selector_targets: &'a [AppSelectorTarget<'a>],
+  214|       |    selector_index: &'a SelectorIndex<'a>,
+  215|       |    navigation_helpers: &'a [String],
+  216|       |    selector_regexes: &'a selectors::SelectorRegexes,
+  217|       |    test_policy: playwright_tests::TestPolicy,
+  218|       |}
+  219|       |
+  220|       |#[derive(Default)]
+  221|       |struct RouteIndex {
+  222|       |    root: Vec<RouteTarget>,
+  223|       |    literal_first: HashMap<String, Vec<RouteTarget>>,
+  224|       |    dynamic_first: Vec<RouteTarget>,
+  225|       |}
+  226|       |
+  227|       |#[derive(Default)]
+  228|       |struct SelectorIndex<'a> {
+  229|       |    exact: HashMap<String, HashMap<String, Vec<&'a AppSelectorTarget<'a>>>>,
+  230|       |    by_attribute: HashMap<String, Vec<&'a AppSelectorTarget<'a>>>,
+  231|       |    templates_by_attribute: HashMap<String, Vec<&'a AppSelectorTarget<'a>>>,
+  232|       |}
+  233|       |
+  234|       |type SelectorCoverageKey = (String, String, String);
+  235|       |type CoverageLinks = (BTreeSet<String>, BTreeSet<String>);
+  236|       |
+  237|       |impl TestProjectContext {
+  238|     62|    fn from_project(project: &playwright_config::TestProject) -> Self {
+  239|     62|        Self {
+  240|     62|            base_url: project.base_url.clone(),
+  241|     62|            test_id_attribute: project.test_id_attribute.clone(),
+  242|     62|        }
+  243|     62|    }
+  244|       |}
+  245|       |
+  246|       |impl DiscoveredTestFile {
+  247|     59|    fn base_urls(&self) -> Vec<String> {
+  248|     59|        let mut urls: Vec<String> = self
+  249|     59|            .contexts
+  250|     59|            .iter()
+  251|     61|            .filter_map(|context| context.base_url.clone())
+                           ^59
+  252|     59|            .collect();
+  253|     59|        urls.sort();
+  254|     59|        urls.dedup();
+  255|     59|        urls
+  256|     59|    }
+  257|       |
+  258|     59|    fn test_id_attributes(&self) -> Vec<String> {
+  259|     59|        let mut attributes: Vec<String> = self
+  260|     59|            .contexts
+  261|     59|            .iter()
+  262|     61|            .map(|context| context.test_id_attribute.clone())
+                           ^59
+  263|     59|            .collect();
+  264|     59|        attributes.sort();
+  265|     59|        attributes.dedup();
+  266|     59|        attributes
+  267|     59|    }
+  268|       |}
+  269|       |
+  270|     63|pub fn run(cli: Cli) -> Result<ExitCode> {
+  271|     63|    let root = absolutize(&cli.root).context("failed to resolve --root")?;
+                                                                                      ^0
+  272|     63|    let settings = config::load_settings(
+                      ^62
+  273|     63|        &root,
+  274|     63|        cli.config.as_deref(),
+  275|     63|        &cli.playwright_config,
+  276|     63|        cli.project.clone(),
+  277|      1|    )?;
+  278|     62|    let analysis = analyze_with_policy(
+                      ^53
+  279|     62|        &root,
+  280|     62|        &settings,
+  281|     62|        playwright_tests::TestPolicy {
+  282|     62|            assert_conditional_tests: cli.assert_conditional_tests,
+  283|     62|            allow_skipped_tests: cli.allow_skipped_tests,
+  284|     62|        },
+  285|       |        UniqueSelectorPolicy {
+  286|     62|            test_ids: cli.assert_unique_test_ids || cli.assert_unique_selectors,
+                                                                  ^60
+  287|     62|            html_ids: cli.assert_unique_html_ids
+  288|     59|                || (cli.assert_unique_selectors && settings.html_ids),
+                                                                 ^1
+  289|     62|            aggregate: cli.assert_unique_selectors,
+  290|       |            configured_html_id_selector: false,
+  291|       |        },
+  292|      9|    )?;
+  293|     53|    match cli.command {
+  294|       |        Command::Check => {
+  295|     42|            if cli.json {
+  296|     24|                println!("{}", serde_json::to_string_pretty(&analysis.coverage)?);
+                                                                                             ^0
+  297|     18|            } else {
+  298|     18|                print_coverage_text(&analysis.coverage);
+  299|     18|            }
+  300|     42|            if analysis.coverage.summary.uncovered_routes > 0
+  301|     30|                || analysis.coverage.summary.uncovered_selectors > 0
+  302|     25|                || analysis.coverage.summary.duplicate_selectors > 0
+  303|       |            {
+  304|     20|                Ok(ExitCode::from(1))
+  305|       |            } else {
+  306|     22|                Ok(ExitCode::SUCCESS)
+  307|       |            }
+  308|       |        }
+  309|       |        Command::Edges => {
+  310|      7|            if cli.json {
+  311|      3|                println!("{}", serde_json::to_string_pretty(&analysis.edges)?);
+                                                                                          ^0
+  312|      4|            } else {
+  313|      4|                print_edges_text(&analysis.edges);
+  314|      4|            }
+  315|      7|            Ok(ExitCode::SUCCESS)
+  316|       |        }
+  317|      4|        Command::Related { files } => {
+  318|      4|            let related = build_related_report(&root, &analysis.edges.edges, &files);
+  319|      4|            if cli.json {
+  320|      1|                println!("{}", serde_json::to_string_pretty(&related)?);
+                                                                                   ^0
+  321|      3|            } else {
+  322|      3|                print_related_text(&related);
+  323|      3|            }
+  324|      4|            Ok(ExitCode::SUCCESS)
+  325|       |        }
+  326|       |    }
+  327|     63|}
+  328|       |
+  329|       |#[cfg(test)]
+  330|      2|fn analyze(root: &Path, settings: &Settings) -> Result<Analysis> {
+  331|      2|    analyze_with_policy(
+  332|      2|        root,
+  333|      2|        settings,
+  334|      2|        playwright_tests::TestPolicy::default(),
+  335|      2|        UniqueSelectorPolicy::default(),
+  336|       |    )
+  337|      2|}
+  338|       |
+  339|     64|fn analyze_with_policy(
+  340|     64|    root: &Path,
+  341|     64|    settings: &Settings,
+  342|     64|    test_policy: playwright_tests::TestPolicy,
+  343|     64|    mut unique_selector_policy: UniqueSelectorPolicy,
+  344|     64|) -> Result<Analysis> {
+  345|     64|    unique_selector_policy.configured_html_id_selector = has_configured_html_id_selector(settings);
+  346|     64|    let route_root = root.join(&settings.frontend_root);
+  347|     64|    let routes = routes::collect_routes(&route_root)?;
+                                                                  ^0
+  348|     64|    if routes.is_empty() {
+  349|      3|        anyhow::bail!(
+  350|       |            "no Next.js page routes found under {}",
+  351|      3|            route_root
+  352|      3|                .strip_prefix(root)
+  353|      3|                .unwrap_or(&route_root)
+  354|      3|                .display()
+  355|       |        );
+  356|     61|    }
+  357|       |
+  358|     61|    let playwright = playwright_config::load_many(
+                      ^55
+  359|     61|        root,
+  360|     61|        &settings.playwright_configs,
+  361|     61|        settings.project.as_deref(),
+  362|      6|    )?;
+  363|     55|    let test_files = discover_test_files(root, settings, &playwright)?;
+                                                                                   ^0
+  364|     55|    let selector_regexes = selectors::compile_selector_regexes_with_html_ids(
+  365|     55|        &settings.selector_attributes,
+  366|     55|        &settings.component_selector_attributes,
+  367|     55|        settings.html_ids,
+  368|       |    );
+  369|     55|    let unique_html_id_scan = unique_selector_policy.html_ids && !settings.html_ids;
+                                                                               ^3
+  370|     55|    let app_selector_regexes = selectors::compile_selector_regexes_with_html_ids(
+  371|     55|        &settings.selector_attributes,
+  372|     55|        &settings.component_selector_attributes,
+  373|     55|        settings.html_ids || unique_html_id_scan,
+                                           ^53
+  374|       |    );
+  375|     55|    let app_selector_occurrences = if settings.selector_attributes.is_empty()
+  376|      5|        && settings.component_selector_attributes.is_empty()
+  377|      4|        && !settings.html_ids
+  378|      4|        && !unique_html_id_scan
+  379|       |    {
+  380|      4|        Vec::new()
+  381|       |    } else {
+  382|     51|        collect_app_selector_occurrences(root, settings, &app_selector_regexes)?
+                                                                                             ^0
+  383|       |    };
+  384|     55|    let mut app_selectors: Vec<_> = app_selector_occurrences
+  385|     55|        .iter()
+  386|     61|        .filter(|selector| {
+                       ^55
+  387|     61|            settings.html_ids
+  388|     57|                || unique_selector_policy.configured_html_id_selector
+  389|     56|                || selector.attribute != selectors::HTML_ID_ATTRIBUTE
+  390|     61|        })
+  391|     55|        .cloned()
+  392|     55|        .collect();
+  393|     55|    app_selectors.sort();
+  394|     55|    app_selectors.dedup();
+  395|     55|    let route_index = route_index(root, &routes);
+  396|     55|    let app_selector_targets = app_selector_targets(root, &app_selectors);
+  397|     55|    let selector_index = selector_index(&app_selector_targets);
+  398|     55|    let test_analysis = TestAnalysisContext {
+  399|     55|        root,
+  400|     55|        route_index: &route_index,
+  401|     55|        app_selector_targets: &app_selector_targets,
+  402|     55|        selector_index: &selector_index,
+  403|     55|        navigation_helpers: &settings.navigation_helpers,
+  404|     55|        selector_regexes: &selector_regexes,
+  405|     55|        test_policy,
+  406|     55|    };
+  407|       |
+  408|     55|    let mut edges: Vec<Edge> = test_files
+                      ^54        ^54
+  409|     55|        .par_iter()
+  410|     59|        .try_fold(Vec::new, |mut edges, test_file| -> Result<_> {
+                       ^55
+  411|     59|            edges.extend(analyze_test_file(test_file, &test_analysis)?);
+                                ^58                                                ^1
+  412|     58|            Ok(edges)
+  413|     59|        })
+  414|     74|        .try_reduce(Vec::new, |mut left, mut right| -> Result<_> {
+                       ^55
+  415|     74|            left.append(&mut right);
+  416|     74|            Ok(left)
+  417|     74|        })?;
+                        ^1
+  418|     54|    edges.sort();
+  419|     54|    edges.dedup();
+  420|       |
+  421|     54|    let edge_report = EdgeReport { edges };
+  422|     54|    let coverage = build_coverage(
+  423|     54|        root,
+  424|     54|        &routes,
+  425|     54|        &app_selectors,
+  426|     54|        &app_selector_occurrences,
+  427|     54|        &edge_report.edges,
+  428|     54|        settings,
+  429|     54|        unique_selector_policy,
+  430|       |    );
+  431|     54|    Ok(Analysis {
+  432|     54|        coverage,
+  433|     54|        edges: edge_report,
+  434|     54|    })
+  435|     64|}
+  436|       |
+  437|     59|fn analyze_test_file(
+  438|     59|    test_file: &DiscoveredTestFile,
+  439|     59|    context: &TestAnalysisContext<'_>,
+  440|     59|) -> Result<Vec<Edge>> {
+  441|     59|    let source = std::fs::read_to_string(&test_file.path)?;
+                                                                       ^0
+  442|     59|    let rel_test_file = relative_string(context.root, &test_file.path);
+  443|     59|    let mut edges = Vec::new();
+  444|     59|    let base_urls = test_file.base_urls();
+  445|     59|    let test_id_attributes = test_file.test_id_attributes();
+  446|       |
+  447|     58|    let (raw_urls, playwright_selectors) =
+  448|     59|        ast::with_program(&test_file.path, &source, |program, source| {
+                                                                                    ^58
+  449|     58|            let raw_urls = playwright_urls::extract_playwright_url_occurrences_from_program(
+  450|     58|                program,
+  451|     58|                source,
+  452|     58|                context.navigation_helpers,
+  453|       |            );
+  454|     58|            let playwright_selectors = if context.app_selector_targets.is_empty() {
+  455|     24|                Vec::new()
+  456|       |            } else {
+  457|     34|                selectors::extract_playwright_selector_occurrences_from_program(
+  458|     34|                    program,
+  459|     34|                    source,
+  460|     34|                    context.selector_regexes,
+  461|     34|                    &test_id_attributes,
+  462|       |                )
+  463|       |            };
+  464|     58|            (raw_urls, playwright_selectors)
+  465|     58|        })?;
+                        ^1
+  466|       |
+  467|    102|    for raw_url in raw_urls {
+                                 ^58
+  468|    102|        if !context.test_policy.allows(raw_url.status) {
+  469|      4|            continue;
+  470|     98|        }
+  471|     98|        let Some(url) = normalize_url(&raw_url.value, &base_urls) else {
+                               ^95
+  472|      3|            continue;
+  473|       |        };
+  474|     95|        let ref_segments = matcher::reference_segments(&url);
+  475|     95|        let matching_routes: Vec<&RouteTarget> = context
+  476|     95|            .route_index
+  477|     95|            .candidates(&ref_segments)
+  478|     95|            .into_iter()
+  479|    181|            .filter(|route| matcher::matches_segments(&ref_segments, &route.segments))
+                           ^95
+  480|     95|            .collect();
+  481|     95|        let Some(best_specificity) = matching_routes
+                               ^91
+  482|     95|            .iter()
+  483|    118|            .map(|route| route_specificity(&route.segments))
+                           ^95
+  484|     95|            .max()
+  485|       |        else {
+  486|      4|            continue;
+  487|       |        };
+  488|     94|        for route in matching_routes
+                                   ^91
+  489|     91|            .into_iter()
+  490|    118|            .filter(|route| route_specificity(&route.segments) == best_specificity)
+                           ^91
+  491|     94|        {
+  492|     94|            edges.push(Edge::Route {
+  493|     94|                test_file: rel_test_file.clone(),
+  494|     94|                route_file: route.route_file.clone(),
+  495|     94|                route: route.pattern.clone(),
+  496|     94|                url: url.clone(),
+  497|     94|            });
+  498|     94|        }
+  499|       |    }
+  500|       |
+  501|     58|    if !context.app_selector_targets.is_empty() {
+  502|     45|        for playwright_selector in &playwright_selectors {
+                                                 ^34
+  503|     45|            if !context.test_policy.allows(playwright_selector.status) {
+  504|      3|                continue;
+  505|     42|            }
+  506|     45|            for app_selector in context.selector_index.matches(&playwright_selector.value) {
+                                              ^42                    ^42     ^42
+  507|     45|                edges.push(Edge::Selector {
+  508|     45|                    test_file: rel_test_file.clone(),
+  509|     45|                    app_file: app_selector.app_file.clone(),
+  510|     45|                    attribute: app_selector.selector.attribute.clone(),
+  511|     45|                    value: app_selector.value.clone(),
+  512|     45|                    selector: playwright_selector.value.selector.clone(),
+  513|     45|                });
+  514|     45|            }
+  515|       |        }
+  516|     24|    }
+  517|       |
+  518|     58|    Ok(edges)
+  519|     59|}
+  520|       |
+  521|     55|fn route_index(root: &Path, routes: &[Route]) -> RouteIndex {
+  522|     55|    let mut index = RouteIndex::default();
+  523|    115|    for route in routes {
+                               ^55
+  524|    115|        let target = RouteTarget {
+  525|    115|            route_file: relative_string(root, &route.file),
+  526|    115|            pattern: route.pattern.clone(),
+  527|    115|            segments: matcher::pattern_segments(&route.pattern)
+  528|    115|                .into_iter()
+  529|    115|                .map(str::to_string)
+  530|    115|                .collect(),
+  531|    115|        };
+  532|    115|        match target.segments.first() {
+  533|     25|            None => index.root.push(target),
+  534|     90|            Some(first) if is_dynamic_pattern_segment(first) => index.dynamic_first.push(target),
+                               ^3                                        ^3   ^3                  ^3   ^3
+  535|     87|            Some(first) => index
+  536|     87|                .literal_first
+  537|     87|                .entry(first.clone())
+  538|     87|                .or_default()
+  539|     87|                .push(target),
+  540|       |        }
+  541|       |    }
+  542|     55|    index
+  543|     55|}
+  544|       |
+  545|     56|fn app_selector_targets<'a>(
+  546|     56|    root: &Path,
+  547|     56|    app_selectors: &'a [selectors::AppSelector],
+  548|     56|) -> Vec<AppSelectorTarget<'a>> {
+  549|     56|    app_selectors
+  550|     56|        .iter()
+  551|     56|        .map(|selector| AppSelectorTarget {
+  552|     61|            selector,
+  553|     61|            app_file: relative_string(root, &selector.file),
+  554|     61|            value: selector.display_value(),
+  555|     61|        })
+  556|     56|        .collect()
+  557|     56|}
+  558|       |
+  559|     56|fn selector_index<'a>(targets: &'a [AppSelectorTarget<'a>]) -> SelectorIndex<'a> {
+  560|     56|    let mut index = SelectorIndex::default();
+  561|     61|    for target in targets {
+                                ^56
+  562|     61|        if target.selector.unsupported_dynamic() {
+  563|      5|            continue;
+  564|     56|        }
+  565|     56|        index
+  566|     56|            .by_attribute
+  567|     56|            .entry(target.selector.attribute.clone())
+  568|     56|            .or_default()
+  569|     56|            .push(target);
+  570|     56|        if let selectors::AppSelectorValue::Exact(value) = &target.selector.value {
+                                                                ^53
+  571|     53|            index
+  572|     53|                .exact
+  573|     53|                .entry(target.selector.attribute.clone())
+  574|     53|                .or_default()
+  575|     53|                .entry(value.clone())
+  576|     53|                .or_default()
+  577|     53|                .push(target);
+  578|     53|        }
+                      ^3
+  579|     53|        if matches!(
+  580|     56|            target.selector.value,
+  581|       |            selectors::AppSelectorValue::Template(_)
+  582|      3|        ) {
+  583|      3|            index
+  584|      3|                .templates_by_attribute
+  585|      3|                .entry(target.selector.attribute.clone())
+  586|      3|                .or_default()
+  587|      3|                .push(target);
+  588|     53|        }
+  589|       |    }
+  590|     56|    index
+  591|     56|}
+  592|       |
+  593|       |impl RouteIndex {
+  594|     95|    fn candidates<'a>(&'a self, reference_segments: &[&str]) -> Vec<&'a RouteTarget> {
+  595|     95|        if reference_segments.is_empty() {
+  596|     23|            return self.root.iter().chain(&self.dynamic_first).collect();
+  597|     72|        }
+  598|       |
+  599|     72|        let mut candidates: Vec<&RouteTarget> = self.dynamic_first.iter().collect();
+  600|     72|        if let Some(literal) = self.literal_first.get(reference_segments[0]) {
+                                  ^69
+  601|     69|            candidates.extend(literal);
+  602|     69|        }
+                      ^3
+  603|     72|        candidates
+  604|     95|    }
+  605|       |}
+  606|       |
+  607|       |impl<'a> SelectorIndex<'a> {
+  608|     46|    fn matches(
+  609|     46|        &'a self,
+  610|     46|        playwright_selector: &selectors::PlaywrightSelector,
+  611|     46|    ) -> Vec<&'a AppSelectorTarget<'a>> {
+  612|     46|        let mut matches = Vec::new();
+  613|     46|        if let Some(value) = playwright_selector.exact_value() {
+                                  ^41
+  614|     41|            if let Some(by_value) = self.exact.get(&playwright_selector.attribute) {
+                                      ^38
+  615|     38|                if let Some(exact) = by_value.get(value) {
+                                          ^36
+  616|     36|                    matches.extend(exact.iter().copied());
+  617|     36|                }
+                              ^2
+  618|      3|            }
+  619|     41|            let Some(attribute_targets) = self
+                                   ^3
+  620|     41|                .templates_by_attribute
+  621|     41|                .get(&playwright_selector.attribute)
+  622|       |            else {
+  623|     38|                return matches;
+  624|       |            };
+  625|      3|            for target in attribute_targets {
+  626|      3|                if target.selector.matches_playwright(playwright_selector) {
+  627|      2|                    matches.push(*target);
+  628|      2|                }
+                              ^1
+  629|       |            }
+  630|      3|            return matches;
+  631|      5|        }
+  632|       |
+  633|      5|        if let Some(attribute_targets) = self.by_attribute.get(&playwright_selector.attribute) {
+                                  ^4
+  634|      6|            for target in attribute_targets {
+                                        ^4
+  635|      6|                if target.selector.matches_playwright(playwright_selector) {
+  636|      3|                    matches.push(*target);
+  637|      3|                }
+  638|       |            }
+  639|      1|        }
+  640|      5|        matches
+  641|     46|    }
+  642|       |}
+  643|       |
+  644|    240|fn route_specificity(segments: &[String]) -> Vec<u8> {
+  645|    240|    let mut specificity: Vec<u8> = segments
+  646|    240|        .iter()
+  647|    367|        .map(|segment| {
+                       ^240
+  648|    367|            if segment == "**" {
+  649|      5|                0
+  650|    362|            } else if segment == "*" {
+  651|      4|                1
+  652|    358|            } else if segment.starts_with(':') {
+  653|    152|                2
+  654|       |            } else {
+  655|    206|                3
+  656|       |            }
+  657|    367|        })
+  658|    240|        .collect();
+  659|    240|    specificity.push(4);
+  660|    240|    specificity
+  661|    240|}
+  662|       |
+  663|       |#[cfg(test)]
+  664|      2|fn collect_app_selectors(
+  665|      2|    root: &Path,
+  666|      2|    settings: &Settings,
+  667|      2|    selector_regexes: &selectors::SelectorRegexes,
+  668|      2|) -> Result<Vec<selectors::AppSelector>> {
+  669|      2|    let mut app_selectors = collect_app_selector_occurrences(root, settings, selector_regexes)?;
+                      ^1                                                                                    ^1
+  670|      1|    app_selectors.sort();
+  671|      1|    app_selectors.dedup();
+  672|       |
+  673|      1|    Ok(app_selectors)
+  674|      2|}
+  675|       |
+  676|     53|fn collect_app_selector_occurrences(
+  677|     53|    root: &Path,
+  678|     53|    settings: &Settings,
+  679|     53|    selector_regexes: &selectors::SelectorRegexes,
+  680|     53|) -> Result<Vec<selectors::AppSelector>> {
+  681|     53|    let include = build_globset(&settings.selector_include)?;
+                                                                         ^0
+  682|     53|    let exclude = build_globset(&settings.selector_exclude)?;
+                                                                         ^0
+  683|     53|    let include_all = settings.selector_include.is_empty();
+  684|     53|    let source_files =
+  685|     53|        collect_selector_source_files(root, settings, &include, &exclude, include_all);
+  686|     53|    let app_selectors = source_files
+                      ^52
+  687|     53|        .par_iter()
+  688|    125|        .try_fold(Vec::new, |mut app_selectors, path| -> Result<_> {
+                       ^53
+  689|    125|            let source = std::fs::read_to_string(path)?;
+                                                                    ^0
+  690|    125|            app_selectors.extend(selectors::extract_app_selectors_with_regexes(
+                                        ^124
+  691|    125|                path,
+  692|    125|                &source,
+  693|    125|                selector_regexes,
+  694|      1|            )?);
+  695|    124|            Ok(app_selectors)
+  696|    125|        })
+  697|    196|        .try_reduce(Vec::new, |mut left, mut right| -> Result<_> {
+                       ^53
+  698|    196|            left.append(&mut right);
+  699|    196|            Ok(left)
+  700|    196|        })?;
+                        ^1
+  701|     52|    Ok(app_selectors)
+  702|     53|}
+  703|       |
+  704|     53|fn collect_selector_source_files(
+  705|     53|    root: &Path,
+  706|     53|    settings: &Settings,
+  707|     53|    include: &GlobSet,
+  708|     53|    exclude: &GlobSet,
+  709|     53|    include_all: bool,
+  710|     53|) -> Vec<PathBuf> {
+  711|     53|    let mut source_files = BTreeSet::new();
+  712|     54|    for selector_root in &settings.selector_roots {
+                                       ^53
+  713|     54|        let source_root = root.join(selector_root);
+  714|     54|        if !source_root.exists() {
+  715|      1|            continue;
+  716|     53|        }
+  717|       |
+  718|    127|        for path in walk_files(&source_root) {
+                                  ^53        ^53
+  719|    127|            if !selectors::is_source_file(&path) {
+  720|      1|                continue;
+  721|    126|            }
+  722|    126|            let rel = relative_string(root, &path);
+  723|    126|            if (!include_all && !include.is_match(&rel)) || exclude.is_match(&rel) {
+                                              ^0^0
+  724|      1|                continue;
+  725|    125|            }
+  726|       |
+  727|    125|            source_files.insert(path);
+  728|       |        }
+  729|       |    }
+  730|       |
+  731|     53|    source_files.into_iter().collect()
+  732|     53|}
+  733|       |
+  734|     57|fn discover_test_files(
+  735|     57|    root: &Path,
+  736|     57|    settings: &Settings,
+  737|     57|    playwright: &playwright_config::PlaywrightConfig,
+  738|     57|) -> Result<Vec<DiscoveredTestFile>> {
+  739|     57|    let project_discovery = build_project_discovery(root, playwright)?;
+                                                                                   ^0
+  740|     57|    let all_contexts = test_project_contexts(&project_discovery);
+  741|     57|    if !settings.test_include.is_empty() {
+  742|     21|        let include = build_globset(&settings.test_include)?;
+                                                                         ^0
+  743|     21|        let exclude = build_globset(&settings.test_exclude)?;
+                                                                         ^0
+  744|     21|        let mut files = Vec::new();
+  745|    120|        for path in walk_files(root).into_iter().filter(|path| {
+                          ^26     ^21        ^21   ^21         ^21
+  746|    120|            let rel = relative_string(root, path);
+  747|    120|            include.is_match(&rel) && !exclude.is_match(&rel)
+                                                    ^26^26
+  748|    120|        }) {
+  749|     26|            let mut contexts = matching_project_contexts(root, &project_discovery, &path);
+  750|     26|            if contexts.is_empty() {
+  751|      2|                contexts = all_contexts.clone();
+  752|     24|            }
+  753|     26|            files.push(DiscoveredTestFile { contexts, path });
+  754|       |        }
+  755|     21|        return Ok(files);
+  756|     36|    }
+  757|       |
+  758|     36|    let yaml_exclude = build_globset(&settings.test_exclude)?;
+                                                                          ^0
+  759|     36|    let mut files: BTreeMap<PathBuf, BTreeSet<TestProjectContext>> = BTreeMap::new();
+  760|     36|    let mut projects_by_test_dir: HashMap<PathBuf, Vec<&TestProjectDiscovery>> = HashMap::new();
+  761|       |
+  762|     40|    for project_discovery in &project_discovery {
+                                           ^36
+  763|     40|        if !project_discovery.test_dir.exists() {
+  764|      1|            continue;
+  765|     39|        }
+  766|     39|        projects_by_test_dir
+  767|     39|            .entry(project_discovery.test_dir.clone())
+  768|     39|            .or_default()
+  769|     39|            .push(project_discovery);
+  770|       |    }
+  771|       |
+  772|     38|    for (test_dir, projects) in projects_by_test_dir {
+                                              ^36
+  773|     91|        for path in walk_files(&test_dir) {
+                                  ^38        ^38
+  774|     91|            let rel_root = relative_string(root, &path);
+  775|     91|            if yaml_exclude.is_match(&rel_root) {
+  776|      1|                continue;
+  777|     90|            }
+  778|     90|            let rel_test = relative_string(&test_dir, &path);
+  779|     90|            let abs = slash_path(&path);
+  780|     90|            let mut contexts_to_add = Vec::new();
+  781|     91|            for project_discovery in &projects {
+                                                   ^90
+  782|     91|                let included = project_discovery.include.is_match(&rel_root)
+  783|     56|                    || project_discovery.include.is_match(&rel_test)
+  784|     56|                    || project_discovery.include.is_match(&abs);
+  785|     91|                let ignored = project_discovery.ignore.is_match(&rel_root)
+  786|     91|                    || project_discovery.ignore.is_match(&rel_test)
+  787|     91|                    || project_discovery.ignore.is_match(&abs);
+  788|     91|                if included && !ignored {
+                                             ^35
+  789|     35|                    contexts_to_add.push(project_discovery.context.clone());
+  790|     56|                }
+  791|       |            }
+  792|     90|            if !contexts_to_add.is_empty() {
+  793|     34|                files.entry(path).or_default().extend(contexts_to_add);
+  794|     56|            }
+  795|       |        }
+  796|       |    }
+  797|       |
+  798|     36|    Ok(files
+  799|     36|        .into_iter()
+  800|     36|        .map(|(path, contexts)| DiscoveredTestFile {
+  801|     34|            path,
+  802|     34|            contexts: contexts.into_iter().collect(),
+  803|     34|        })
+  804|     36|        .collect())
+  805|     57|}
+  806|       |
+  807|     57|fn build_project_discovery(
+  808|     57|    root: &Path,
+  809|     57|    playwright: &playwright_config::PlaywrightConfig,
+  810|     57|) -> Result<Vec<TestProjectDiscovery>> {
+  811|     57|    let mut discovery = Vec::new();
+  812|     62|    for project in &playwright.projects {
+                                 ^57
+  813|     62|        discovery.push(TestProjectDiscovery {
+  814|     62|            context: TestProjectContext::from_project(project),
+  815|     62|            test_dir: project.test_dir(root),
+  816|     62|            include: build_globset(&project.test_match)?,
+                                                                     ^0
+  817|     62|            ignore: build_globset(&project.test_ignore)?,
+                                                                     ^0
+  818|       |        });
+  819|       |    }
+  820|     57|    Ok(discovery)
+  821|     57|}
+  822|       |
+  823|     57|fn test_project_contexts(projects: &[TestProjectDiscovery]) -> Vec<TestProjectContext> {
+  824|     57|    let mut contexts: Vec<TestProjectContext> = projects
+  825|     57|        .iter()
+  826|     62|        .map(|project| project.context.clone())
+                       ^57
+  827|     57|        .collect();
+  828|     57|    contexts.sort();
+  829|     57|    contexts.dedup();
+  830|     57|    contexts
+  831|     57|}
+  832|       |
+  833|     26|fn matching_project_contexts(
+  834|     26|    root: &Path,
+  835|     26|    projects: &[TestProjectDiscovery],
+  836|     26|    path: &Path,
+  837|     26|) -> Vec<TestProjectContext> {
+  838|     26|    let rel_root = relative_string(root, path);
+  839|     26|    let mut contexts = BTreeSet::new();
+  840|     29|    for project in projects {
+                                 ^26
+  841|     29|        if !path.starts_with(&project.test_dir) {
+  842|      4|            continue;
+  843|     25|        }
+  844|       |
+  845|     25|        let rel_test = relative_string(&project.test_dir, path);
+  846|     25|        let abs = slash_path(path);
+  847|     25|        let included = project.include.is_match(&rel_root)
+  848|      1|            || project.include.is_match(&rel_test)
+  849|      1|            || project.include.is_match(&abs);
+  850|     25|        let ignored = project.ignore.is_match(&rel_root)
+  851|     25|            || project.ignore.is_match(&rel_test)
+  852|     25|            || project.ignore.is_match(&abs);
+  853|     25|        if included && !ignored {
+                                     ^24
+  854|     24|            contexts.insert(project.context.clone());
+  855|     24|        }
+                      ^1
+  856|       |    }
+  857|     26|    contexts.into_iter().collect()
+  858|     26|}
+  859|       |
+  860|     59|fn build_coverage(
+  861|     59|    root: &Path,
+  862|     59|    routes: &[Route],
+  863|     59|    app_selectors: &[selectors::AppSelector],
+  864|     59|    app_selector_occurrences: &[selectors::AppSelector],
+  865|     59|    edges: &[Edge],
+  866|     59|    settings: &Settings,
+  867|     59|    unique_selector_policy: UniqueSelectorPolicy,
+  868|     59|) -> CoverageReport {
+  869|     59|    let ignored: Vec<String> = settings.ignore_routes.clone();
+  870|     59|    let mut by_route: BTreeMap<&str, (BTreeSet<String>, BTreeSet<String>)> = BTreeMap::new();
+  871|     59|    let mut by_selector: BTreeMap<SelectorCoverageKey, CoverageLinks> = BTreeMap::new();
+  872|       |
+  873|    141|    for edge in edges {
+                              ^59
+  874|    141|        match edge {
+  875|       |            Edge::Route {
+  876|     95|                test_file,
+  877|     95|                route,
+  878|     95|                url,
+  879|       |                ..
+  880|       |            } => {
+  881|     95|                let entry = by_route
+  882|     95|                    .entry(route.as_str())
+  883|     95|                    .or_insert_with(|| (BTreeSet::new(), BTreeSet::new()));
+                                                      ^90              ^90
+  884|     95|                entry.0.insert(test_file.clone());
+  885|     95|                entry.1.insert(url.clone());
+  886|       |            }
+  887|       |            Edge::Selector {
+  888|     46|                test_file,
+  889|     46|                app_file,
+  890|     46|                attribute,
+  891|     46|                value,
+  892|     46|                selector,
+  893|       |            } => {
+  894|     46|                let entry = by_selector
+  895|     46|                    .entry((app_file.clone(), attribute.clone(), value.clone()))
+  896|     46|                    .or_insert_with(|| (BTreeSet::new(), BTreeSet::new()));
+  897|     46|                entry.0.insert(test_file.clone());
+  898|     46|                entry.1.insert(selector.clone());
+  899|       |            }
+  900|       |        }
+  901|       |    }
+  902|       |
+  903|     59|    let mut coverage_routes = Vec::new();
+  904|    117|    for route in routes {
+                               ^59
+  905|    117|        let (tests, urls) = by_route
+  906|    117|            .get(route.pattern.as_str())
+  907|    117|            .cloned()
+  908|    117|            .unwrap_or_default();
+  909|    117|        let covered = !tests.is_empty() || is_ignored(&route.pattern, &ignored);
+                                                         ^24        ^24             ^24
+  910|    117|        coverage_routes.push(CoverageRoute {
+  911|    117|            route: route.pattern.clone(),
+  912|    117|            file: relative_string(root, &route.file),
+  913|    117|            covered,
+  914|    117|            tests: tests.into_iter().collect(),
+  915|    117|            urls: urls.into_iter().collect(),
+  916|    117|        });
+  917|       |    }
+  918|       |
+  919|     61|    coverage_routes.sort_by(|a, b| a.route.cmp(&b.route).then_with(|| a.file.cmp(&b.file)));
+                  ^59             ^59                                               ^4     ^4  ^4
+  920|     59|    let mut coverage_selectors = Vec::new();
+  921|     63|    for app_selector in app_selectors {
+                                      ^59
+  922|     63|        let app_file = relative_string(root, &app_selector.file);
+  923|     63|        let value = app_selector.display_value();
+  924|     63|        let (tests, selectors) = by_selector
+  925|     63|            .get(&(
+  926|     63|                app_file.clone(),
+  927|     63|                app_selector.attribute.clone(),
+  928|     63|                value.clone(),
+  929|     63|            ))
+  930|     63|            .cloned()
+  931|     63|            .unwrap_or_default();
+  932|     63|        let covered = !tests.is_empty();
+  933|     63|        coverage_selectors.push(CoverageSelector {
+  934|     63|            attribute: app_selector.attribute.clone(),
+  935|     63|            value,
+  936|     63|            file: app_file,
+  937|     63|            covered,
+  938|     63|            unsupported_dynamic: app_selector.unsupported_dynamic(),
+  939|     63|            tests: tests.into_iter().collect(),
+  940|     63|            selectors: selectors.into_iter().collect(),
+  941|     63|        });
+  942|     63|    }
+  943|     59|    coverage_selectors.sort_by(|a, b| {
+                                                    ^31
+  944|     31|        a.attribute
+  945|     31|            .cmp(&b.attribute)
+  946|     31|            .then_with(|| a.value.cmp(&b.value))
+                                        ^23     ^23 ^23
+  947|     31|            .then_with(|| a.file.cmp(&b.file))
+                                        ^7     ^7  ^7
+  948|     31|    });
+  949|       |
+  950|     59|    let total_routes = coverage_routes.len();
+  951|     59|    let covered_routes = coverage_routes.iter().filter(|route| route.covered).count();
+  952|     59|    let uncovered_routes = total_routes.saturating_sub(covered_routes);
+  953|     59|    let total_selectors = coverage_selectors.len();
+  954|     59|    let covered_selectors = coverage_selectors
+  955|     59|        .iter()
+  956|     59|        .filter(|selector| selector.covered)
+  957|     59|        .count();
+  958|     59|    let uncovered_selectors = total_selectors.saturating_sub(covered_selectors);
+  959|     59|    let duplicate_selectors =
+  960|     59|        build_duplicate_selectors(root, app_selector_occurrences, unique_selector_policy);
+  961|     59|    let duplicate_selector_count = duplicate_selectors.len();
+  962|       |
+  963|     59|    CoverageReport {
+  964|     59|        summary: Summary {
+  965|     59|            total_routes,
+  966|     59|            covered_routes,
+  967|     59|            uncovered_routes,
+  968|     59|            total_selectors,
+  969|     59|            covered_selectors,
+  970|     59|            uncovered_selectors,
+  971|     59|            duplicate_selectors: duplicate_selector_count,
+  972|     59|        },
+  973|     59|        routes: coverage_routes,
+  974|     59|        selectors: coverage_selectors,
+  975|     59|        duplicate_selectors,
+  976|     59|    }
+  977|     59|}
+  978|       |
+  979|     63|fn build_duplicate_selectors(
+  980|     63|    root: &Path,
+  981|     63|    app_selectors: &[selectors::AppSelector],
+  982|     63|    policy: UniqueSelectorPolicy,
+  983|     63|) -> Vec<DuplicateSelector> {
+  984|     63|    let mut by_value: BTreeMap<DuplicateSelectorKey<'_>, Vec<&selectors::AppSelector>> =
+  985|     63|        BTreeMap::new();
+  986|     78|    for selector in app_selectors {
+                                  ^63
+  987|     78|        if let selectors::AppSelectorValue::Exact(value) = &selector.value {
+                                                                ^70
+  988|     70|            if policy.aggregate {
+  989|      5|                by_value
+  990|      5|                    .entry(DuplicateSelectorKey::Aggregate(value.as_str()))
+  991|      5|                    .or_default()
+  992|      5|                    .push(selector);
+  993|     65|            } else if selector.attribute == selectors::HTML_ID_ATTRIBUTE {
+  994|     11|                if policy.html_ids || (policy.test_ids && policy.configured_html_id_selector) {
+                                                     ^7                 ^2
+  995|      6|                    by_value
+  996|      6|                        .entry(DuplicateSelectorKey::HtmlId(value.as_str()))
+  997|      6|                        .or_default()
+  998|      6|                        .push(selector);
+  999|      6|                }
+                              ^5
+ 1000|     54|            } else if policy.test_ids {
+ 1001|     10|                by_value
+ 1002|     10|                    .entry(DuplicateSelectorKey::TestId(value.as_str()))
+ 1003|     10|                    .or_default()
+ 1004|     10|                    .push(selector);
+ 1005|     44|            }
+ 1006|      8|        }
+ 1007|       |    }
+ 1008|       |
+ 1009|     63|    let mut duplicates = Vec::new();
+ 1010|     63|    for (key, selectors) in by_value {
+                       ^11  ^11
+ 1011|     11|        if selectors.len() < 2 {
+ 1012|      5|            continue;
+ 1013|      6|        }
+ 1014|      6|        let value = key.value().to_string();
+ 1015|     16|        for selector in selectors {
+                                      ^6
+ 1016|     16|            duplicates.push(DuplicateSelector {
+ 1017|     16|                attribute: selector.attribute.clone(),
+ 1018|     16|                value: value.clone(),
+ 1019|     16|                file: relative_string(root, &selector.file),
+ 1020|     16|            });
+ 1021|     16|        }
+ 1022|       |    }
+ 1023|     63|    duplicates.sort_by(|a, b| {
+                                            ^12
+ 1024|     12|        a.value
+ 1025|     12|            .cmp(&b.value)
+ 1026|     12|            .then_with(|| a.file.cmp(&b.file))
+ 1027|     12|            .then_with(|| a.attribute.cmp(&b.attribute))
+                                        ^3          ^3  ^3
+ 1028|     12|    });
+ 1029|     63|    duplicates
+ 1030|     63|}
+ 1031|       |
+ 1032|       |#[derive(Eq, PartialEq, Ord, PartialOrd)]
+ 1033|       |enum DuplicateSelectorKey<'a> {
+ 1034|       |    Aggregate(&'a str),
+ 1035|       |    TestId(&'a str),
+ 1036|       |    HtmlId(&'a str),
+ 1037|       |}
+ 1038|       |
+ 1039|       |impl DuplicateSelectorKey<'_> {
+ 1040|      6|    fn value(&self) -> &str {
+ 1041|      6|        match self {
+ 1042|      6|            Self::Aggregate(value) | Self::TestId(value) | Self::HtmlId(value) => value,
+                          ^2                       ^2                    ^2
+ 1043|       |        }
+ 1044|      6|    }
+ 1045|       |}
+ 1046|       |
+ 1047|     64|fn has_configured_html_id_selector(settings: &Settings) -> bool {
+ 1048|     64|    settings
+ 1049|     64|        .selector_attributes
+ 1050|     64|        .iter()
+ 1051|    102|        .any(|attribute| attribute == selectors::HTML_ID_ATTRIBUTE)
+                       ^64
+ 1052|     63|        || settings
+ 1053|     63|            .component_selector_attributes
+ 1054|     63|            .values()
+ 1055|     63|            .any(|attribute| attribute == selectors::HTML_ID_ATTRIBUTE)
+                                           ^1           ^1
+ 1056|     64|}
+ 1057|       |
+ 1058|     19|fn print_coverage_text(report: &CoverageReport) {
+ 1059|     19|    println!("Routes: {}", report.summary.total_routes);
+ 1060|     19|    println!("Covered routes: {}", report.summary.covered_routes);
+ 1061|     19|    println!("Uncovered routes: {}", report.summary.uncovered_routes);
+ 1062|     19|    println!("Selectors: {}", report.summary.total_selectors);
+ 1063|     19|    println!("Covered selectors: {}", report.summary.covered_selectors);
+ 1064|     19|    println!(
+ 1065|       |        "Uncovered selectors: {}",
+ 1066|       |        report.summary.uncovered_selectors
+ 1067|       |    );
+ 1068|     19|    println!(
+ 1069|       |        "Duplicate selectors: {}",
+ 1070|       |        report.summary.duplicate_selectors
+ 1071|       |    );
+ 1072|       |
+ 1073|     19|    if report.summary.uncovered_routes == 0
+ 1074|     14|        && report.summary.uncovered_selectors == 0
+ 1075|     11|        && report.summary.duplicate_selectors == 0
+ 1076|       |    {
+ 1077|      8|        println!();
+ 1078|      8|        println!("All routes and selectors covered.");
+ 1079|      8|        return;
+ 1080|     11|    }
+ 1081|       |
+ 1082|     11|    if report.summary.uncovered_routes > 0 {
+ 1083|      5|        println!();
+ 1084|      5|        println!("Uncovered routes:");
+ 1085|      8|        for route in report.routes.iter().filter(|route| !route.covered) {
+                          ^7       ^5                   ^5
+ 1086|      7|            println!("  {}  {}", route.route, route.file);
+ 1087|      7|        }
+ 1088|      6|    }
+ 1089|       |
+ 1090|     11|    if report.summary.uncovered_selectors > 0 {
+ 1091|      4|        println!();
+ 1092|      4|        println!("Uncovered selectors:");
+ 1093|      5|        for selector in report.selectors.iter().filter(|selector| !selector.covered) {
+                          ^4          ^4                      ^4
+ 1094|      4|            println!(
+ 1095|      4|                "  [{}=\"{}\"]  {}",
+ 1096|      4|                selector.attribute, selector.value, selector.file
+ 1097|      4|            );
+ 1098|      4|        }
+ 1099|      7|    }
+ 1100|       |
+ 1101|     11|    if report.summary.duplicate_selectors > 0 {
+ 1102|      4|        println!();
+ 1103|      4|        println!("Duplicate selectors:");
+ 1104|      9|        for selector in &report.duplicate_selectors {
+                                      ^4
+ 1105|      9|            println!(
+ 1106|      9|                "  [{}=\"{}\"]  {}",
+ 1107|      9|                selector.attribute, selector.value, selector.file
+ 1108|      9|            );
+ 1109|      9|        }
+ 1110|      7|    }
+ 1111|     19|}
+ 1112|       |
+ 1113|      6|fn print_edges_text(report: &EdgeReport) {
+ 1114|      9|    for edge in &report.edges {
+                              ^6
+ 1115|      9|        match edge {
+ 1116|       |            Edge::Route {
+ 1117|      6|                test_file,
+ 1118|      6|                route_file,
+ 1119|      6|                route,
+ 1120|      6|                url,
+ 1121|      6|            } => println!("{test_file} -> {route_file} ({route}, {url})"),
+ 1122|       |            Edge::Selector {
+ 1123|      3|                test_file,
+ 1124|      3|                app_file,
+ 1125|      3|                attribute,
+ 1126|      3|                value,
+ 1127|      3|                selector,
+ 1128|      3|            } => println!("{test_file} -> {app_file} ([{attribute}=\"{value}\"], {selector})"),
+ 1129|       |        }
+ 1130|       |    }
+ 1131|      6|}
+ 1132|       |
+ 1133|      6|fn build_related_report(root: &Path, edges: &[Edge], files: &[PathBuf]) -> RelatedReport {
+ 1134|      6|    let related_files: BTreeSet<String> = files
+ 1135|      6|        .iter()
+ 1136|      7|        .map(|file| related_input_file(root, file))
+                       ^6
+ 1137|      6|        .collect();
+ 1138|      6|    let mut tests = BTreeSet::new();
+ 1139|       |
+ 1140|     14|    for edge in edges {
+                              ^6
+ 1141|      8|        match edge {
+ 1142|       |            Edge::Route {
+ 1143|      8|                test_file,
+ 1144|      8|                route_file,
+ 1145|       |                ..
+ 1146|      8|            } if related_files.contains(route_file) => {
+                                                                ^4
+ 1147|      4|                tests.insert(test_file.clone());
+ 1148|      4|            }
+ 1149|       |            Edge::Selector {
+ 1150|      6|                test_file,
+ 1151|      6|                app_file,
+ 1152|       |                ..
+ 1153|      6|            } if related_files.contains(app_file) => {
+                                                              ^4
+ 1154|      4|                tests.insert(test_file.clone());
+ 1155|      4|            }
+ 1156|      6|            _ => {}
+ 1157|       |        }
+ 1158|       |    }
+ 1159|       |
+ 1160|      6|    RelatedReport {
+ 1161|      6|        tests: tests.into_iter().collect(),
+ 1162|      6|    }
+ 1163|      6|}
+ 1164|       |
+ 1165|      7|fn related_input_file(root: &Path, file: &Path) -> String {
+ 1166|      7|    if file.is_absolute() {
+ 1167|      1|        return relative_string(root, file);
+ 1168|      6|    }
+ 1169|       |
+ 1170|      6|    let rooted = root.join(file);
+ 1171|      6|    relative_string(root, &rooted)
+ 1172|      7|}
+ 1173|       |
+ 1174|      5|fn print_related_text(report: &RelatedReport) {
+ 1175|      5|    for test in &report.tests {
+                      ^4
+ 1176|      4|        println!("{test}");
+ 1177|      4|    }
+ 1178|      5|}
+ 1179|       |
+ 1180|    107|fn normalize_url(raw: &str, base_urls: &[String]) -> Option<String> {
+ 1181|    107|    if raw.starts_with("//") {
+ 1182|      2|        return None;
+ 1183|    105|    }
+ 1184|       |
+ 1185|    105|    if raw.starts_with('/') {
+ 1186|     92|        return Some(raw.to_string());
+ 1187|     13|    }
+ 1188|       |
+ 1189|     13|    for base_url in base_urls {
+                      ^12
+ 1190|     12|        let base = base_url.trim_end_matches('/');
+ 1191|     12|        if let Some(rest) = raw.strip_prefix(base) {
+                                  ^9
+ 1192|      9|            if rest.is_empty() {
+ 1193|      3|                return Some("/".to_string());
+ 1194|      6|            }
+ 1195|      6|            if rest.starts_with('/') {
+ 1196|      5|                return Some(rest.to_string());
+ 1197|      1|            }
+ 1198|      3|        }
+ 1199|       |    }
+ 1200|       |
+ 1201|      5|    None
+ 1202|    107|}
+ 1203|       |
+ 1204|     94|fn is_dynamic_pattern_segment(segment: &str) -> bool {
+ 1205|     94|    segment.starts_with(':') || segment == "*" || segment == "**"
+                                              ^90               ^89
+ 1206|     94|}
+ 1207|       |
+ 1208|     27|fn is_ignored(route: &str, ignored: &[String]) -> bool {
+ 1209|     27|    ignored
+ 1210|     27|        .iter()
+ 1211|     27|        .any(|pattern| route == pattern || matcher::matches(route, pattern))
+                                     ^4                  ^2               ^2     ^2
+ 1212|     27|}
+ 1213|       |
+ 1214|    309|fn build_globset(patterns: &[String]) -> Result<GlobSet> {
+ 1215|    309|    let mut builder = GlobSetBuilder::new();
+ 1216|    867|    for pattern in patterns {
+                                 ^309
+ 1217|    867|        let glob = GlobBuilder::new(pattern).literal_separator(false).build()?;
+                          ^866                                                             ^1
+ 1218|    866|        builder.add(glob);
+ 1219|       |    }
+ 1220|    308|    Ok(builder.build()?)
+                                    ^0
+ 1221|    309|}
+ 1222|       |
+ 1223|    113|fn walk_files(root: &Path) -> Vec<PathBuf> {
+ 1224|    113|    let mut files: Vec<PathBuf> = WalkDir::new(root)
+ 1225|    113|        .into_iter()
+ 1226|    866|        .filter_entry(|entry| !is_skipped_dir(entry.path()))
+                       ^113
+ 1227|    861|        .filter_map(|entry| entry.ok())
+                       ^113
+ 1228|    861|        .filter(|entry| entry.file_type().is_file())
+                       ^113
+ 1229|    340|        .map(|entry| entry.into_path())
+                       ^113
+ 1230|    113|        .collect();
+ 1231|    113|    files.sort();
+ 1232|    113|    files
+ 1233|    113|}
+ 1234|       |
+ 1235|    868|fn is_skipped_dir(path: &Path) -> bool {
+ 1236|    868|    path.file_name()
+ 1237|    868|        .and_then(|name| name.to_str())
+ 1238|    868|        .is_some_and(|name| {
+ 1239|      6|            matches!(
+ 1240|    868|                name,
+ 1241|    868|                ".git" | "node_modules" | "target" | "dist" | "build" | "coverage" | "test-results"
+                                                        ^862       ^862     ^862      ^862         ^862
+ 1242|       |            )
+ 1243|    868|        })
+ 1244|    868|}
+ 1245|       |
+ 1246|    919|fn relative_string(root: &Path, path: &Path) -> String {
+ 1247|    919|    slash_path(path.strip_prefix(root).unwrap_or(path))
+ 1248|    919|}
+ 1249|       |
+ 1250|  1.03k|fn slash_path(path: &Path) -> String {
+ 1251|  1.03k|    path.to_string_lossy().replace('\\', "/")
+ 1252|  1.03k|}
+ 1253|       |
+ 1254|     65|fn absolutize(path: &Path) -> Result<PathBuf> {
+ 1255|     65|    if path.is_absolute() {
+ 1256|     63|        Ok(path.to_path_buf())
+ 1257|       |    } else {
+ 1258|      2|        Ok(std::env::current_dir()?.join(path))
+                                                ^0
+ 1259|       |    }
+ 1260|     65|}
+ 1261|       |
+ 1262|       |#[cfg(test)]
+ 1263|       |mod tests {
+ 1264|       |    use super::*;
+ 1265|       |    use crate::test_support::fixture_path;
+ 1266|       |
+ 1267|       |    #[test]
+ 1268|      1|    fn normalize_url_handles_relative_absolute_base_and_external() {
+ 1269|      1|        let bases = vec!["http://localhost:3000/".to_string()];
+ 1270|      1|        assert_eq!(
+ 1271|      1|            normalize_url("/users/42", &bases),
+ 1272|      1|            Some("/users/42".to_string())
+ 1273|       |        );
+ 1274|      1|        assert_eq!(
+ 1275|      1|            normalize_url("http://localhost:3000/users/42", &bases),
+ 1276|      1|            Some("/users/42".to_string())
+ 1277|       |        );
+ 1278|      1|        assert_eq!(
+ 1279|      1|            normalize_url("http://localhost:3000", &bases),
+ 1280|      1|            Some("/".to_string())
+ 1281|       |        );
+ 1282|      1|        assert_eq!(normalize_url("http://localhost:3000x", &bases), None);
+ 1283|      1|        assert_eq!(normalize_url("https://example.com/users/42", &bases), None);
+ 1284|      1|    }
+ 1285|       |
+ 1286|       |    #[test]
+ 1287|      1|    fn ignore_routes_match_exact_and_dynamic_patterns() {
+ 1288|      1|        assert!(is_ignored("/settings", &["/settings".to_string()]));
+ 1289|      1|        assert!(is_ignored("/users/42", &["/users/:id".to_string()]));
+ 1290|      1|        assert!(!is_ignored("/admin", &["/settings".to_string()]));
+ 1291|      1|    }
+ 1292|       |
+ 1293|       |    #[test]
+ 1294|      1|    fn skipped_directories_are_detected() {
+ 1295|      1|        assert!(is_skipped_dir(Path::new("node_modules")));
+ 1296|      1|        assert!(!is_skipped_dir(Path::new("src")));
+ 1297|      1|    }
+ 1298|       |
+ 1299|       |    #[test]
+ 1300|      1|    fn normalize_url_handles_edge_cases() {
+ 1301|      1|        let base_urls = vec!["http://localhost:3000".to_string()];
+ 1302|      1|        assert_eq!(normalize_url("//google.com", &base_urls), None);
+ 1303|      1|        assert_eq!(
+ 1304|      1|            normalize_url("http://localhost:3000", &base_urls),
+ 1305|      1|            Some("/".to_string())
+ 1306|       |        );
+ 1307|      1|        assert_eq!(
+ 1308|      1|            normalize_url("http://localhost:3000/", &base_urls),
+ 1309|      1|            Some("/".to_string())
+ 1310|       |        );
+ 1311|      1|        assert_eq!(normalize_url("http://other.com", &base_urls), None);
+ 1312|      1|    }
+ 1313|       |
+ 1314|       |    #[test]
+ 1315|      1|    fn path_helpers_handle_absolute_and_relative_paths() {
+ 1316|      1|        let cwd = std::env::current_dir().unwrap();
+ 1317|      1|        assert_eq!(
+ 1318|      1|            absolutize(Path::new("/tmp")).unwrap(),
+ 1319|      1|            PathBuf::from("/tmp")
+ 1320|       |        );
+ 1321|      1|        assert_eq!(absolutize(Path::new(".")).unwrap(), cwd.join("."));
+ 1322|      1|        assert_eq!(
+ 1323|      1|            relative_string(Path::new("/repo"), Path::new("/other/file.ts")),
+ 1324|       |            "/other/file.ts"
+ 1325|       |        );
+ 1326|      1|    }
+ 1327|       |
+ 1328|       |    #[test]
+ 1329|      1|    fn compiled_route_matching_handles_edge_segments() {
+ 1330|      1|        assert!(is_dynamic_pattern_segment(":id"));
+ 1331|      1|        assert!(is_dynamic_pattern_segment("*"));
+ 1332|      1|        assert!(is_dynamic_pattern_segment("**"));
+ 1333|      1|        assert!(!is_dynamic_pattern_segment("users"));
+ 1334|       |
+ 1335|      1|        assert_eq!(
+ 1336|      1|            matcher::reference_segments("/users/42/?tab=profile"),
+ 1337|      1|            vec!["users", "42"]
+ 1338|       |        );
+ 1339|      1|        assert_eq!(
+ 1340|      1|            matcher::pattern_segments("/users/:id"),
+ 1341|      1|            vec!["users", ":id"]
+ 1342|       |        );
+ 1343|      1|        assert!(matcher::matches_segments(
+ 1344|      1|            &["shop"],
+ 1345|      1|            &["shop".to_string(), "**".to_string()]
+ 1346|       |        ));
+ 1347|      1|        assert!(!matcher::matches_segments(
+ 1348|      1|            &["shop"],
+ 1349|      1|            &["shop".to_string(), "item".to_string()]
+ 1350|      1|        ));
+ 1351|      1|    }
+ 1352|       |
+ 1353|       |    #[test]
+ 1354|      1|    fn route_specificity_prefers_earlier_static_segments_and_exact_end() {
+ 1355|      1|        let foo_dynamic: Vec<String> = matcher::pattern_segments("/foo/:id")
+ 1356|      1|            .into_iter()
+ 1357|      1|            .map(str::to_string)
+ 1358|      1|            .collect();
+ 1359|      1|        let dynamic_bar: Vec<String> = matcher::pattern_segments("/:section/bar")
+ 1360|      1|            .into_iter()
+ 1361|      1|            .map(str::to_string)
+ 1362|      1|            .collect();
+ 1363|      1|        let docs_exact: Vec<String> = matcher::pattern_segments("/docs")
+ 1364|      1|            .into_iter()
+ 1365|      1|            .map(str::to_string)
+ 1366|      1|            .collect();
+ 1367|      1|        let docs_catch_all: Vec<String> = matcher::pattern_segments("/docs/**")
+ 1368|      1|            .into_iter()
+ 1369|      1|            .map(str::to_string)
+ 1370|      1|            .collect();
+ 1371|       |
+ 1372|      1|        assert!(route_specificity(&foo_dynamic) > route_specificity(&dynamic_bar));
+ 1373|      1|        assert!(route_specificity(&docs_exact) > route_specificity(&docs_catch_all));
+ 1374|      1|    }
+ 1375|       |
+ 1376|       |    #[test]
+ 1377|      1|    fn selector_index_matches_exact_template_and_fuzzy_selectors() {
+ 1378|      1|        let root = Path::new("/repo");
+ 1379|      1|        let app_selectors = selectors::extract_app_selectors(
+ 1380|      1|            Path::new("/repo/web/app/page.tsx"),
+ 1381|      1|            r#"
+ 1382|      1|                export function Page({ id }) {
+ 1383|      1|                    return <>
+ 1384|      1|                        <button data-testid="save-button" />
+ 1385|      1|                        <div data-testid={`user-${id}`} />
+ 1386|      1|                        <span data-pw="other" />
+ 1387|      1|                    </>;
+ 1388|      1|                }
+ 1389|      1|            "#,
+ 1390|      1|            &["data-testid".to_string(), "data-pw".to_string()],
+ 1391|      1|            &BTreeMap::new(),
+ 1392|       |        )
+ 1393|      1|        .unwrap();
+ 1394|      1|        let targets = app_selector_targets(root, &app_selectors);
+ 1395|      1|        let index = selector_index(&targets);
+ 1396|       |
+ 1397|      1|        let exact = selectors::extract_playwright_selectors(
+ 1398|      1|            "await page.getByTestId('user-123');",
+ 1399|      1|            &["data-testid".to_string()],
+ 1400|      1|            &["data-testid".to_string()],
+ 1401|       |        );
+ 1402|      1|        assert_eq!(index.matches(&exact[0]).len(), 1);
+ 1403|       |
+ 1404|      1|        let fuzzy = selectors::extract_playwright_selectors(
+ 1405|      1|            r#"await page.locator('[data-testid^="save"]');"#,
+ 1406|      1|            &["data-testid".to_string()],
+ 1407|      1|            &["data-testid".to_string()],
+ 1408|       |        );
+ 1409|      1|        assert_eq!(index.matches(&fuzzy[0]).len(), 1);
+ 1410|       |
+ 1411|      1|        let missing_value = selectors::extract_playwright_selectors(
+ 1412|      1|            r#"await page.locator('[data-testid^="missing"]');"#,
+ 1413|      1|            &["data-testid".to_string()],
+ 1414|      1|            &["data-testid".to_string()],
+ 1415|       |        );
+ 1416|      1|        assert!(index.matches(&missing_value[0]).is_empty());
+ 1417|       |
+ 1418|      1|        let missing_attribute = selectors::extract_playwright_selectors(
+ 1419|      1|            r#"await page.locator('[data-role^="save"]');"#,
+ 1420|      1|            &["data-role".to_string()],
+ 1421|      1|            &["data-role".to_string()],
+ 1422|       |        );
+ 1423|      1|        assert!(index.matches(&missing_attribute[0]).is_empty());
+ 1424|      1|    }
+ 1425|       |
+ 1426|       |    #[test]
+ 1427|      1|    fn build_globset_rejects_invalid_patterns() {
+ 1428|      1|        assert!(build_globset(&["[".to_string()]).is_err());
+ 1429|      1|    }
+ 1430|       |
+ 1431|       |    #[test]
+ 1432|      1|    fn walk_files_returns_files_and_skips_configured_directories() {
+ 1433|      1|        let root = fixture_path(&["main", "walk-files"]);
+ 1434|      1|        let files: Vec<String> = walk_files(&root)
+ 1435|      1|            .into_iter()
+ 1436|      2|            .map(|path| relative_string(&root, &path))
+                           ^1
+ 1437|      1|            .collect();
+ 1438|      1|        assert_eq!(files, vec!["src/a.ts", "src/b.ts"]);
+ 1439|      1|    }
+ 1440|       |
+ 1441|       |    #[test]
+ 1442|      1|    fn collect_app_selectors_skips_missing_roots_and_non_source_files() {
+ 1443|      1|        let root = fixture_path(&["main", "selector-source"]);
+ 1444|      1|        let settings = Settings {
+ 1445|      1|            frontend_root: "web/app".to_string(),
+ 1446|      1|            playwright_configs: vec![],
+ 1447|      1|            project: None,
+ 1448|      1|            test_include: vec![],
+ 1449|      1|            test_exclude: vec![],
+ 1450|      1|            ignore_routes: vec![],
+ 1451|      1|            navigation_helpers: vec![],
+ 1452|      1|            selector_attributes: vec!["data-testid".to_string()],
+ 1453|      1|            component_selector_attributes: BTreeMap::new(),
+ 1454|      1|            html_ids: false,
+ 1455|      1|            selector_roots: vec!["missing".to_string(), "web/app".to_string()],
+ 1456|      1|            selector_include: vec![],
+ 1457|      1|            selector_exclude: vec![],
+ 1458|      1|        };
+ 1459|       |
+ 1460|      1|        let selector_regexes = selectors::compile_selector_regexes(
+ 1461|      1|            &settings.selector_attributes,
+ 1462|      1|            &settings.component_selector_attributes,
+ 1463|       |        );
+ 1464|      1|        let selectors = collect_app_selectors(&root, &settings, &selector_regexes).unwrap();
+ 1465|      1|        assert_eq!(selectors.len(), 1);
+ 1466|      1|        assert_eq!(selectors[0].display_value(), "save");
+ 1467|      1|    }
+ 1468|       |
+ 1469|       |    #[test]
+ 1470|      1|    fn coverage_sort_uses_file_as_tiebreaker() {
+ 1471|      1|        let root = Path::new("/repo");
+ 1472|      1|        let routes = vec![
+ 1473|      1|            Route {
+ 1474|      1|                file: PathBuf::from("/repo/web/app/a/page.tsx"),
+ 1475|      1|                pattern: "/same".to_string(),
+ 1476|      1|            },
+ 1477|      1|            Route {
+ 1478|      1|                file: PathBuf::from("/repo/web/app/b/page.tsx"),
+ 1479|      1|                pattern: "/same".to_string(),
+ 1480|      1|            },
+ 1481|       |        ];
+ 1482|      1|        let settings = Settings {
+ 1483|      1|            frontend_root: "web/app".to_string(),
+ 1484|      1|            playwright_configs: vec![],
+ 1485|      1|            project: None,
+ 1486|      1|            test_include: vec![],
+ 1487|      1|            test_exclude: vec![],
+ 1488|      1|            ignore_routes: vec![],
+ 1489|      1|            navigation_helpers: vec![],
+ 1490|      1|            selector_attributes: vec!["data-testid".to_string(), "data-pw".to_string()],
+ 1491|      1|            component_selector_attributes: BTreeMap::new(),
+ 1492|      1|            html_ids: false,
+ 1493|      1|            selector_roots: vec!["web/app".to_string()],
+ 1494|      1|            selector_include: vec![],
+ 1495|      1|            selector_exclude: vec![],
+ 1496|      1|        };
+ 1497|      1|        let report = build_coverage(
+ 1498|      1|            root,
+ 1499|      1|            &routes,
+ 1500|      1|            &[],
+ 1501|      1|            &[],
+ 1502|      1|            &[],
+ 1503|      1|            &settings,
+ 1504|      1|            UniqueSelectorPolicy::default(),
+ 1505|       |        );
+ 1506|      1|        assert_eq!(report.routes[0].file, "web/app/a/page.tsx");
+ 1507|      1|        assert_eq!(report.routes[1].file, "web/app/b/page.tsx");
+ 1508|      1|    }
+ 1509|       |
+ 1510|       |    #[test]
+ 1511|      1|    fn selector_coverage_sorts_and_counts_uncovered() {
+ 1512|      1|        let root = Path::new("/repo");
+ 1513|      1|        let app_selectors = vec![selectors::AppSelector {
+ 1514|      1|            file: PathBuf::from("/repo/web/app/page.tsx"),
+ 1515|      1|            attribute: "data-testid".to_string(),
+ 1516|      1|            value: selectors::AppSelectorValue::Exact("save".to_string()),
+ 1517|      1|        }];
+ 1518|      1|        let settings = Settings {
+ 1519|      1|            frontend_root: "web/app".to_string(),
+ 1520|      1|            playwright_configs: vec![],
+ 1521|      1|            project: None,
+ 1522|      1|            test_include: vec![],
+ 1523|      1|            test_exclude: vec![],
+ 1524|      1|            ignore_routes: vec![],
+ 1525|      1|            navigation_helpers: vec![],
+ 1526|      1|            selector_attributes: vec!["data-testid".to_string()],
+ 1527|      1|            component_selector_attributes: BTreeMap::new(),
+ 1528|      1|            html_ids: false,
+ 1529|      1|            selector_roots: vec!["web/app".to_string()],
+ 1530|      1|            selector_include: vec![],
+ 1531|      1|            selector_exclude: vec![],
+ 1532|      1|        };
+ 1533|      1|        let report = build_coverage(
+ 1534|      1|            root,
+ 1535|      1|            &[],
+ 1536|      1|            &app_selectors,
+ 1537|      1|            &app_selectors,
+ 1538|      1|            &[],
+ 1539|      1|            &settings,
+ 1540|      1|            UniqueSelectorPolicy::default(),
+ 1541|       |        );
+ 1542|      1|        assert_eq!(report.summary.total_selectors, 1);
+ 1543|      1|        assert_eq!(report.summary.uncovered_selectors, 1);
+ 1544|      1|        assert_eq!(report.selectors[0].file, "web/app/page.tsx");
+ 1545|      1|    }
+ 1546|       |
+ 1547|       |    #[test]
+ 1548|      1|    fn selector_coverage_sort_uses_value_and_file_tiebreakers() {
+ 1549|      1|        let root = Path::new("/repo");
+ 1550|      1|        let app_selectors = vec![
+ 1551|      1|            selectors::AppSelector {
+ 1552|      1|                file: PathBuf::from("/repo/web/app/b.tsx"),
+ 1553|      1|                attribute: "data-testid".to_string(),
+ 1554|      1|                value: selectors::AppSelectorValue::Exact("same".to_string()),
+ 1555|      1|            },
+ 1556|      1|            selectors::AppSelector {
+ 1557|      1|                file: PathBuf::from("/repo/web/app/a.tsx"),
+ 1558|      1|                attribute: "data-testid".to_string(),
+ 1559|      1|                value: selectors::AppSelectorValue::Exact("same".to_string()),
+ 1560|      1|            },
+ 1561|      1|            selectors::AppSelector {
+ 1562|      1|                file: PathBuf::from("/repo/web/app/c.tsx"),
+ 1563|      1|                attribute: "data-testid".to_string(),
+ 1564|      1|                value: selectors::AppSelectorValue::Exact("zzz".to_string()),
+ 1565|      1|            },
+ 1566|       |        ];
+ 1567|      1|        let settings = Settings {
+ 1568|      1|            frontend_root: "web/app".to_string(),
+ 1569|      1|            playwright_configs: vec![],
+ 1570|      1|            project: None,
+ 1571|      1|            test_include: vec![],
+ 1572|      1|            test_exclude: vec![],
+ 1573|      1|            ignore_routes: vec![],
+ 1574|      1|            navigation_helpers: vec![],
+ 1575|      1|            selector_attributes: vec!["data-testid".to_string()],
+ 1576|      1|            component_selector_attributes: BTreeMap::new(),
+ 1577|      1|            html_ids: false,
+ 1578|      1|            selector_roots: vec!["web/app".to_string()],
+ 1579|      1|            selector_include: vec![],
+ 1580|      1|            selector_exclude: vec![],
+ 1581|      1|        };
+ 1582|      1|        let report = build_coverage(
+ 1583|      1|            root,
+ 1584|      1|            &[],
+ 1585|      1|            &app_selectors,
+ 1586|      1|            &app_selectors,
+ 1587|      1|            &[],
+ 1588|      1|            &settings,
+ 1589|      1|            UniqueSelectorPolicy::default(),
+ 1590|       |        );
+ 1591|      1|        assert_eq!(report.selectors[0].file, "web/app/a.tsx");
+ 1592|      1|        assert_eq!(report.selectors[1].file, "web/app/b.tsx");
+ 1593|      1|        assert_eq!(report.selectors[2].value, "zzz");
+ 1594|      1|    }
+ 1595|       |
+ 1596|       |    #[test]
+ 1597|      1|    fn duplicate_selector_report_includes_exact_values_only() {
+ 1598|      1|        let root = Path::new("/repo");
+ 1599|      1|        let app_selectors = vec![
+ 1600|      1|            selectors::AppSelector {
+ 1601|      1|                file: PathBuf::from("/repo/web/app/b.tsx"),
+ 1602|      1|                attribute: "data-pw".to_string(),
+ 1603|      1|                value: selectors::AppSelectorValue::Exact("same".to_string()),
+ 1604|      1|            },
+ 1605|      1|            selectors::AppSelector {
+ 1606|      1|                file: PathBuf::from("/repo/web/app/b.tsx"),
+ 1607|      1|                attribute: "data-pw".to_string(),
+ 1608|      1|                value: selectors::AppSelectorValue::Exact("same".to_string()),
+ 1609|      1|            },
+ 1610|      1|            selectors::AppSelector {
+ 1611|      1|                file: PathBuf::from("/repo/web/app/b.tsx"),
+ 1612|      1|                attribute: "data-testid".to_string(),
+ 1613|      1|                value: selectors::AppSelectorValue::Exact("same".to_string()),
+ 1614|      1|            },
+ 1615|      1|            selectors::AppSelector {
+ 1616|      1|                file: PathBuf::from("/repo/web/app/a.tsx"),
+ 1617|      1|                attribute: "data-testid".to_string(),
+ 1618|      1|                value: selectors::AppSelectorValue::Exact("same".to_string()),
+ 1619|      1|            },
+ 1620|      1|            selectors::AppSelector {
+ 1621|      1|                file: PathBuf::from("/repo/web/app/c.tsx"),
+ 1622|      1|                attribute: "data-testid".to_string(),
+ 1623|      1|                value: selectors::AppSelectorValue::Unsupported("id".to_string()),
+ 1624|      1|            },
+ 1625|      1|            selectors::AppSelector {
+ 1626|      1|                file: PathBuf::from("/repo/web/app/d.tsx"),
+ 1627|      1|                attribute: "data-testid".to_string(),
+ 1628|      1|                value: selectors::AppSelectorValue::Exact("unique".to_string()),
+ 1629|      1|            },
+ 1630|       |        ];
+ 1631|       |
+ 1632|      1|        let duplicates = build_duplicate_selectors(
+ 1633|      1|            root,
+ 1634|      1|            &app_selectors,
+ 1635|      1|            UniqueSelectorPolicy {
+ 1636|      1|                test_ids: true,
+ 1637|      1|                html_ids: false,
+ 1638|      1|                ..UniqueSelectorPolicy::default()
+ 1639|      1|            },
+ 1640|       |        );
+ 1641|      1|        assert_eq!(duplicates.len(), 4);
+ 1642|      1|        assert_eq!(duplicates[0].file, "web/app/a.tsx");
+ 1643|      1|        assert_eq!(duplicates[1].attribute, "data-pw");
+ 1644|      1|        assert_eq!(duplicates[2].attribute, "data-pw");
+ 1645|      1|        assert_eq!(duplicates[3].attribute, "data-testid");
+ 1646|      1|    }
+ 1647|       |
+ 1648|       |    #[test]
+ 1649|      1|    fn duplicate_selector_report_keeps_html_ids_separate_from_test_ids() {
+ 1650|      1|        let root = Path::new("/repo");
+ 1651|      1|        let app_selectors = vec![
+ 1652|      1|            selectors::AppSelector {
+ 1653|      1|                file: PathBuf::from("/repo/web/app/a.tsx"),
+ 1654|      1|                attribute: "data-testid".to_string(),
+ 1655|      1|                value: selectors::AppSelectorValue::Exact("same".to_string()),
+ 1656|      1|            },
+ 1657|      1|            selectors::AppSelector {
+ 1658|      1|                file: PathBuf::from("/repo/web/app/b.tsx"),
+ 1659|      1|                attribute: "id".to_string(),
+ 1660|      1|                value: selectors::AppSelectorValue::Exact("same".to_string()),
+ 1661|      1|            },
+ 1662|       |        ];
+ 1663|       |
+ 1664|      1|        let duplicates = build_duplicate_selectors(
+ 1665|      1|            root,
+ 1666|      1|            &app_selectors,
+ 1667|      1|            UniqueSelectorPolicy {
+ 1668|      1|                test_ids: true,
+ 1669|      1|                html_ids: true,
+ 1670|      1|                ..UniqueSelectorPolicy::default()
+ 1671|      1|            },
+ 1672|       |        );
+ 1673|      1|        assert!(duplicates.is_empty());
+ 1674|      1|    }
+ 1675|       |
+ 1676|       |    #[test]
+ 1677|      1|    fn deprecated_duplicate_selector_report_preserves_aggregate_grouping() {
+ 1678|      1|        let root = Path::new("/repo");
+ 1679|      1|        let app_selectors = vec![
+ 1680|      1|            selectors::AppSelector {
+ 1681|      1|                file: PathBuf::from("/repo/web/app/a.tsx"),
+ 1682|      1|                attribute: "data-testid".to_string(),
+ 1683|      1|                value: selectors::AppSelectorValue::Exact("same".to_string()),
+ 1684|      1|            },
+ 1685|      1|            selectors::AppSelector {
+ 1686|      1|                file: PathBuf::from("/repo/web/app/b.tsx"),
+ 1687|      1|                attribute: "id".to_string(),
+ 1688|      1|                value: selectors::AppSelectorValue::Exact("same".to_string()),
+ 1689|      1|            },
+ 1690|       |        ];
+ 1691|       |
+ 1692|      1|        let duplicates = build_duplicate_selectors(
+ 1693|      1|            root,
+ 1694|      1|            &app_selectors,
+ 1695|      1|            UniqueSelectorPolicy {
+ 1696|      1|                test_ids: true,
+ 1697|      1|                html_ids: true,
+ 1698|      1|                aggregate: true,
+ 1699|      1|                ..UniqueSelectorPolicy::default()
+ 1700|      1|            },
+ 1701|       |        );
+ 1702|      1|        assert_eq!(duplicates.len(), 2);
+ 1703|      1|    }
+ 1704|       |
+ 1705|       |    #[test]
+ 1706|      1|    fn configured_html_id_selectors_count_as_test_ids_for_uniqueness() {
+ 1707|      1|        let root = Path::new("/repo");
+ 1708|      1|        let app_selectors = vec![
+ 1709|      1|            selectors::AppSelector {
+ 1710|      1|                file: PathBuf::from("/repo/web/app/a.tsx"),
+ 1711|      1|                attribute: "id".to_string(),
+ 1712|      1|                value: selectors::AppSelectorValue::Exact("same".to_string()),
+ 1713|      1|            },
+ 1714|      1|            selectors::AppSelector {
+ 1715|      1|                file: PathBuf::from("/repo/web/app/b.tsx"),
+ 1716|      1|                attribute: "id".to_string(),
+ 1717|      1|                value: selectors::AppSelectorValue::Exact("same".to_string()),
+ 1718|      1|            },
+ 1719|       |        ];
+ 1720|       |
+ 1721|      1|        let duplicates = build_duplicate_selectors(
+ 1722|      1|            root,
+ 1723|      1|            &app_selectors,
+ 1724|      1|            UniqueSelectorPolicy {
+ 1725|      1|                test_ids: true,
+ 1726|      1|                configured_html_id_selector: true,
+ 1727|      1|                ..UniqueSelectorPolicy::default()
+ 1728|      1|            },
+ 1729|       |        );
+ 1730|      1|        assert_eq!(duplicates.len(), 2);
+ 1731|      1|    }
+ 1732|       |
+ 1733|       |    #[test]
+ 1734|      1|    fn selector_edges_mark_targets_covered() {
+ 1735|      1|        let root = Path::new("/repo");
+ 1736|      1|        let app_selectors = vec![selectors::AppSelector {
+ 1737|      1|            file: PathBuf::from("/repo/web/app/page.tsx"),
+ 1738|      1|            attribute: "data-testid".to_string(),
+ 1739|      1|            value: selectors::AppSelectorValue::Exact("save".to_string()),
+ 1740|      1|        }];
+ 1741|      1|        let edges = vec![Edge::Selector {
+ 1742|      1|            test_file: "tests/e2e/app.spec.ts".to_string(),
+ 1743|      1|            app_file: "web/app/page.tsx".to_string(),
+ 1744|      1|            attribute: "data-testid".to_string(),
+ 1745|      1|            value: "save".to_string(),
+ 1746|      1|            selector: "getByTestId(save)".to_string(),
+ 1747|      1|        }];
+ 1748|      1|        let settings = Settings {
+ 1749|      1|            frontend_root: "web/app".to_string(),
+ 1750|      1|            playwright_configs: vec![],
+ 1751|      1|            project: None,
+ 1752|      1|            test_include: vec![],
+ 1753|      1|            test_exclude: vec![],
+ 1754|      1|            ignore_routes: vec![],
+ 1755|      1|            navigation_helpers: vec![],
+ 1756|      1|            selector_attributes: vec!["data-testid".to_string()],
+ 1757|      1|            component_selector_attributes: BTreeMap::new(),
+ 1758|      1|            html_ids: false,
+ 1759|      1|            selector_roots: vec!["web/app".to_string()],
+ 1760|      1|            selector_include: vec![],
+ 1761|      1|            selector_exclude: vec![],
+ 1762|      1|        };
+ 1763|      1|        let report = build_coverage(
+ 1764|      1|            root,
+ 1765|      1|            &[],
+ 1766|      1|            &app_selectors,
+ 1767|      1|            &app_selectors,
+ 1768|      1|            &edges,
+ 1769|      1|            &settings,
+ 1770|      1|            UniqueSelectorPolicy::default(),
+ 1771|       |        );
+ 1772|      1|        assert_eq!(report.summary.covered_selectors, 1);
+ 1773|      1|        assert_eq!(report.selectors[0].tests, vec!["tests/e2e/app.spec.ts"]);
+ 1774|      1|    }
+ 1775|       |
+ 1776|       |    #[test]
+ 1777|      1|    fn route_edges_mark_routes_covered() {
+ 1778|      1|        let root = Path::new("/repo");
+ 1779|      1|        let routes = vec![Route {
+ 1780|      1|            file: PathBuf::from("/repo/web/app/users/[id]/page.tsx"),
+ 1781|      1|            pattern: "/users/:id".to_string(),
+ 1782|      1|        }];
+ 1783|      1|        let edges = vec![Edge::Route {
+ 1784|      1|            test_file: "tests/e2e/users.spec.ts".to_string(),
+ 1785|      1|            route_file: "web/app/users/[id]/page.tsx".to_string(),
+ 1786|      1|            route: "/users/:id".to_string(),
+ 1787|      1|            url: "/users/42".to_string(),
+ 1788|      1|        }];
+ 1789|      1|        let settings = Settings {
+ 1790|      1|            frontend_root: "web/app".to_string(),
+ 1791|      1|            playwright_configs: vec![],
+ 1792|      1|            project: None,
+ 1793|      1|            test_include: vec![],
+ 1794|      1|            test_exclude: vec![],
+ 1795|      1|            ignore_routes: vec![],
+ 1796|      1|            navigation_helpers: vec![],
+ 1797|      1|            selector_attributes: vec!["data-testid".to_string()],
+ 1798|      1|            component_selector_attributes: BTreeMap::new(),
+ 1799|      1|            html_ids: false,
+ 1800|      1|            selector_roots: vec!["web/app".to_string()],
+ 1801|      1|            selector_include: vec![],
+ 1802|      1|            selector_exclude: vec![],
+ 1803|      1|        };
+ 1804|      1|        let report = build_coverage(
+ 1805|      1|            root,
+ 1806|      1|            &routes,
+ 1807|      1|            &[],
+ 1808|      1|            &[],
+ 1809|      1|            &edges,
+ 1810|      1|            &settings,
+ 1811|      1|            UniqueSelectorPolicy::default(),
+ 1812|       |        );
+ 1813|      1|        assert_eq!(report.summary.covered_routes, 1);
+ 1814|      1|        assert_eq!(report.routes[0].urls, vec!["/users/42"]);
+ 1815|      1|    }
+ 1816|       |
+ 1817|       |    #[test]
+ 1818|      1|    fn analyze_discovers_tests_and_builds_reports() {
+ 1819|      1|        let mut root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+ 1820|      1|        root.extend(["tests", "fixtures", "covered"]);
+ 1821|      1|        let settings = Settings {
+ 1822|      1|            frontend_root: "web/app".to_string(),
+ 1823|      1|            playwright_configs: vec![],
+ 1824|      1|            project: None,
+ 1825|      1|            test_include: vec![],
+ 1826|      1|            test_exclude: vec![],
+ 1827|      1|            ignore_routes: vec![],
+ 1828|      1|            navigation_helpers: vec![],
+ 1829|      1|            selector_attributes: vec!["data-testid".to_string()],
+ 1830|      1|            component_selector_attributes: BTreeMap::new(),
+ 1831|      1|            html_ids: false,
+ 1832|      1|            selector_roots: vec!["web/app".to_string()],
+ 1833|      1|            selector_include: vec![],
+ 1834|      1|            selector_exclude: vec![],
+ 1835|      1|        };
+ 1836|       |
+ 1837|      1|        let analysis = analyze(&root, &settings).unwrap();
+ 1838|      1|        assert!(!analysis.coverage.routes.is_empty());
+ 1839|      1|        assert!(!analysis.edges.edges.is_empty());
+ 1840|       |
+ 1841|       |        // Test run() with Check - fails because it's uncovered
+ 1842|      1|        let run_root = root.join("web");
+ 1843|      1|        let cli = Cli {
+ 1844|      1|            root: run_root.clone(),
+ 1845|      1|            config: None,
+ 1846|      1|            playwright_config: vec![],
+ 1847|      1|            project: None,
+ 1848|      1|            json: false,
+ 1849|      1|            assert_conditional_tests: false,
+ 1850|      1|            allow_skipped_tests: false,
+ 1851|      1|            assert_unique_test_ids: false,
+ 1852|      1|            assert_unique_html_ids: false,
+ 1853|      1|            assert_unique_selectors: false,
+ 1854|      1|            command: Command::Check,
+ 1855|      1|        };
+ 1856|      1|        assert_eq!(run(cli.clone()).unwrap(), ExitCode::from(1));
+ 1857|       |
+ 1858|       |        // Test run() with JSON
+ 1859|      1|        let mut cli_json = cli.clone();
+ 1860|      1|        cli_json.json = true;
+ 1861|      1|        assert_eq!(run(cli_json).unwrap(), ExitCode::from(1));
+ 1862|       |
+ 1863|       |        // Test run() with Edges - always SUCCESS
+ 1864|      1|        let mut cli_edges = cli.clone();
+ 1865|      1|        cli_edges.command = Command::Edges;
+ 1866|      1|        assert_eq!(run(cli_edges).unwrap(), ExitCode::SUCCESS);
+ 1867|       |
+ 1868|       |        // Test run() with Related - always SUCCESS
+ 1869|      1|        let mut cli_related = cli.clone();
+ 1870|      1|        cli_related.command = Command::Related {
+ 1871|      1|            files: vec![PathBuf::from("app/page.tsx")],
+ 1872|      1|        };
+ 1873|      1|        assert_eq!(run(cli_related).unwrap(), ExitCode::SUCCESS);
+ 1874|       |
+ 1875|       |        // Test with unique selectors and html ids
+ 1876|      1|        let mut cli_unique = cli.clone();
+ 1877|      1|        cli_unique.assert_unique_selectors = true;
+ 1878|      1|        cli_unique.assert_unique_html_ids = true;
+ 1879|      1|        assert_eq!(run(cli_unique).unwrap(), ExitCode::from(1));
+ 1880|       |
+ 1881|       |        // Coverage for printers
+ 1882|      1|        print_edges_text(&analysis.edges);
+ 1883|      1|        let related = build_related_report(
+ 1884|      1|            &root,
+ 1885|      1|            &analysis.edges.edges,
+ 1886|      1|            &[PathBuf::from("web/app/page.tsx")],
+ 1887|       |        );
+ 1888|      1|        print_related_text(&related);
+ 1889|      1|        let _ = serde_json::to_string_pretty(&analysis).unwrap();
+ 1890|      1|    }
+ 1891|       |
+ 1892|       |    #[test]
+ 1893|      1|    fn run_check_success_on_empty_app() {
+ 1894|      1|        let root = fixture_path(&["config", "missing-default"]);
+ 1895|      1|        let cli = Cli {
+ 1896|      1|            root,
+ 1897|      1|            config: None,
+ 1898|      1|            playwright_config: vec![],
+ 1899|      1|            project: None,
+ 1900|      1|            json: false,
+ 1901|      1|            assert_conditional_tests: false,
+ 1902|      1|            allow_skipped_tests: false,
+ 1903|      1|            assert_unique_test_ids: false,
+ 1904|      1|            assert_unique_html_ids: false,
+ 1905|      1|            assert_unique_selectors: false,
+ 1906|      1|            command: Command::Check,
+ 1907|      1|        };
+ 1908|      1|        let _ = run(cli);
+ 1909|      1|    }
+ 1910|       |
+ 1911|       |    #[test]
+ 1912|      1|    fn run_errors_on_invalid_root() {
+ 1913|      1|        let cli = Cli {
+ 1914|      1|            root: PathBuf::from("/non-existent-path-12345/non-existent-child"),
+ 1915|      1|            config: None,
+ 1916|      1|            playwright_config: vec![],
+ 1917|      1|            project: None,
+ 1918|      1|            json: false,
+ 1919|      1|            assert_conditional_tests: false,
+ 1920|      1|            allow_skipped_tests: false,
+ 1921|      1|            assert_unique_test_ids: false,
+ 1922|      1|            assert_unique_html_ids: false,
+ 1923|      1|            assert_unique_selectors: false,
+ 1924|      1|            command: Command::Check,
+ 1925|      1|        };
+ 1926|      1|        assert!(run(cli).is_err());
+ 1927|      1|    }
+ 1928|       |
+ 1929|       |    #[test]
+ 1930|      1|    fn discover_test_files_walks_shared_project_test_dir_once() {
+ 1931|      1|        let root = fixture_path(&["main", "analyze-basic"]);
+ 1932|      1|        let settings = Settings {
+ 1933|      1|            frontend_root: "web/app".to_string(),
+ 1934|      1|            playwright_configs: vec![],
+ 1935|      1|            project: None,
+ 1936|      1|            test_include: vec![],
+ 1937|      1|            test_exclude: vec![],
+ 1938|      1|            ignore_routes: vec![],
+ 1939|      1|            navigation_helpers: vec![],
+ 1940|      1|            selector_attributes: vec![],
+ 1941|      1|            component_selector_attributes: BTreeMap::new(),
+ 1942|      1|            html_ids: false,
+ 1943|      1|            selector_roots: vec!["web/app".to_string()],
+ 1944|      1|            selector_include: vec![],
+ 1945|      1|            selector_exclude: vec![],
+ 1946|      1|        };
+ 1947|      1|        let playwright = playwright_config::PlaywrightConfig {
+ 1948|      1|            name: None,
+ 1949|      1|            projects: vec![
+ 1950|      1|                playwright_config::TestProject {
+ 1951|      1|                    config_dir: root.clone(),
+ 1952|      1|                    test_dir: "tests".to_string(),
+ 1953|      1|                    test_match: vec!["**/*.spec.ts".to_string()],
+ 1954|      1|                    test_ignore: vec![],
+ 1955|      1|                    base_url: Some("http://localhost:3000".to_string()),
+ 1956|      1|                    test_id_attribute: "data-testid".to_string(),
+ 1957|      1|                },
+ 1958|      1|                playwright_config::TestProject {
+ 1959|      1|                    config_dir: root.clone(),
+ 1960|      1|                    test_dir: "tests".to_string(),
+ 1961|      1|                    test_match: vec!["**/*.spec.ts".to_string()],
+ 1962|      1|                    test_ignore: vec![],
+ 1963|      1|                    base_url: Some("http://localhost:4000".to_string()),
+ 1964|      1|                    test_id_attribute: "data-pw".to_string(),
+ 1965|      1|                },
+ 1966|      1|            ],
+ 1967|      1|        };
+ 1968|       |
+ 1969|      1|        let files = discover_test_files(&root, &settings, &playwright).unwrap();
+ 1970|      1|        assert_eq!(files.len(), 1);
+ 1971|      1|        assert_eq!(files[0].contexts.len(), 2);
+ 1972|      1|    }
+ 1973|       |
+ 1974|       |    #[test]
+ 1975|      1|    fn discover_test_files_applies_yaml_exclude_before_project_matching() {
+ 1976|      1|        let root = fixture_path(&["main", "analyze-basic"]);
+ 1977|      1|        let settings = Settings {
+ 1978|      1|            frontend_root: "web/app".to_string(),
+ 1979|      1|            playwright_configs: vec![],
+ 1980|      1|            project: None,
+ 1981|      1|            test_include: vec![],
+ 1982|      1|            test_exclude: vec!["tests/**".to_string()],
+ 1983|      1|            ignore_routes: vec![],
+ 1984|      1|            navigation_helpers: vec![],
+ 1985|      1|            selector_attributes: vec![],
+ 1986|      1|            component_selector_attributes: BTreeMap::new(),
+ 1987|      1|            html_ids: false,
+ 1988|      1|            selector_roots: vec!["web/app".to_string()],
+ 1989|      1|            selector_include: vec![],
+ 1990|      1|            selector_exclude: vec![],
+ 1991|      1|        };
+ 1992|      1|        let playwright = playwright_config::PlaywrightConfig {
+ 1993|      1|            name: None,
+ 1994|      1|            projects: vec![playwright_config::TestProject {
+ 1995|      1|                config_dir: root.clone(),
+ 1996|      1|                test_dir: "tests".to_string(),
+ 1997|      1|                test_match: vec!["**/*.spec.ts".to_string()],
+ 1998|      1|                test_ignore: vec![],
+ 1999|      1|                base_url: None,
+ 2000|      1|                test_id_attribute: "data-testid".to_string(),
+ 2001|      1|            }],
+ 2002|      1|        };
+ 2003|       |
+ 2004|      1|        let files = discover_test_files(&root, &settings, &playwright).unwrap();
+ 2005|      1|        assert!(files.is_empty());
+ 2006|      1|    }
+ 2007|       |
+ 2008|       |    #[test]
+ 2009|      1|    fn analyze_surfaces_parser_errors() {
+ 2010|      1|        let root = fixture_path(&["main", "invalid-test-source"]);
+ 2011|      1|        let settings = Settings {
+ 2012|      1|            frontend_root: "web/app".to_string(),
+ 2013|      1|            playwright_configs: vec![],
+ 2014|      1|            project: None,
+ 2015|      1|            test_include: vec!["tests/**/*.spec.ts".to_string()],
+ 2016|      1|            test_exclude: vec![],
+ 2017|      1|            ignore_routes: vec![],
+ 2018|      1|            navigation_helpers: vec![],
+ 2019|      1|            selector_attributes: vec![],
+ 2020|      1|            component_selector_attributes: BTreeMap::new(),
+ 2021|      1|            html_ids: false,
+ 2022|      1|            selector_roots: vec!["web/app".to_string()],
+ 2023|      1|            selector_include: vec![],
+ 2024|      1|            selector_exclude: vec![],
+ 2025|      1|        };
+ 2026|       |
+ 2027|      1|        let err = analyze(&root, &settings).err().unwrap();
+ 2028|      1|        assert!(err.to_string().contains("failed to parse"));
+ 2029|       |
+ 2030|      1|        let root = fixture_path(&["main", "invalid-selector-source"]);
+ 2031|      1|        let settings = Settings {
+ 2032|      1|            frontend_root: "web/app".to_string(),
+ 2033|      1|            playwright_configs: vec![],
+ 2034|      1|            project: None,
+ 2035|      1|            test_include: vec![],
+ 2036|      1|            test_exclude: vec![],
+ 2037|      1|            ignore_routes: vec![],
+ 2038|      1|            navigation_helpers: vec![],
+ 2039|      1|            selector_attributes: vec!["data-testid".to_string()],
+ 2040|      1|            component_selector_attributes: BTreeMap::new(),
+ 2041|      1|            html_ids: false,
+ 2042|      1|            selector_roots: vec!["web/app".to_string()],
+ 2043|      1|            selector_include: vec![],
+ 2044|      1|            selector_exclude: vec![],
+ 2045|      1|        };
+ 2046|      1|        let selector_regexes = selectors::compile_selector_regexes(
+ 2047|      1|            &settings.selector_attributes,
+ 2048|      1|            &settings.component_selector_attributes,
+ 2049|       |        );
+ 2050|      1|        let err = collect_app_selectors(&root, &settings, &selector_regexes)
+ 2051|      1|            .err()
+ 2052|      1|            .unwrap();
+ 2053|      1|        assert!(err.to_string().contains("failed to parse"));
+ 2054|      1|    }
+ 2055|       |
+ 2056|       |    #[test]
+ 2057|      1|    fn text_printers_cover_routes_and_selectors() {
+ 2058|      1|        let coverage = CoverageReport {
+ 2059|      1|            summary: Summary {
+ 2060|      1|                total_routes: 1,
+ 2061|      1|                covered_routes: 0,
+ 2062|      1|                uncovered_routes: 1,
+ 2063|      1|                total_selectors: 1,
+ 2064|      1|                covered_selectors: 0,
+ 2065|      1|                uncovered_selectors: 1,
+ 2066|      1|                duplicate_selectors: 1,
+ 2067|      1|            },
+ 2068|      1|            routes: vec![CoverageRoute {
+ 2069|      1|                route: "/missing".to_string(),
+ 2070|      1|                file: "web/app/missing/page.tsx".to_string(),
+ 2071|      1|                covered: false,
+ 2072|      1|                tests: vec![],
+ 2073|      1|                urls: vec![],
+ 2074|      1|            }],
+ 2075|      1|            selectors: vec![CoverageSelector {
+ 2076|      1|                attribute: "data-testid".to_string(),
+ 2077|      1|                value: "missing".to_string(),
+ 2078|      1|                file: "web/app/page.tsx".to_string(),
+ 2079|      1|                covered: false,
+ 2080|      1|                unsupported_dynamic: false,
+ 2081|      1|                tests: vec![],
+ 2082|      1|                selectors: vec![],
+ 2083|      1|            }],
+ 2084|      1|            duplicate_selectors: vec![DuplicateSelector {
+ 2085|      1|                attribute: "data-testid".to_string(),
+ 2086|      1|                value: "missing".to_string(),
+ 2087|      1|                file: "web/app/other.tsx".to_string(),
+ 2088|      1|            }],
+ 2089|      1|        };
+ 2090|      1|        print_coverage_text(&coverage);
+ 2091|       |
+ 2092|      1|        let edges = EdgeReport {
+ 2093|      1|            edges: vec![
+ 2094|      1|                Edge::Route {
+ 2095|      1|                    test_file: "tests/e2e/app.spec.ts".to_string(),
+ 2096|      1|                    route_file: "web/app/page.tsx".to_string(),
+ 2097|      1|                    route: "/".to_string(),
+ 2098|      1|                    url: "/".to_string(),
+ 2099|      1|                },
+ 2100|      1|                Edge::Selector {
+ 2101|      1|                    test_file: "tests/e2e/app.spec.ts".to_string(),
+ 2102|      1|                    app_file: "web/app/page.tsx".to_string(),
+ 2103|      1|                    attribute: "data-testid".to_string(),
+ 2104|      1|                    value: "save".to_string(),
+ 2105|      1|                    selector: "getByTestId(save)".to_string(),
+ 2106|      1|                },
+ 2107|      1|            ],
+ 2108|      1|        };
+ 2109|      1|        print_edges_text(&edges);
+ 2110|      1|    }
+ 2111|       |
+ 2112|       |    #[test]
+ 2113|      1|    fn related_report_matches_route_and_selector_edges() {
+ 2114|      1|        let root = Path::new("/repo");
+ 2115|      1|        let edges = vec![
+ 2116|      1|            Edge::Route {
+ 2117|      1|                test_file: "tests/e2e/route.spec.ts".to_string(),
+ 2118|      1|                route_file: "web/app/page.tsx".to_string(),
+ 2119|      1|                route: "/".to_string(),
+ 2120|      1|                url: "/".to_string(),
+ 2121|      1|            },
+ 2122|      1|            Edge::Selector {
+ 2123|      1|                test_file: "tests/e2e/selector.spec.ts".to_string(),
+ 2124|      1|                app_file: "web/app/components/save.tsx".to_string(),
+ 2125|      1|                attribute: "data-testid".to_string(),
+ 2126|      1|                value: "save".to_string(),
+ 2127|      1|                selector: "getByTestId(save)".to_string(),
+ 2128|      1|            },
+ 2129|       |        ];
+ 2130|      1|        let report = build_related_report(
+ 2131|      1|            root,
+ 2132|      1|            &edges,
+ 2133|      1|            &[
+ 2134|      1|                PathBuf::from("/repo/web/app/page.tsx"),
+ 2135|      1|                PathBuf::from("./web/app/components/save.tsx"),
+ 2136|      1|            ],
+ 2137|       |        );
+ 2138|       |
+ 2139|      1|        assert_eq!(
+ 2140|       |            report.tests,
+ 2141|      1|            vec!["tests/e2e/route.spec.ts", "tests/e2e/selector.spec.ts"]
+ 2142|       |        );
+ 2143|      1|        print_related_text(&report);
+ 2144|      1|    }
+ 2145|       |}

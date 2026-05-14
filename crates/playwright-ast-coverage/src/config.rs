@@ -448,6 +448,7 @@ mod tests {
         assert!(!is_playwright_config_name(Path::new("playwright.config")));
         assert!(!is_playwright_config_name(Path::new(".config.ts")));
         assert!(!is_playwright_config_name(Path::new("playwright.ts")));
+        assert!(!is_playwright_config_name(Path::new("config")));
     }
 
     #[test]
