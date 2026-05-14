@@ -2,14 +2,13 @@
 "use strict";
 
 const { join } = require("node:path");
-const { install } = require("no-mistakes-core");
-
 const PACKAGE_ROOT = join(__dirname, "..");
+const core = require("no-mistakes-core");
 
 async function main() {
   try {
     const pkg = require(join(PACKAGE_ROOT, "package.json"));
-    const destination = await install(
+    const destination = await core.install(
       "playwright-ast-coverage",
       "jonathanong/playwright-ast-coverage",
       {
@@ -31,5 +30,27 @@ if (require.main === module) {
 }
 
 module.exports = {
-  ...require("no-mistakes-core"),
+  ...core,
+  packageVersion: (dir) => {
+    const targetDir = typeof dir === "string" ? dir : PACKAGE_ROOT;
+    return require(join(targetDir, "package.json")).version;
+  },
+  assetName: (version, target) => core.assetName("playwright-ast-coverage", version, target),
+  releaseBaseUrl: (version, envVar = "PLAYWRIGHT_AST_COVERAGE_RELEASE_BASE_URL") =>
+    core.releaseBaseUrl("jonathanong/playwright-ast-coverage", version, envVar),
+  install: (binName, repository, options) => {
+    if (typeof binName === "object" && repository === undefined) {
+      // Old signature: install(options)
+      const mergedOptions = {
+        envVar: "PLAYWRIGHT_AST_COVERAGE_RELEASE_BASE_URL",
+        ...binName,
+      };
+      return core.install(
+        "playwright-ast-coverage",
+        "jonathanong/playwright-ast-coverage",
+        mergedOptions,
+      );
+    }
+    return core.install(binName, repository, options);
+  },
 };

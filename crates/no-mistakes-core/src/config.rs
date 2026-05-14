@@ -203,7 +203,6 @@ mod tests {
             .err()
             .unwrap();
         assert!(err.to_string().contains("directory") || err.to_string().contains("failed"));
-
     }
 
     #[test]

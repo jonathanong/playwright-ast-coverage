@@ -3,10 +3,10 @@ use clap::Parser;
 use no_mistakes_core::ast;
 use no_mistakes_core::config;
 use no_mistakes_core::routes;
-use oxc_ast::ast::{Argument, CallExpression, Expression, Statement};
+use oxc_ast::ast::{Argument, CallExpression, Expression};
 use oxc_ast_visit::{walk, Visit};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
@@ -20,6 +20,9 @@ struct Cli {
 
     #[arg(long, global = true)]
     json: bool,
+
+    #[arg(help = "Specific routes or files to analyze")]
+    targets: Vec<String>,
 }
 
 #[derive(Default, Deserialize)]
@@ -37,10 +40,12 @@ struct FileConfig {
 }
 
 #[derive(Serialize, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[serde(rename_all = "camelCase")]
 struct FetchOccurrence {
     url: String,
     method: String,
     file: String,
+    is_dynamic: bool,
 }
 
 #[derive(Serialize)]
@@ -48,6 +53,24 @@ struct RouteReport {
     route: String,
     file: String,
     fetches: Vec<FetchOccurrence>,
+}
+
+#[derive(Serialize, Default)]
+struct FinalReport {
+    summary: Summary,
+    routes: Vec<RouteReport>,
+    duplicates: Vec<FetchOccurrence>,
+    unsupported: Vec<FetchOccurrence>,
+}
+
+#[derive(Serialize, Default)]
+struct Summary {
+    total_routes: usize,
+    total_fetches: usize,
+}
+
+struct Cache {
+    files: HashMap<PathBuf, Vec<FetchOccurrence>>,
 }
 
 struct FetchVisitor<'a> {
@@ -62,10 +85,12 @@ impl<'a> Visit<'a> for FetchVisitor<'a> {
             if ident.name == "fetch" {
                 let mut url = "unknown".to_string();
                 let mut method = "GET".to_string();
+                let mut is_dynamic = false;
 
                 if let Some(arg) = expr.arguments.first() {
-                    url = extract_string_literal_from_argument(arg, self.source)
-                        .unwrap_or_else(|| "dynamic".to_string());
+                    let result = extract_url_from_argument(arg, self.source);
+                    url = result.0;
+                    is_dynamic = result.1;
                 }
 
                 if let Some(Argument::ObjectExpression(obj)) = expr.arguments.get(1) {
@@ -86,6 +111,7 @@ impl<'a> Visit<'a> for FetchVisitor<'a> {
                     url,
                     method,
                     file: self.file.clone(),
+                    is_dynamic,
                 });
             }
         }
@@ -93,11 +119,14 @@ impl<'a> Visit<'a> for FetchVisitor<'a> {
     }
 }
 
-fn extract_string_literal_from_argument(arg: &Argument, source: &str) -> Option<String> {
+fn extract_url_from_argument(arg: &Argument, source: &str) -> (String, bool) {
     match arg {
-        Argument::StringLiteral(s) => Some(s.value.to_string()),
-        Argument::TemplateLiteral(t) => Some(ast::template_literal_text(t, source)),
-        _ => None,
+        Argument::StringLiteral(s) => (s.value.to_string(), false),
+        Argument::TemplateLiteral(t) => {
+            let is_dynamic = !t.expressions.is_empty();
+            (ast::template_literal_text(t, source), is_dynamic)
+        }
+        _ => ("dynamic".to_string(), true),
     }
 }
 
@@ -124,34 +153,60 @@ fn main() -> Result<()> {
     let stems = ["page", "route"];
     let routes = routes::collect_routes(&frontend_root, &stems)?;
 
+    let mut cache = Cache {
+        files: HashMap::new(),
+    };
     let mut reports = Vec::new();
+    let mut global_fetches = Vec::new();
+
     for route in routes {
+        // Filter by targets if provided
+        if !cli.targets.is_empty() {
+            let matched = cli.targets.iter().any(|t| {
+                route.pattern == *t
+                    || route.file.to_string_lossy().contains(t)
+                    || route.pattern.starts_with(t)
+            });
+            if !matched {
+                continue;
+            }
+        }
+
         let mut fetches = Vec::new();
         let mut visited = HashSet::new();
 
         // Analyze the page/route file itself
-        analyze_file(&route.file, &root, &mut visited, &mut fetches)?;
+        analyze_file(&route.file, &root, &mut visited, &mut fetches, &mut cache)?;
 
-        // Traverse up and find parent layouts/loadings
-        let mut current = route.file.parent();
-        while let Some(parent) = current {
-            if !parent.starts_with(&frontend_root) {
-                break;
-            }
+        // Traverse up and find parent layouts/loadings if it's a page (UI)
+        if route.file.file_stem().and_then(|s| s.to_str()) == Some("page") {
+            let mut current = route.file.parent();
+            while let Some(parent) = current {
+                if !parent.starts_with(&frontend_root) {
+                    break;
+                }
 
-            for stem in ["layout", "loading", "error", "not-found"] {
-                for ext in ["tsx", "ts", "jsx", "js"] {
-                    let layout_file = parent.join(format!("{stem}.{ext}"));
-                    if layout_file.exists() {
-                        analyze_file(&layout_file, &root, &mut visited, &mut fetches)?;
+                for stem in ["layout", "loading", "error", "not-found"] {
+                    for ext in ["tsx", "ts", "jsx", "js"] {
+                        let layout_file = parent.join(format!("{stem}.{ext}"));
+                        if layout_file.exists() {
+                            analyze_file(
+                                &layout_file,
+                                &root,
+                                &mut visited,
+                                &mut fetches,
+                                &mut cache,
+                            )?;
+                        }
                     }
                 }
+                current = parent.parent();
             }
-            current = parent.parent();
         }
 
         fetches.sort();
         fetches.dedup();
+        global_fetches.extend(fetches.clone());
 
         reports.push(RouteReport {
             route: route.pattern,
@@ -160,10 +215,44 @@ fn main() -> Result<()> {
         });
     }
 
+    let mut final_report = FinalReport {
+        summary: Summary {
+            total_routes: reports.len(),
+            total_fetches: global_fetches.len(),
+        },
+        routes: reports,
+        ..Default::default()
+    };
+
+    // Calculate duplicates and unsupported
+    let mut counts = HashMap::new();
+    for f in &global_fetches {
+        let key = (f.method.clone(), f.url.clone());
+        *counts.entry(key).or_insert(0) += 1;
+        if f.is_dynamic {
+            final_report.unsupported.push(f.clone());
+        }
+    }
+    final_report.unsupported.sort();
+    final_report.unsupported.dedup();
+
+    for ((method, url), count) in counts {
+        if count > 1 {
+            // Find one example occurrence
+            if let Some(f) = global_fetches
+                .iter()
+                .find(|f| f.method == method && f.url == url)
+            {
+                final_report.duplicates.push(f.clone());
+            }
+        }
+    }
+    final_report.duplicates.sort();
+
     if cli.json {
-        println!("{}", serde_json::to_string_pretty(&reports)?);
+        println!("{}", serde_json::to_string_pretty(&final_report)?);
     } else {
-        print_text_report(&reports);
+        print_markdown_report(&final_report);
     }
 
     Ok(())
@@ -174,6 +263,7 @@ fn analyze_file(
     root: &Path,
     visited: &mut HashSet<PathBuf>,
     fetches: &mut Vec<FetchOccurrence>,
+    cache: &mut Cache,
 ) -> Result<()> {
     if !path.exists() {
         return Ok(());
@@ -185,9 +275,15 @@ fn analyze_file(
     }
     visited.insert(abs_path.clone());
 
+    if let Some(cached_fetches) = cache.files.get(&abs_path) {
+        fetches.extend(cached_fetches.clone());
+        return Ok(());
+    }
+
     let source = std::fs::read_to_string(&abs_path)?;
     let rel_file = relative_string(root, &abs_path);
 
+    let mut file_fetches = Vec::new();
     let _ = ast::with_program(path, &source, |program, source| -> Result<()> {
         let mut visitor = FetchVisitor {
             source,
@@ -195,19 +291,22 @@ fn analyze_file(
             fetches: Vec::new(),
         };
         visitor.visit_program(program);
-        fetches.extend(visitor.fetches);
+        file_fetches.extend(visitor.fetches);
 
         // Find imports and recurse
         for stmt in &program.body {
-            if let Statement::ImportDeclaration(import) = stmt {
+            if let oxc_ast::ast::Statement::ImportDeclaration(import) = stmt {
                 let specifier = import.source.value.as_str();
                 if let Some(resolved) = resolve_import(path, specifier) {
-                    analyze_file(&resolved, root, visited, fetches)?;
+                    analyze_file(&resolved, root, visited, &mut file_fetches, cache)?;
                 }
             }
         }
         Ok(())
-    })?;
+    })??;
+
+    cache.files.insert(abs_path, file_fetches.clone());
+    fetches.extend(file_fetches);
 
     Ok(())
 }
@@ -216,8 +315,10 @@ fn resolve_import(current_file: &Path, specifier: &str) -> Option<PathBuf> {
     if specifier.starts_with('.') {
         let parent = current_file.parent()?;
         let joined = parent.join(specifier);
-        let extensions = ["tsx", "ts", "jsx", "js"];
-        for ext in extensions {
+        if joined.exists() && joined.is_file() {
+            return Some(joined);
+        }
+        for ext in ["tsx", "ts", "jsx", "js"] {
             let path = joined.with_extension(ext);
             if path.exists() {
                 return Some(path);
@@ -238,15 +339,51 @@ fn relative_string(root: &Path, path: &Path) -> String {
         .replace('\\', "/")
 }
 
-fn print_text_report(reports: &[RouteReport]) {
-    for report in reports {
-        println!("Route: {} ({})", report.route, report.file);
-        if report.fetches.is_empty() {
-            println!("  (no fetches found)");
+fn print_markdown_report(report: &FinalReport) {
+    println!("# Next.js Fetch API Analysis");
+    println!();
+    println!("## Summary");
+    println!("- Total Routes: {}", report.summary.total_routes);
+    println!("- Total Unique Fetches: {}", report.summary.total_fetches);
+    println!();
+
+    println!("## Routes");
+    for route in &report.routes {
+        println!("### {} ({})", route.route, route.file);
+        if route.fetches.is_empty() {
+            println!("(no fetches found)");
         } else {
-            for fetch in &report.fetches {
-                println!("  {} {}", fetch.method, fetch.url);
+            println!("| Method | URL | File | Dynamic |");
+            println!("| --- | --- | --- | --- |");
+            for fetch in &route.fetches {
+                println!(
+                    "| {} | `{}` | {} | {} |",
+                    fetch.method,
+                    fetch.url,
+                    fetch.file,
+                    if fetch.is_dynamic { "✅" } else { "❌" }
+                );
             }
+        }
+        println!();
+    }
+
+    if !report.duplicates.is_empty() {
+        println!("## Duplicates");
+        println!("| Method | URL | Example File |");
+        println!("| --- | --- | --- |");
+        for fetch in &report.duplicates {
+            println!("| {} | `{}` | {} |", fetch.method, fetch.url, fetch.file);
+        }
+        println!();
+    }
+
+    if !report.unsupported.is_empty() {
+        println!("## Unsupported (Dynamic)");
+        println!("| Method | URL | File |");
+        println!("| --- | --- | --- |");
+        for fetch in &report.unsupported {
+            println!("| {} | `{}` | {} |", fetch.method, fetch.url, fetch.file);
         }
         println!();
     }
@@ -265,10 +402,13 @@ mod tests {
         let source_type = oxc_span::SourceType::default();
         let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
         let stmt = &parsed.program.body[0];
-        if let Statement::ExpressionStatement(expr_stmt) = stmt {
+        if let oxc_ast::ast::Statement::ExpressionStatement(expr_stmt) = stmt {
             if let Expression::CallExpression(call) = &expr_stmt.expression {
                 let arg = &call.arguments[0];
-                assert_eq!(extract_string_literal_from_argument(arg, source), None);
+                assert_eq!(
+                    extract_url_from_argument(arg, source),
+                    ("dynamic".to_string(), true)
+                );
             }
         }
     }
@@ -309,6 +449,7 @@ mod tests {
         assert_eq!(visitor.fetches.len(), 5);
         for fetch in &visitor.fetches {
             assert_eq!(fetch.method, "GET");
+            assert!(fetch.is_dynamic);
         }
     }
 
@@ -326,6 +467,7 @@ mod tests {
         visitor.visit_program(&parsed.program);
         assert_eq!(visitor.fetches.len(), 1);
         assert_eq!(visitor.fetches[0].url, "unknown");
+        assert!(!visitor.fetches[0].is_dynamic);
     }
 
     #[test]
@@ -342,9 +484,12 @@ mod tests {
         visitor.visit_program(&parsed.program);
         assert_eq!(visitor.fetches.len(), 3);
         assert_eq!(visitor.fetches[0].url, "dynamic");
+        assert!(visitor.fetches[0].is_dynamic);
         assert_eq!(visitor.fetches[1].url, "/api/${id}");
+        assert!(visitor.fetches[1].is_dynamic);
         assert_eq!(visitor.fetches[1].method, "PATCH");
         assert_eq!(visitor.fetches[2].url, "/api/get");
+        assert!(!visitor.fetches[2].is_dynamic);
         assert_eq!(visitor.fetches[2].method, "GET");
     }
 
@@ -373,14 +518,39 @@ mod tests {
     }
 
     #[test]
+    fn test_analyze_file_cache_hit() {
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("file.ts");
+        fs::write(&file, "fetch('/api/cache')").unwrap();
+
+        let mut cache = Cache {
+            files: HashMap::new(),
+        };
+        let mut visited = HashSet::new();
+        let mut fetches = Vec::new();
+        analyze_file(&file, dir.path(), &mut visited, &mut fetches, &mut cache).unwrap();
+        assert_eq!(fetches.len(), 1);
+
+        let mut visited2 = HashSet::new();
+        let mut fetches2 = Vec::new();
+        analyze_file(&file, dir.path(), &mut visited2, &mut fetches2, &mut cache).unwrap();
+        assert_eq!(fetches2.len(), 1);
+        assert_eq!(fetches2[0].url, "/api/cache");
+    }
+
+    #[test]
     fn test_analyze_file_not_exists() {
         let mut visited = HashSet::new();
         let mut fetches = Vec::new();
+        let mut cache = Cache {
+            files: HashMap::new(),
+        };
         analyze_file(
             Path::new("missing.ts"),
             Path::new("."),
             &mut visited,
             &mut fetches,
+            &mut cache,
         )
         .unwrap();
         assert!(fetches.is_empty());
@@ -421,7 +591,10 @@ mod tests {
         let mut visited = HashSet::new();
         visited.insert(file.canonicalize().unwrap());
         let mut fetches = Vec::new();
-        analyze_file(&file, dir.path(), &mut visited, &mut fetches).unwrap();
+        let mut cache = Cache {
+            files: HashMap::new(),
+        };
+        analyze_file(&file, dir.path(), &mut visited, &mut fetches, &mut cache).unwrap();
         assert!(fetches.is_empty());
     }
 
@@ -432,7 +605,10 @@ mod tests {
         fs::create_dir(&path).unwrap();
         let mut visited = HashSet::new();
         let mut fetches = Vec::new();
-        let err = analyze_file(&path, dir.path(), &mut visited, &mut fetches)
+        let mut cache = Cache {
+            files: HashMap::new(),
+        };
+        let err = analyze_file(&path, dir.path(), &mut visited, &mut fetches, &mut cache)
             .err()
             .unwrap();
         assert!(

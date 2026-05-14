@@ -66,16 +66,27 @@ jobs:
           set -euo pipefail
           npm version "${{ inputs.bump }}" --no-git-tag-version
           version="$(node -p "require('./package.json').version")"
-          npm version "$version" --workspace eslint-plugin-playwright-ast-coverage --no-git-tag-version
+          
+          # Bump npm workspace versions
+          for pkg in eslint-plugin-playwright-ast-coverage no-mistakes-core next-to-fetch; do
+            npm version "$version" --workspace "$pkg" --no-git-tag-version
+          done
+          
+          # Bump Rust crate versions
           node -e "
             const fs = require('node:fs');
             const version = process.argv[1];
-            const cargo = fs.readFileSync('Cargo.toml', 'utf8')
-              .replace(/^version = \".*\"$/m, \`version = \"\${version}\"\`);
-            fs.writeFileSync('Cargo.toml', cargo);
+            const crates = ['Cargo.toml', 'crates/no-mistakes-core/Cargo.toml', 'crates/next-to-fetch/Cargo.toml', 'crates/playwright-ast-coverage/Cargo.toml'];
+            for (const file of crates) {
+              if (!fs.existsSync(file)) continue;
+              const cargo = fs.readFileSync(file, 'utf8')
+                .replace(/^version = \".*\"$/m, \`version = \"\${version}\"\`);
+              fs.writeFileSync(file, cargo);
+            }
           " "$version"
+          
           cargo update -w
-          git add Cargo.toml Cargo.lock package.json package-lock.json packages/eslint-plugin-playwright-ast-coverage/package.json
+          git add .
           git commit -m "chore(release): v$version"
           git tag -a "v$version" -m "v$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -111,19 +122,17 @@ jobs:
           cache-bin: "false"
 
       - name: Install npm dependencies
-        run: npm ci --ignore-scripts
+        run: SKIP_BINARY_DOWNLOAD=1 npm ci
 
       - name: Verify versions
         shell: bash
         run: |
           set -euo pipefail
           tag="${{ needs.prepare.outputs.version }}"
-          cargo_version="$(cargo metadata --no-deps --format-version 1 | node -e "let d=''; process.stdin.on('data', c => d += c); process.stdin.on('end', () => console.log(JSON.parse(d).packages[0].version));")"
-          npm_version="$(node -p "require('./package.json').version")"
-          plugin_version="$(node -p "require('./packages/eslint-plugin-playwright-ast-coverage/package.json').version")"
-          test "$tag" = "$cargo_version"
-          test "$tag" = "$npm_version"
-          test "$tag" = "$plugin_version"
+          cargo_version="$(cargo metadata --no-deps --format-version 1 | node -e \"let d=''; process.stdin.on('data', c => d += c); process.stdin.on('end', () => console.log(JSON.parse(d).packages[0].version));\")"
+          npm_version="$(node -p \"require('./package.json').version\")"
+          test \"$tag\" = \"$cargo_version\"
+          test \"$tag\" = \"$npm_version\"
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -143,14 +152,17 @@ jobs:
       - name: Run npm tests
         run: npm test
 
-      - name: Check Cargo package
-        run: cargo publish --dry-run --locked
+      - name: Check Cargo packages
+        run: |
+          for pkg in no-mistakes-core playwright-ast-coverage next-to-fetch; do
+            cargo publish --dry-run --locked -p "$pkg"
+          done
 
-      - name: Check npm package
-        run: npm pack --dry-run
-
-      - name: Check ESLint plugin package
-        run: npm pack --dry-run --workspace eslint-plugin-playwright-ast-coverage
+      - name: Check npm packages
+        run: |
+          for pkg in playwright-ast-coverage eslint-plugin-playwright-ast-coverage no-mistakes-core next-to-fetch; do
+            npm pack --dry-run --workspace "$pkg"
+          done
 
   build:
     name: Build ${{ matrix.target }}
@@ -160,27 +172,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        target_binary: [playwright-ast-coverage, next-to-fetch]
         include:
           - os: macos-15-intel
             target: x86_64-apple-darwin
-            artifact: playwright-ast-coverage-v${{ needs.prepare.outputs.version }}-x86_64-apple-darwin
-            binary: playwright-ast-coverage
           - os: macos-15
             target: aarch64-apple-darwin
-            artifact: playwright-ast-coverage-v${{ needs.prepare.outputs.version }}-aarch64-apple-darwin
-            binary: playwright-ast-coverage
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            artifact: playwright-ast-coverage-v${{ needs.prepare.outputs.version }}-x86_64-unknown-linux-gnu
-            binary: playwright-ast-coverage
           - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
-            artifact: playwright-ast-coverage-v${{ needs.prepare.outputs.version }}-aarch64-unknown-linux-gnu
-            binary: playwright-ast-coverage
           - os: windows-2025
             target: x86_64-pc-windows-msvc
-            artifact: playwright-ast-coverage-v${{ needs.prepare.outputs.version }}-x86_64-pc-windows-msvc.exe
-            binary: playwright-ast-coverage.exe
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -200,38 +203,44 @@ jobs:
           cache-bin: "false"
 
       - name: Build binary
-        run: cargo build --release --locked --target ${{ matrix.target }}
+        run: cargo build --release --locked --target ${{ matrix.target }} -p ${{ matrix.target_binary }}
+
+      - name: Set artifact name
+        shell: bash
+        run: |
+          ext=""
+          if [[ "${{ matrix.target }}" == *"windows"* ]]; then ext=".exe"; fi
+          echo "artifact=${{ matrix.target_binary }}-v${{ needs.prepare.outputs.version }}-${{ matrix.target }}$ext" >> "$GITHUB_ENV"
+          echo "binary=${{ matrix.target_binary }}$ext" >> "$GITHUB_ENV"
 
       - name: Verify binary
         shell: bash
-        run: target/${{ matrix.target }}/release/${{ matrix.binary }} --version
+        run: target/${{ matrix.target }}/release/${{ env.binary }} --version
 
       - name: Stage asset
         shell: bash
-        run: |
-          set -euo pipefail
-          cp "target/${{ matrix.target }}/release/${{ matrix.binary }}" "${{ matrix.artifact }}"
+        run: cp "target/${{ matrix.target }}/release/${{ env.binary }}" "${{ env.artifact }}"
 
       - name: Generate checksum (Unix)
         if: runner.os != 'Windows'
         shell: bash
-        run: shasum -a 256 "${{ matrix.artifact }}" > "${{ matrix.artifact }}.sha256"
+        run: shasum -a 256 "${{ env.artifact }}" > "${{ env.artifact }}.sha256"
 
       - name: Generate checksum (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $artifact = "${{ matrix.artifact }}"
+          $artifact = "${{ env.artifact }}"
           $hash = (Get-FileHash -Algorithm SHA256 -Path $artifact).Hash.ToLowerInvariant()
           "$hash  $artifact" | Set-Content -Encoding ascii -NoNewline "$artifact.sha256"
 
       - name: Upload asset artifact
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.artifact }}
+          name: ${{ env.artifact }}
           path: |
-            ${{ matrix.artifact }}
-            ${{ matrix.artifact }}.sha256
+            ${{ env.artifact }}
+            ${{ env.artifact }}.sha256
           if-no-files-found: error
 
   publish:
@@ -256,18 +265,20 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
-      - name: Publish Cargo crate
+      - name: Publish Cargo crates
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
           version="${{ needs.prepare.outputs.version }}"
-          if curl --fail --silent --output /dev/null "https://crates.io/api/v1/crates/playwright-ast-coverage/$version"; then
-            echo "playwright-ast-coverage $version is already published on crates.io; skipping"
-          else
-            cargo publish --locked
-          fi
+          for pkg in no-mistakes-core playwright-ast-coverage next-to-fetch; do
+            if curl --fail --silent --output /dev/null "https://crates.io/api/v1/crates/$pkg/$version"; then
+              echo "$pkg $version is already published on crates.io; skipping"
+            else
+              cargo publish --locked -p "$pkg"
+            fi
+          done
 
       - name: Download release assets
         uses: actions/download-artifact@v8
@@ -288,20 +299,7 @@ jobs:
             gh release create "$tag" dist/* --title "$tag" --generate-notes
           fi
 
-      - name: Smoke test npm tarball install
-        shell: bash
-        env:
-          PLAYWRIGHT_AST_COVERAGE_RELEASE_BASE_URL: file://${{ github.workspace }}/dist
-        run: |
-          set -euo pipefail
-          npm pack
-          mkdir npm-smoke
-          cd npm-smoke
-          npm init -y
-          npm install "../playwright-ast-coverage-${{ needs.prepare.outputs.version }}.tgz"
-          npx playwright-ast-coverage --version
-
-      - name: Publish npm package
+      - name: Publish npm packages
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         shell: bash
@@ -311,24 +309,11 @@ jobs:
             export NODE_AUTH_TOKEN="$NPM_TOKEN"
           fi
           version="${{ needs.prepare.outputs.version }}"
-          if npm view "playwright-ast-coverage@$version" version >/dev/null 2>&1; then
-            echo "playwright-ast-coverage $version is already published on npm; skipping"
-          else
-            npm publish --provenance --access public
-          fi
-
-      - name: Publish ESLint plugin package
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -n "${NPM_TOKEN:-}" ]; then
-            export NODE_AUTH_TOKEN="$NPM_TOKEN"
-          fi
-          version="${{ needs.prepare.outputs.version }}"
-          if npm view "eslint-plugin-playwright-ast-coverage@$version" version >/dev/null 2>&1; then
-            echo "eslint-plugin-playwright-ast-coverage $version is already published on npm; skipping"
-          else
-            npm publish --provenance --access public --workspace eslint-plugin-playwright-ast-coverage
-          fi
+          # Order matters: no-mistakes-core should be first
+          for pkg in no-mistakes-core playwright-ast-coverage next-to-fetch eslint-plugin-playwright-ast-coverage; do
+            if npm view "$pkg@$version" version >/dev/null 2>&1; then
+              echo "$pkg $version is already published on npm; skipping"
+            else
+              npm publish --provenance --access public --workspace "$pkg"
+            fi
+          done

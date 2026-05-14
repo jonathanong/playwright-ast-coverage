@@ -9,12 +9,10 @@ fn test_cli_basic() {
     cmd.arg("--root").arg("tests/fixtures/next-app");
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("Route: / (app/page.tsx)"))
-        .stdout(predicate::str::contains("GET /api/home"))
-        .stdout(predicate::str::contains(
-            "Route: /users (app/users/page.tsx)",
-        ))
-        .stdout(predicate::str::contains("POST /api/users"));
+        .stdout(predicate::str::contains("### / (app/page.tsx)"))
+        .stdout(predicate::str::contains("| GET | `/api/home` |"))
+        .stdout(predicate::str::contains("### /users (app/users/page.tsx)"))
+        .stdout(predicate::str::contains("| POST | `/api/users` |"));
 }
 
 #[test]
@@ -26,7 +24,8 @@ fn test_cli_json() {
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("\"route\": \"/\""))
-        .stdout(predicate::str::contains("\"method\": \"POST\""));
+        .stdout(predicate::str::contains("\"method\": \"POST\""))
+        .stdout(predicate::str::contains("\"summary\": {"));
 }
 
 #[test]
@@ -58,17 +57,33 @@ fn test_cli_layout_traversal() {
     let root = Path::new("tests/fixtures/layout-traversal");
     fs::create_dir_all(root.join("app/sub")).unwrap();
     fs::write(root.join(".no-mistakes.yaml"), "frontendRoot: app\n").unwrap();
-    fs::write(root.join("app/layout.tsx"), "fetch('/api/root-layout')").unwrap();
-    fs::write(root.join("app/sub/layout.tsx"), "fetch('/api/sub-layout')").unwrap();
-    fs::write(root.join("app/sub/page.tsx"), "fetch('/api/page')").unwrap();
+    fs::write(
+        root.join("app/layout.tsx"),
+        "fetch('/api/root-layout'); fetch('/api/dup')",
+    )
+    .unwrap();
+    fs::write(
+        root.join("app/sub/layout.tsx"),
+        "fetch('/api/sub-layout'); fetch('/api/dup')",
+    )
+    .unwrap();
+    fs::write(
+        root.join("app/sub/page.tsx"),
+        "fetch('/api/page'); fetch(url)",
+    )
+    .unwrap();
 
     let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
     cmd.arg("--root").arg(root);
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("GET /api/root-layout"))
-        .stdout(predicate::str::contains("GET /api/sub-layout"))
-        .stdout(predicate::str::contains("GET /api/page"));
+        .stdout(predicate::str::contains("GET | `/api/root-layout`"))
+        .stdout(predicate::str::contains("GET | `/api/sub-layout`"))
+        .stdout(predicate::str::contains("GET | `/api/page`"))
+        .stdout(predicate::str::contains("## Duplicates"))
+        .stdout(predicate::str::contains("GET | `/api/dup`"))
+        .stdout(predicate::str::contains("## Unsupported (Dynamic)"))
+        .stdout(predicate::str::contains("GET | `dynamic`"));
 
     fs::remove_dir_all(root).unwrap();
 }
@@ -93,7 +108,26 @@ fn test_cli_custom_config() {
     cmd.arg("--root").arg(root);
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("GET /api/custom"));
+        .stdout(predicate::str::contains("GET | `/api/custom`"));
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn test_cli_targets() {
+    let root = Path::new("tests/fixtures/targets");
+    fs::create_dir_all(root.join("app/users")).unwrap();
+    fs::write(root.join(".no-mistakes.yaml"), "frontendRoot: app\n").unwrap();
+    fs::write(root.join("app/layout.tsx"), "fetch('/api/layout')").unwrap();
+    fs::write(root.join("app/page.tsx"), "fetch('/api/root')").unwrap();
+    fs::write(root.join("app/users/page.tsx"), "fetch('/api/users')").unwrap();
+
+    let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
+    cmd.arg("--root").arg(root).arg("/users");
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("GET | `/api/users`"))
+        .stdout(predicate::str::contains("GET | `/api/root`").not());
 
     fs::remove_dir_all(root).unwrap();
 }

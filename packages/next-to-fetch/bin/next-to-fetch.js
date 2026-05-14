@@ -11,8 +11,14 @@ const child = spawn(binPath, process.argv.slice(2), {
   stdio: "inherit",
 });
 
-child.on("exit", (code) => {
-  process.exit(code ?? 0);
+child.on("exit", (code, signal) => {
+  if (code !== null) {
+    process.exit(code);
+  }
+  if (signal !== null) {
+    process.exit(1);
+  }
+  process.exit(0);
 });
 
 child.on("error", (error) => {
