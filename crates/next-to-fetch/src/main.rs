@@ -399,12 +399,10 @@ fn collect_imports(
         for stmt in &program.body {
             match stmt {
                 Statement::ImportDeclaration(import) => {
-                    if is_runtime_import(import) {
-                        if let Some(resolved) =
-                            resolve_import(&abs_path, import.source.value.as_str())
-                        {
-                            imports.push(resolved);
-                        }
+                    if is_runtime_import(import)
+                        && let Some(resolved) = resolve_import(&abs_path, import.source.value.as_str())
+                    {
+                        imports.push(resolved);
                     }
                 }
                 Statement::ExportNamedDeclaration(export) => {
