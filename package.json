@@ -1,5 +1,5 @@
 {
-  "name": "playwright-ast-coverage",
+  "name": "playwright-ast-coverage-monorepo",
   "version": "0.2.0",
   "description": "Static Playwright AST coverage for Next.js App Router routes",
   "homepage": "https://github.com/jonathanong/playwright-ast-coverage#readme",
@@ -11,29 +11,16 @@
     "type": "git",
     "url": "git+https://github.com/jonathanong/playwright-ast-coverage.git"
   },
-  "bin": {
-    "playwright-ast-coverage": "bin/playwright-ast-coverage.js"
-  },
+  "private": true,
   "workspaces": [
-    "packages/eslint-plugin-playwright-ast-coverage"
+    "packages/*"
   ],
-  "files": [
-    "bin/",
-    "scripts/install.js",
-    "scripts/install/",
-    "README.md",
-    "LICENSE"
-  ],
-  "publishConfig": {
-    "access": "public"
-  },
   "scripts": {
-    "postinstall": "node scripts/install.js",
     "test": "vitest run --coverage",
-    "fmt:js": "oxfmt --write bin scripts packages/eslint-plugin-playwright-ast-coverage/src packages/eslint-plugin-playwright-ast-coverage/test vitest.config.js",
-    "fmt:js:check": "oxfmt --check bin scripts packages/eslint-plugin-playwright-ast-coverage/src packages/eslint-plugin-playwright-ast-coverage/test vitest.config.js",
-    "lint:js": "oxlint bin scripts packages/eslint-plugin-playwright-ast-coverage/src packages/eslint-plugin-playwright-ast-coverage/test vitest.config.js",
-    "pack:check": "npm pack --dry-run"
+    "fmt:js": "oxfmt --write packages/playwright-ast-coverage/bin packages/playwright-ast-coverage/scripts packages/eslint-plugin-playwright-ast-coverage/src packages/eslint-plugin-playwright-ast-coverage/test vitest.config.js",
+    "fmt:js:check": "oxfmt --check packages/playwright-ast-coverage/bin packages/playwright-ast-coverage/scripts packages/eslint-plugin-playwright-ast-coverage/src packages/eslint-plugin-playwright-ast-coverage/test vitest.config.js",
+    "lint:js": "oxlint packages/playwright-ast-coverage/bin packages/playwright-ast-coverage/scripts packages/eslint-plugin-playwright-ast-coverage/src packages/eslint-plugin-playwright-ast-coverage/test vitest.config.js",
+    "pack:check": "npm --workspaces pack --dry-run"
   },
   "devDependencies": {
     "@emnapi/core": "^1.10.0",

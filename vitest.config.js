@@ -4,20 +4,20 @@ module.exports = defineConfig({
   test: {
     globals: true,
     include: [
-      "scripts/*.test.js",
+      "packages/playwright-ast-coverage/scripts/*.test.js",
       "packages/eslint-plugin-playwright-ast-coverage/test/**/*.test.mjs",
     ],
     coverage: {
       provider: "v8",
       include: [
-        "bin/**/*.js",
-        "scripts/**/*.js",
+        "packages/playwright-ast-coverage/bin/**/*.js",
+        "packages/playwright-ast-coverage/scripts/**/*.js",
         "packages/eslint-plugin-playwright-ast-coverage/src/**/*.js",
       ],
       exclude: [
-        "bin/playwright-ast-coverage.js",
-        "scripts/install.js",
-        "scripts/**/*.test.js",
+        "packages/playwright-ast-coverage/bin/playwright-ast-coverage.js",
+        "packages/playwright-ast-coverage/scripts/install.js",
+        "packages/playwright-ast-coverage/scripts/**/*.test.js",
         "packages/eslint-plugin-playwright-ast-coverage/test/**",
       ],
       reporter: ["text", "lcov"],
