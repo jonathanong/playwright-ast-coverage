@@ -66,7 +66,7 @@ selectorExclude:
 
 ## References
 
-- [CLI reference](docs/cli-reference.md)
-- [AST analysis behavior](docs/ast-analysis.md)
-- [Agent guide](docs/agent-guide.md)
-- [ESLint and Oxlint plugin](docs/eslint-plugin.md)
+- [CLI reference](../../docs/cli-reference.md)
+- [AST analysis behavior](../../docs/ast-analysis.md)
+- [Agent guide](../../docs/agent-guide.md)
+- [ESLint and Oxlint plugin](../../docs/eslint-plugin.md)

@@ -3,6 +3,7 @@
 /node_modules/
 /packages/*/coverage/
 /packages/*/node_modules/
+/packages/*/vendor/
 /target/
 /vendor/
 *.tgz
