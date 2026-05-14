@@ -24,8 +24,6 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use walkdir::WalkDir;
 
-const HTML_ID_ATTRIBUTE: &str = "id";
-
 #[derive(Parser)]
 #[command(author, version, about)]
 struct Cli {
@@ -391,12 +389,11 @@ fn analyze_with_policy(
     } else {
         collect_app_selector_occurrences(root, settings, &app_selector_regexes)?
     };
-    let coverage_app_selector_occurrences: Vec<_> = app_selector_occurrences
+    let mut app_selectors: Vec<_> = app_selector_occurrences
         .iter()
-        .filter(|selector| settings.html_ids || selector.attribute != HTML_ID_ATTRIBUTE)
+        .filter(|selector| settings.html_ids || selector.attribute != selectors::HTML_ID_ATTRIBUTE)
         .cloned()
         .collect();
-    let mut app_selectors = coverage_app_selector_occurrences.clone();
     app_selectors.sort();
     app_selectors.dedup();
     let route_index = route_index(root, &routes);
@@ -992,7 +989,7 @@ fn build_duplicate_selectors(
         BTreeMap::new();
     for selector in app_selectors {
         if let selectors::AppSelectorValue::Exact(value) = &selector.value {
-            if selector.attribute == HTML_ID_ATTRIBUTE {
+            if selector.attribute == selectors::HTML_ID_ATTRIBUTE {
                 if policy.html_ids {
                     by_value
                         .entry(DuplicateSelectorKey::HtmlId(value.as_str()))
@@ -1013,10 +1010,11 @@ fn build_duplicate_selectors(
         if selectors.len() < 2 {
             continue;
         }
+        let value = key.value().to_string();
         for selector in selectors {
             duplicates.push(DuplicateSelector {
                 attribute: selector.attribute.clone(),
-                value: key.value().to_string(),
+                value: value.clone(),
                 file: relative_string(root, &selector.file),
             });
         }

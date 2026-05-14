@@ -109,7 +109,7 @@ fn check_can_fail_on_duplicate_test_id_literals() {
 }
 
 #[test]
-fn deprecated_unique_selectors_flag_still_checks_test_ids() {
+fn deprecated_unique_selectors_flag_still_checks_selectors() {
     Command::cargo_bin("playwright-ast-coverage")
         .unwrap()
         .arg("--root")

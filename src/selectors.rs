@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 const SOURCE_EXTS: &[&str] = &["ts", "tsx", "js", "jsx", "mts", "cts", "mjs", "cjs"];
-const HTML_ID_ATTRIBUTE: &str = "id";
+pub(crate) const HTML_ID_ATTRIBUTE: &str = "id";
 
 pub struct SelectorRegexes {
     app_attributes: Vec<String>,
