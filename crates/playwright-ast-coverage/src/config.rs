@@ -65,7 +65,9 @@ pub fn load_settings(
     cli_project: Option<String>,
 ) -> Result<Settings> {
     let root_config: RootConfig = config::load_config(root, cli_config, CONFIG_STEMS)?;
-    let file_config = root_config.playwright_ast_coverage.unwrap_or(root_config.legacy);
+    let file_config = root_config
+        .playwright_ast_coverage
+        .unwrap_or(root_config.legacy);
 
     let playwright_configs = if !cli_playwright_configs.is_empty() {
         cli_playwright_configs
@@ -220,8 +222,12 @@ mod tests {
     #[test]
     fn test_is_playwright_config_name_edge_cases() {
         assert!(!is_playwright_config_name(Path::new("")));
-        assert!(!is_playwright_config_name(Path::new("playwright.config.txt")));
-        assert!(!is_playwright_config_name(Path::new("notplaywright.config.ts")));
+        assert!(!is_playwright_config_name(Path::new(
+            "playwright.config.txt"
+        )));
+        assert!(!is_playwright_config_name(Path::new(
+            "notplaywright.config.ts"
+        )));
         assert!(!is_playwright_config_name(Path::new("playwright.config")));
         assert!(!is_playwright_config_name(Path::new("playwrightconfig")));
     }

@@ -11,14 +11,18 @@ fn test_cli_basic() {
         .success()
         .stdout(predicate::str::contains("Route: / (app/page.tsx)"))
         .stdout(predicate::str::contains("GET /api/home"))
-        .stdout(predicate::str::contains("Route: /users (app/users/page.tsx)"))
+        .stdout(predicate::str::contains(
+            "Route: /users (app/users/page.tsx)",
+        ))
         .stdout(predicate::str::contains("POST /api/users"));
 }
 
 #[test]
 fn test_cli_json() {
     let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
-    cmd.arg("--root").arg("tests/fixtures/next-app").arg("--json");
+    cmd.arg("--root")
+        .arg("tests/fixtures/next-app")
+        .arg("--json");
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("\"route\": \"/\""))
@@ -30,12 +34,12 @@ fn test_cli_missing_frontend_root() {
     let root = Path::new("tests/fixtures/missing-frontend");
     fs::create_dir_all(root).unwrap();
     fs::write(root.join(".no-mistakes.yaml"), "frontendRoot: missing\n").unwrap();
-    
+
     let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
     cmd.arg("--root").arg(root);
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("frontend root directory does not exist"));
+    cmd.assert().failure().stderr(predicate::str::contains(
+        "frontend root directory does not exist",
+    ));
 
     fs::remove_dir_all(root).unwrap();
 }

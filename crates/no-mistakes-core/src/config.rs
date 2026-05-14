@@ -99,8 +99,8 @@ pub fn resolve(root: &Path, path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
     use std::fs;
+    use tempfile::tempdir;
 
     #[derive(Default, serde::Deserialize)]
     struct TestConfig {
@@ -150,7 +150,8 @@ mod tests {
         let config_path = dir.path().join("custom.yaml");
         fs::write(&config_path, "name: custom\n").unwrap();
 
-        let config: TestConfig = load_config(dir.path(), Some(Path::new("custom.yaml")), &["test"]).unwrap();
+        let config: TestConfig =
+            load_config(dir.path(), Some(Path::new("custom.yaml")), &["test"]).unwrap();
         assert_eq!(config.name, "custom");
     }
 
@@ -160,7 +161,9 @@ mod tests {
         fs::write(dir.path().join("test.yaml"), "name: a\n").unwrap();
         fs::write(dir.path().join("test.json"), "{\"name\": \"b\"}").unwrap();
 
-        let err = load_config::<TestConfig>(dir.path(), None, &["test"]).err().unwrap();
+        let err = load_config::<TestConfig>(dir.path(), None, &["test"])
+            .err()
+            .unwrap();
         assert!(err.to_string().contains("multiple config files found"));
     }
 
@@ -184,7 +187,9 @@ mod tests {
     #[test]
     fn test_load_config_explicit_missing() {
         let dir = tempdir().unwrap();
-        let err = load_config::<TestConfig>(dir.path(), Some(Path::new("missing.yaml")), &["test"]).err().unwrap();
+        let err = load_config::<TestConfig>(dir.path(), Some(Path::new("missing.yaml")), &["test"])
+            .err()
+            .unwrap();
         assert!(err.to_string().contains("config file does not exist"));
     }
 
@@ -194,19 +199,34 @@ mod tests {
         let path = dir.path().join("test.yaml");
         fs::create_dir(&path).unwrap(); // Dir instead of file will cause read error
 
-        let err = load_config::<TestConfig>(dir.path(), None, &["test"]).err().unwrap();
-        assert!(err.to_string().contains("Is a directory") || err.to_string().contains("Permission denied") || err.to_string().contains("failed to read"));
+        let err = load_config::<TestConfig>(dir.path(), None, &["test"])
+            .err()
+            .unwrap();
+        assert!(
+            err.to_string().contains("Is a directory")
+                || err.to_string().contains("Permission denied")
+                || err.to_string().contains("failed to read")
+        );
     }
 
     #[test]
     fn test_parse_config_jsonc_error() {
-        let err = parse_config::<TestConfig>("{\n  \"name\": \n}", Path::new("test.jsonc")).err().unwrap();
-        assert!(err.to_string().contains("Unexpected close brace") || err.to_string().contains("invalid"));
+        let err = parse_config::<TestConfig>("{\n  \"name\": \n}", Path::new("test.jsonc"))
+            .err()
+            .unwrap();
+        assert!(
+            err.to_string().contains("Unexpected close brace")
+                || err.to_string().contains("invalid")
+        );
     }
 
     #[test]
     fn test_parse_config_no_extension() {
-        let err = parse_config::<TestConfig>("", Path::new("test")).err().unwrap();
-        assert!(err.to_string().contains("unsupported config file without extension"));
+        let err = parse_config::<TestConfig>("", Path::new("test"))
+            .err()
+            .unwrap();
+        assert!(err
+            .to_string()
+            .contains("unsupported config file without extension"));
     }
 }

@@ -80,18 +80,20 @@ mod tests {
             .to_string()
             .contains("unsupported"));
 
-        assert!(with_program(Path::new("fixture.ts"), "await page.goto(", |_, _| ())
-            .err()
-            .unwrap()
-            .to_string()
-            .contains("failed to parse"));
+        assert!(
+            with_program(Path::new("fixture.ts"), "await page.goto(", |_, _| ())
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("failed to parse")
+        );
 
         let _ = with_program(Path::new("non-existent.ts"), "", |_, _| ());
     }
 
     #[test]
     fn test_with_program_panic_simulation() {
-        // Not easy to trigger panic in parser without internal knowledge, 
+        // Not easy to trigger panic in parser without internal knowledge,
         // but we've covered the error return path above.
     }
 
@@ -114,7 +116,7 @@ mod tests {
                 assert_eq!(template_literal_text(t, source), "${a}b${c}");
             }
         }
-        
+
         let source = "`no_expressions`";
         let parsed = Parser::new(&allocator, source, source_type).parse();
         let stmt = &parsed.program.body[0];
@@ -136,7 +138,7 @@ mod tests {
             let path = expression_path(&expr_stmt.expression).unwrap();
             assert_eq!(path, vec!["a", "b", "c"]);
         }
-        
+
         let source = "(a).b";
         let parsed = Parser::new(&allocator, source, source_type).parse();
         let stmt = &parsed.program.body[0];

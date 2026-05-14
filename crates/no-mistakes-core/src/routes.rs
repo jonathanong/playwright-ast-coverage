@@ -93,13 +93,31 @@ mod tests {
     fn test_path_to_route_pattern() {
         assert_eq!(path_to_route_pattern(Path::new("page.tsx")), "/");
         assert_eq!(path_to_route_pattern(Path::new("users/page.tsx")), "/users");
-        assert_eq!(path_to_route_pattern(Path::new("(auth)/login/page.tsx")), "/login");
-        assert_eq!(path_to_route_pattern(Path::new("@sidebar/settings/page.tsx")), "/settings");
-        assert_eq!(path_to_route_pattern(Path::new("blog/[slug]/page.tsx")), "/blog/:slug");
-        assert_eq!(path_to_route_pattern(Path::new("shop/[[...rest]]/page.tsx")), "/shop/**");
-        assert_eq!(path_to_route_pattern(Path::new("docs/[...all]/page.tsx")), "/docs/*");
-        assert_eq!(path_to_route_pattern(Path::new("(group)/@parallel/page.tsx")), "/");
-        
+        assert_eq!(
+            path_to_route_pattern(Path::new("(auth)/login/page.tsx")),
+            "/login"
+        );
+        assert_eq!(
+            path_to_route_pattern(Path::new("@sidebar/settings/page.tsx")),
+            "/settings"
+        );
+        assert_eq!(
+            path_to_route_pattern(Path::new("blog/[slug]/page.tsx")),
+            "/blog/:slug"
+        );
+        assert_eq!(
+            path_to_route_pattern(Path::new("shop/[[...rest]]/page.tsx")),
+            "/shop/**"
+        );
+        assert_eq!(
+            path_to_route_pattern(Path::new("docs/[...all]/page.tsx")),
+            "/docs/*"
+        );
+        assert_eq!(
+            path_to_route_pattern(Path::new("(group)/@parallel/page.tsx")),
+            "/"
+        );
+
         // Test non-normal components
         assert_eq!(path_to_route_pattern(Path::new("a/../b/page.tsx")), "/a/b");
     }

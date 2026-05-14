@@ -9,12 +9,16 @@ const PACKAGE_ROOT = join(__dirname, "..");
 async function main() {
   try {
     const pkg = require(join(PACKAGE_ROOT, "package.json"));
-    const destination = await install("playwright-ast-coverage", "jonathanong/playwright-ast-coverage", {
-      version: pkg.version,
-      vendorDir: join(PACKAGE_ROOT, "vendor"),
-      envVar: "PLAYWRIGHT_AST_COVERAGE_RELEASE_BASE_URL",
-      checkExisting: true,
-    });
+    const destination = await install(
+      "playwright-ast-coverage",
+      "jonathanong/playwright-ast-coverage",
+      {
+        version: pkg.version,
+        vendorDir: join(PACKAGE_ROOT, "vendor"),
+        envVar: "PLAYWRIGHT_AST_COVERAGE_RELEASE_BASE_URL",
+        checkExisting: true,
+      },
+    );
     console.log(`Installed playwright-ast-coverage native binary to ${destination}`);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));

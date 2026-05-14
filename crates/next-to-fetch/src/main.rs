@@ -64,7 +64,8 @@ impl<'a> Visit<'a> for FetchVisitor<'a> {
                 let mut method = "GET".to_string();
 
                 if let Some(arg) = expr.arguments.first() {
-                    url = extract_string_literal_from_argument(arg, self.source).unwrap_or_else(|| "dynamic".to_string());
+                    url = extract_string_literal_from_argument(arg, self.source)
+                        .unwrap_or_else(|| "dynamic".to_string());
                 }
 
                 if let Some(arg) = expr.arguments.get(1) {
@@ -112,10 +113,15 @@ fn main() -> Result<()> {
     let root_config: RootConfig = config::load_config(&root, cli.config.as_deref(), &stems)?;
     let file_config = root_config.next_to_fetch.unwrap_or(root_config.legacy);
 
-    let frontend_root_name = file_config.frontend_root.unwrap_or_else(|| "app".to_string());
+    let frontend_root_name = file_config
+        .frontend_root
+        .unwrap_or_else(|| "app".to_string());
     let frontend_root = root.join(&frontend_root_name);
     if !frontend_root.exists() {
-        anyhow::bail!("frontend root directory does not exist: {}", frontend_root.display());
+        anyhow::bail!(
+            "frontend root directory does not exist: {}",
+            frontend_root.display()
+        );
     }
     let stems = ["page", "route", "layout"];
     let routes = routes::collect_routes(&frontend_root, &stems)?;
@@ -230,8 +236,8 @@ fn print_text_report(reports: &[RouteReport]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
     use std::fs;
+    use tempfile::tempdir;
 
     #[test]
     fn test_extract_string_literal_from_argument_none() {
@@ -274,7 +280,7 @@ mod tests {
         let lib = dir.path().join("lib");
         fs::create_dir(&lib).unwrap();
         fs::write(lib.join("index.ts"), "").unwrap();
-        
+
         let current = dir.path().join("main.ts");
         let resolved = resolve_import(&current, "./lib").unwrap();
         assert!(resolved.ends_with("lib/index.ts"));
@@ -291,7 +297,13 @@ mod tests {
     fn test_analyze_file_not_exists() {
         let mut visited = HashSet::new();
         let mut fetches = Vec::new();
-        analyze_file(Path::new("missing.ts"), Path::new("."), &mut visited, &mut fetches).unwrap();
+        analyze_file(
+            Path::new("missing.ts"),
+            Path::new("."),
+            &mut visited,
+            &mut fetches,
+        )
+        .unwrap();
         assert!(fetches.is_empty());
     }
 
@@ -301,8 +313,12 @@ mod tests {
 
         let root = tempdir().unwrap();
         fs::create_dir(root.path().join("app")).unwrap();
-        fs::write(root.path().join("app/page.tsx"), "export default function Page() { return null; }").unwrap();
-        
+        fs::write(
+            root.path().join("app/page.tsx"),
+            "export default function Page() { return null; }",
+        )
+        .unwrap();
+
         let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
         cmd.arg("--root").arg(root.path());
         cmd.assert()
@@ -324,7 +340,12 @@ mod tests {
         fs::create_dir(&path).unwrap();
         let mut visited = HashSet::new();
         let mut fetches = Vec::new();
-        let err = analyze_file(&path, dir.path(), &mut visited, &mut fetches).err().unwrap();
-        assert!(err.to_string().contains("failed to read") || err.to_string().contains("Is a directory"));
+        let err = analyze_file(&path, dir.path(), &mut visited, &mut fetches)
+            .err()
+            .unwrap();
+        assert!(
+            err.to_string().contains("failed to read")
+                || err.to_string().contains("Is a directory")
+        );
     }
 }
