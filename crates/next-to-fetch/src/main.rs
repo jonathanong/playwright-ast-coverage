@@ -4,7 +4,8 @@ use no_mistakes_core::ast;
 use no_mistakes_core::config;
 use no_mistakes_core::routes;
 use oxc_ast::ast::{
-    Argument, CallExpression, Expression, ImportDeclarationSpecifier, ImportOrExportKind, Statement,
+    Argument, CallExpression, ExportNamedDeclaration, ExportSpecifier,
+    Expression, ImportDeclarationSpecifier, ImportOrExportKind, Statement,
 };
 use oxc_ast_visit::{walk, Visit};
 use serde::{Deserialize, Serialize};
@@ -217,7 +218,11 @@ fn main() -> Result<()> {
             }
         }
 
-        let route_is_client = is_client_route_file(&route.file)?;
+        let route_is_client = if is_route_handler_file(&route.file) {
+            false
+        } else {
+            is_client_route_file(&route.file)?
+        };
 
         let mut fetches = Vec::new();
         let mut visited = HashSet::new();
@@ -250,7 +255,7 @@ fn main() -> Result<()> {
                                 &mut visited,
                                 &mut fetches,
                                 &mut cache,
-                                route_is_client,
+                                false,
                             )?;
                         }
                     }
@@ -392,14 +397,39 @@ fn collect_imports(
     let mut imports = Vec::new();
     ast::with_program(path, &source, |program, _| -> Result<()> {
         for stmt in &program.body {
-            if let Statement::ImportDeclaration(import) = stmt {
-                if !is_runtime_import(import) {
-                    continue;
+            match stmt {
+                Statement::ImportDeclaration(import) => {
+                    if is_runtime_import(import) {
+                        if let Some(resolved) =
+                            resolve_import(&abs_path, import.source.value.as_str())
+                        {
+                            imports.push(resolved);
+                        }
+                    }
                 }
-                let specifier = import.source.value.as_str();
-                if let Some(resolved) = resolve_import(&abs_path, specifier) {
-                    imports.push(resolved);
+                Statement::ExportNamedDeclaration(export) => {
+                    if !is_runtime_export(export) {
+                        continue;
+                    }
+                    if let Some(source) = &export.source {
+                        if let Some(resolved) =
+                            resolve_import(&abs_path, source.value.as_str())
+                        {
+                            imports.push(resolved);
+                        }
+                    }
                 }
+                Statement::ExportAllDeclaration(export) => {
+                    if export.export_kind == ImportOrExportKind::Type {
+                        continue;
+                    }
+                    if let Some(resolved) =
+                        resolve_import(&abs_path, export.source.value.as_str())
+                    {
+                        imports.push(resolved);
+                    }
+                }
+                _ => {}
             }
         }
         Ok(())
@@ -414,7 +444,9 @@ fn is_runtime_import(import: &oxc_ast::ast::ImportDeclaration) -> bool {
         return false;
     }
 
-    let specifiers = &import.specifiers;
+    let Some(specifiers) = import.specifiers.as_ref() else {
+        return true;
+    };
     if specifiers.is_empty() {
         return true;
     }
@@ -430,6 +462,25 @@ fn is_runtime_import(import: &oxc_ast::ast::ImportDeclaration) -> bool {
     }
 
     false
+}
+
+fn is_runtime_export(export: &ExportNamedDeclaration) -> bool {
+    if export.export_kind == ImportOrExportKind::Type {
+        return false;
+    }
+
+    if export.specifiers.is_empty() {
+        return true;
+    }
+
+    export
+        .specifiers
+        .iter()
+        .any(|spec: &ExportSpecifier| spec.export_kind == ImportOrExportKind::Value)
+}
+
+fn is_route_handler_file(path: &Path) -> bool {
+    path.file_stem().and_then(|stem| stem.to_str()) == Some("route")
 }
 
 fn route_reaches_target(
@@ -470,7 +521,7 @@ fn resolve_target_file(root: &Path, target: &str) -> Result<PathBuf> {
     if !candidate.is_file() {
         anyhow::bail!("target path is not a file: {}", candidate.display());
     }
-    candidate.canonicalize()
+    Ok(candidate.canonicalize()?)
 }
 
 fn is_client_route_file(path: &Path) -> Result<bool> {
@@ -479,12 +530,14 @@ fn is_client_route_file(path: &Path) -> Result<bool> {
     }
 
     let source = std::fs::read_to_string(path)?;
-    ast::with_program(path, &source, |program, _| {
-        Ok(program
-            .directives
-            .iter()
-            .any(|directive| directive.directive == "use client"))
-    })
+    Ok(
+        ast::with_program(path, &source, |program, _| {
+            Ok(program
+                .directives
+                .iter()
+                .any(|directive| directive.directive == "use client"))
+        })?,
+    )
 }
 
 fn resolve_import(current_file: &Path, specifier: &str) -> Option<PathBuf> {
