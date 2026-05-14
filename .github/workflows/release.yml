@@ -208,8 +208,10 @@ jobs:
       - name: Set artifact name
         shell: bash
         run: |
-          ext=""
-          if [[ "${{ matrix.target }}" == *"windows"* ]]; then ext=".exe"; fi
+          case "${{ matrix.target }}" in
+            *windows*) ext=".exe" ;;
+            *) ext="" ;;
+          esac
           echo "artifact=${{ matrix.target_binary }}-v${{ needs.prepare.outputs.version }}-${{ matrix.target }}$ext" >> "$GITHUB_ENV"
           echo "binary=${{ matrix.target_binary }}$ext" >> "$GITHUB_ENV"
 
