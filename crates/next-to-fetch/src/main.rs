@@ -309,7 +309,10 @@ fn analyze_file(
 
     let mut file_fetches = Vec::new();
     ast::with_program(path, &source, |program, source| -> Result<()> {
-        let is_client = program.directives.iter().any(|d| d.directive == "use client");
+        let is_client = program
+            .directives
+            .iter()
+            .any(|d| d.directive == "use client");
         let mut visitor = FetchVisitor {
             source,
             file: rel_file,
