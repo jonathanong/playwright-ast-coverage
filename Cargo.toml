@@ -1,6 +1,6 @@
 [package]
 name = "playwright-ast-coverage"
-version = "0.1.7"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 description = "Static Playwright AST coverage for Next.js App Router routes"
