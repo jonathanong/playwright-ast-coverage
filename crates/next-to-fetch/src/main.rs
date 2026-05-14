@@ -4,8 +4,7 @@ use no_mistakes_core::ast;
 use no_mistakes_core::config;
 use no_mistakes_core::routes;
 use oxc_ast::ast::{
-    Argument, CallExpression, ExportNamedDeclaration, ExportSpecifier, Expression,
-    ImportDeclarationSpecifier, ImportOrExportKind, Statement,
+    Argument, CallExpression, ExportNamedDeclaration, Expression, ImportOrExportKind, Statement,
 };
 use oxc_ast_visit::{walk, Visit};
 use serde::{Deserialize, Serialize};
@@ -45,33 +44,97 @@ struct FileConfig {
 #[derive(Serialize, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 #[serde(rename_all = "camelCase")]
 struct FetchOccurrence {
-    url: String,
+    path: String,
+    raw_path: String,
     method: String,
     file: String,
     line: usize,
-    is_dynamic: bool,
-    is_rsc: bool,
+    side: FetchSide,
+    #[serde(rename = "rsc")]
+    rsc: bool,
+    cached: bool,
+    cache_kind: CacheKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cached_function: Option<String>,
+    dynamic: bool,
+    unsupported: bool,
+}
+
+#[derive(Serialize, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[serde(rename_all = "lowercase")]
+enum FetchSide {
+    Client,
+    Server,
+    Unknown,
+}
+
+#[derive(Serialize, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[serde(rename_all = "kebab-case")]
+enum CacheKind {
+    None,
+    FetchCache,
+    FetchNextRevalidate,
+    FetchNextTags,
+    ReactCache,
+    Cache,
+    UnstableCache,
 }
 
 #[derive(Serialize)]
 struct RouteReport {
     route: String,
     file: String,
-    fetches: Vec<FetchOccurrence>,
+    api_calls: Vec<FetchOccurrence>,
 }
 
 #[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
 struct FinalReport {
     summary: Summary,
     routes: Vec<RouteReport>,
-    duplicates: Vec<FetchOccurrence>,
-    unsupported: Vec<FetchOccurrence>,
+    duplicates: Vec<DuplicateApiCall>,
+    unsupported: Vec<UnsupportedApiCall>,
 }
 
 #[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
 struct Summary {
     total_routes: usize,
-    total_fetches: usize,
+    routes_with_api_calls: usize,
+    total_api_calls: usize,
+    unique_api_calls: usize,
+    duplicate_api_calls: usize,
+    dynamic_api_calls: usize,
+    cached_api_calls: usize,
+    client_api_calls: usize,
+    server_api_calls: usize,
+    rsc_api_calls: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DuplicateApiCall {
+    key: String,
+    count: usize,
+    occurrences: Vec<ApiCallOccurrence>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ApiCallOccurrence {
+    route: String,
+    file: String,
+    line: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UnsupportedApiCall {
+    route: String,
+    file: String,
+    line: usize,
+    reason: String,
+    raw_path: String,
 }
 
 #[derive(Clone)]
@@ -81,7 +144,7 @@ struct TargetSpec {
 }
 
 struct Cache {
-    files: HashMap<(PathBuf, bool), Vec<FetchOccurrence>>,
+    files: HashMap<(PathBuf, bool, bool), Vec<FetchOccurrence>>,
     imports: HashMap<PathBuf, Vec<PathBuf>>,
 }
 
@@ -90,21 +153,24 @@ struct FetchVisitor<'a> {
     file: String,
     fetches: Vec<FetchOccurrence>,
     is_client: bool,
+    is_route_handler: bool,
 }
 
 impl<'a> Visit<'a> for FetchVisitor<'a> {
     fn visit_call_expression(&mut self, expr: &CallExpression<'a>) {
         if let Expression::Identifier(ident) = &expr.callee {
             if ident.name == "fetch" {
-                let mut url = "unknown".to_string();
+                let url = "unknown".to_string();
+                let mut path = url;
                 let mut method = "GET".to_string();
                 let mut is_dynamic = false;
                 let line = self.source[..expr.span.start as usize].lines().count() + 1;
 
                 if let Some(arg) = expr.arguments.first() {
                     let result = extract_url_from_argument(arg, self.source);
-                    url = result.0;
-                    is_dynamic = result.1;
+                    let (path_from_arg, dynamic) = result;
+                    path = path_from_arg;
+                    is_dynamic = dynamic;
                 }
 
                 if let Some(Argument::ObjectExpression(obj)) = expr.arguments.get(1) {
@@ -121,13 +187,24 @@ impl<'a> Visit<'a> for FetchVisitor<'a> {
                     }
                 }
 
+                let side = if self.is_client {
+                    FetchSide::Client
+                } else {
+                    FetchSide::Server
+                };
                 self.fetches.push(FetchOccurrence {
-                    url,
+                    path: path.clone(),
+                    raw_path: path.clone(),
                     method,
                     file: self.file.clone(),
                     line,
-                    is_dynamic,
-                    is_rsc: !self.is_client,
+                    side,
+                    rsc: !self.is_client && !self.is_route_handler,
+                    cached: false,
+                    cache_kind: CacheKind::None,
+                    cached_function: None,
+                    dynamic: is_dynamic,
+                    unsupported: is_dynamic,
                 });
             }
         }
@@ -182,7 +259,6 @@ fn main() -> Result<()> {
         })
         .collect::<Vec<_>>();
     let mut reports = Vec::new();
-    let mut global_fetches = Vec::new();
     let mut matched_targets = HashSet::new();
 
     for route in all_routes {
@@ -191,7 +267,7 @@ fn main() -> Result<()> {
             let mut matched = false;
             for target in &target_specs {
                 if target.raw == route.pattern
-                    || route.file.to_string_lossy().contains(&target.raw)
+                    || (!target.raw.ends_with('/') && route.file.to_string_lossy().contains(&target.raw))
                     || (target.raw.ends_with('/') && route.pattern.starts_with(&target.raw))
                     || route.pattern == format!("/{}", target.raw)
                 {
@@ -218,7 +294,8 @@ fn main() -> Result<()> {
             }
         }
 
-        let route_is_client = if is_route_handler_file(&route.file) {
+        let route_is_route_handler = is_route_handler_file(&route.file);
+        let route_is_client = if route_is_route_handler {
             false
         } else {
             is_client_route_file(&route.file)?
@@ -235,6 +312,7 @@ fn main() -> Result<()> {
             &mut fetches,
             &mut cache,
             route_is_client,
+            route_is_route_handler,
         )?;
 
         // Traverse up and find parent layouts/loadings if it's a page (UI)
@@ -256,6 +334,7 @@ fn main() -> Result<()> {
                                 &mut fetches,
                                 &mut cache,
                                 false,
+                                route_is_route_handler,
                             )?;
                         }
                     }
@@ -265,13 +344,11 @@ fn main() -> Result<()> {
         }
 
         fetches.sort();
-        // Keep non-deduplicated list for global duplicate detection
-        global_fetches.extend(fetches.clone());
 
         reports.push(RouteReport {
             route: route.pattern,
             file: relative_string(&root, &route.file),
-            fetches,
+            api_calls: fetches,
         });
     }
 
@@ -285,39 +362,114 @@ fn main() -> Result<()> {
         std::process::exit(2);
     }
 
-    let mut final_report = FinalReport {
-        summary: Summary {
-            total_routes: reports.len(),
-            total_fetches: global_fetches.len(),
-        },
-        routes: reports,
-        ..Default::default()
-    };
+    let total_routes = reports.len();
+    let routes_with_api_calls = reports.iter().filter(|route| !route.api_calls.is_empty()).count();
 
-    // Calculate duplicates and unsupported
-    let mut counts = HashMap::new();
-    for f in &global_fetches {
-        let key = (f.method.clone(), f.url.clone());
-        *counts.entry(key).or_insert(0) += 1;
-        if f.is_dynamic {
-            final_report.unsupported.push(f.clone());
-        }
-    }
-    final_report.unsupported.sort();
-    final_report.unsupported.dedup();
+    let mut duplicate_key_map: HashMap<
+        (String, String, FetchSide, bool),
+        Vec<ApiCallOccurrence>,
+    > = HashMap::new();
+    let mut unique_api_calls = HashSet::new();
+    let mut dynamic_api_calls = 0usize;
+    let mut cached_api_calls = 0usize;
+    let mut client_api_calls = 0usize;
+    let mut server_api_calls = 0usize;
+    let mut rsc_api_calls = 0usize;
+    let mut unsupported = Vec::new();
 
-    for ((method, url), count) in counts {
-        if count > 1 {
-            // Find one example occurrence
-            if let Some(f) = global_fetches
-                .iter()
-                .find(|f| f.method == method && f.url == url)
-            {
-                final_report.duplicates.push(f.clone());
+    for route in &reports {
+        for api_call in &route.api_calls {
+            let key = (
+                api_call.method.clone(),
+                api_call.path.clone(),
+                api_call.side.clone(),
+                api_call.rsc,
+            );
+            duplicate_key_map
+                .entry(key)
+                .or_default()
+                .push(ApiCallOccurrence {
+                    route: route.route.clone(),
+                    file: api_call.file.clone(),
+                    line: api_call.line,
+                });
+
+            unique_api_calls.insert((
+                api_call.method.clone(),
+                api_call.path.clone(),
+                api_call.side.clone(),
+            ));
+
+            if api_call.dynamic {
+                dynamic_api_calls += 1;
+                unsupported.push(UnsupportedApiCall {
+                    route: route.route.clone(),
+                    file: api_call.file.clone(),
+                    line: api_call.line,
+                    reason: "dynamic-path".to_string(),
+                    raw_path: api_call.raw_path.clone(),
+                });
+            }
+            if api_call.cached {
+                cached_api_calls += 1;
+            }
+            match api_call.side {
+                FetchSide::Client => client_api_calls += 1,
+                FetchSide::Server => server_api_calls += 1,
+                FetchSide::Unknown => {}
+            }
+            if api_call.rsc {
+                rsc_api_calls += 1;
             }
         }
     }
-    final_report.duplicates.sort();
+
+    let mut duplicates = Vec::new();
+    for ((method, path, side, rsc), occurrences) in duplicate_key_map {
+        if occurrences.len() > 1 {
+            duplicates.push(DuplicateApiCall {
+                key: format!(
+                    "{method} {path} {:?} {}",
+                    side,
+                    if rsc { "rsc" } else { "non-rsc" }
+                ),
+                count: occurrences.len(),
+                occurrences,
+            });
+        }
+    }
+
+    let duplicate_api_calls: usize = duplicates.iter().map(|entry| entry.count.saturating_sub(1)).sum();
+
+    let mut final_report = FinalReport {
+        summary: Summary {
+            total_routes,
+            routes_with_api_calls,
+            total_api_calls: reports.iter().map(|route| route.api_calls.len()).sum(),
+            unique_api_calls: unique_api_calls.len(),
+            duplicate_api_calls,
+            dynamic_api_calls,
+            cached_api_calls,
+            client_api_calls,
+            server_api_calls,
+            rsc_api_calls,
+            ..Default::default()
+        },
+        routes: reports,
+        duplicates,
+        unsupported,
+        ..Default::default()
+    };
+
+    final_report.unsupported.sort_by(|a, b| {
+        a.route
+            .cmp(&b.route)
+            .then(a.file.cmp(&b.file))
+            .then(a.line.cmp(&b.line))
+    });
+    final_report
+        .duplicates
+        .sort_by(|a, b| a.key.cmp(&b.key).then(a.count.cmp(&b.count)));
 
     if cli.json {
         println!("{}", serde_json::to_string_pretty(&final_report)?);
@@ -335,6 +487,7 @@ fn analyze_file(
     fetches: &mut Vec<FetchOccurrence>,
     cache: &mut Cache,
     inherited_is_client: bool,
+    inherited_is_route_handler: bool,
 ) -> Result<()> {
     if !path.exists() {
         return Ok(());
@@ -346,7 +499,11 @@ fn analyze_file(
     }
     visited.insert(abs_path.clone());
 
-    if let Some(cached_fetches) = cache.files.get(&(abs_path.clone(), inherited_is_client)) {
+    if let Some(cached_fetches) = cache.files.get(&(
+        abs_path.clone(),
+        inherited_is_client,
+        inherited_is_route_handler,
+    )) {
         fetches.extend(cached_fetches.clone());
         return Ok(());
     }
@@ -355,30 +512,43 @@ fn analyze_file(
     let rel_file = relative_string(root, &abs_path);
 
     let mut file_fetches = Vec::new();
-    let is_client = ast::with_program(path, &source, |program, source| -> Result<bool> {
+        let is_client = ast::with_program(path, &source, |program, source| -> Result<bool> {
         let is_client = inherited_is_client
-            || program
-                .directives
-                .iter()
-                .any(|d| d.directive == "use client");
+            || (!inherited_is_route_handler
+                && program
+                    .directives
+                    .iter()
+                    .any(|d| d.directive == "use client"));
         let mut visitor = FetchVisitor {
             source,
             file: rel_file,
             fetches: Vec::new(),
             is_client,
+            is_route_handler: inherited_is_route_handler,
         };
         visitor.visit_program(program);
         file_fetches.extend(visitor.fetches);
 
         for import in collect_imports(&abs_path, &mut cache.imports)? {
-            analyze_file(&import, root, visited, &mut file_fetches, cache, is_client)?;
+            analyze_file(
+                &import,
+                root,
+                visited,
+                &mut file_fetches,
+                cache,
+                is_client,
+                inherited_is_route_handler,
+            )?;
         }
         Ok(is_client)
     })??;
 
     cache
         .files
-        .insert((abs_path.clone(), is_client), file_fetches.clone());
+        .insert(
+            (abs_path.clone(), is_client, inherited_is_route_handler),
+            file_fetches.clone(),
+        );
     fetches.extend(file_fetches);
 
     Ok(())
@@ -395,17 +565,17 @@ fn collect_imports(
 
     let source = std::fs::read_to_string(&abs_path)?;
     let mut imports = Vec::new();
-    ast::with_program(path, &source, |program, _| -> Result<()> {
+    ast::with_program(path, &source, |program, source| -> Result<()> {
         for stmt in &program.body {
             match stmt {
-                Statement::ImportDeclaration(import) if is_runtime_import(import) => {
+                Statement::ImportDeclaration(import) if is_runtime_import(import, source) => {
                     if let Some(resolved) = resolve_import(&abs_path, import.source.value.as_str())
                     {
                         imports.push(resolved);
                     }
                 }
                 Statement::ExportNamedDeclaration(export) => {
-                    if !is_runtime_export(export) {
+                    if !is_runtime_export(export, source) {
                         continue;
                     }
                     if let Some(source) = &export.source {
@@ -433,44 +603,65 @@ fn collect_imports(
     Ok(imports)
 }
 
-fn is_runtime_import(import: &oxc_ast::ast::ImportDeclaration) -> bool {
-    if import.import_kind == ImportOrExportKind::Type {
+fn is_runtime_import(import: &oxc_ast::ast::ImportDeclaration, source: &str) -> bool {
+    let raw = declaration_text(import.span.start as usize, import.span.end as usize, source)
+        .trim_start();
+    if raw.starts_with("import type ") {
         return false;
     }
 
-    let Some(specifiers) = import.specifiers.as_ref() else {
-        return true;
-    };
-    if specifiers.is_empty() {
-        return true;
-    }
-
-    for specifier in specifiers {
-        if let ImportDeclarationSpecifier::ImportSpecifier(specifier) = specifier {
-            if specifier.import_kind == ImportOrExportKind::Value {
+    match parse_named_specifiers(raw) {
+        Some(named_specifiers) => {
+            if named_specifiers.is_empty() {
                 return true;
             }
-            continue;
+            named_specifiers
+                .iter()
+                .any(|specifier| !specifier.trim_start().starts_with("type "))
         }
-        return true;
+        None => true,
     }
-
-    false
 }
 
-fn is_runtime_export(export: &ExportNamedDeclaration) -> bool {
-    if export.export_kind == ImportOrExportKind::Type {
+fn is_runtime_export(export: &ExportNamedDeclaration, source: &str) -> bool {
+    let raw = declaration_text(export.span.start as usize, export.span.end as usize, source)
+        .trim_start();
+    if raw.starts_with("export type ") {
         return false;
     }
 
-    if export.specifiers.is_empty() {
-        return true;
+    match parse_named_specifiers(raw) {
+        Some(named_specifiers) => {
+            if named_specifiers.is_empty() {
+                return true;
+            }
+            named_specifiers
+                .iter()
+                .any(|specifier| !specifier.trim_start().starts_with("type "))
+        }
+        None => true,
     }
+}
 
-    export
-        .specifiers
-        .iter()
-        .any(|spec: &ExportSpecifier| spec.export_kind == ImportOrExportKind::Value)
+fn declaration_text(start: usize, end: usize, source: &str) -> &str {
+    if start > end || end > source.len() {
+        return "";
+    }
+    &source[start..end]
+}
+
+fn parse_named_specifiers(statement: &str) -> Option<Vec<&str>> {
+    let start = statement.find('{')?;
+    let end = statement.rfind('}')?;
+    if end <= start {
+        return Some(Vec::new());
+    }
+    let names = statement[start + 1..end]
+        .split(',')
+        .map(|segment| segment.trim())
+        .filter(|segment| !segment.is_empty())
+        .collect();
+    Some(names)
 }
 
 fn is_route_handler_file(path: &Path) -> bool {
@@ -565,29 +756,42 @@ fn print_markdown_report(report: &FinalReport) {
     println!();
     println!("## Summary");
     println!("- Total Routes: {}", report.summary.total_routes);
-    println!("- Total Fetch Calls: {}", report.summary.total_fetches);
+    println!("- Routes with API Calls: {}", report.summary.routes_with_api_calls);
+    println!("- Total API Calls: {}", report.summary.total_api_calls);
+    println!("- Unique API Calls: {}", report.summary.unique_api_calls);
+    println!("- Duplicate API Calls: {}", report.summary.duplicate_api_calls);
+    println!("- Dynamic API Calls: {}", report.summary.dynamic_api_calls);
+    println!("- Cached API Calls: {}", report.summary.cached_api_calls);
+    println!("- Server API Calls: {}", report.summary.server_api_calls);
+    println!("- RSC API Calls: {}", report.summary.rsc_api_calls);
+    println!("- Client API Calls: {}", report.summary.client_api_calls);
     println!();
 
     println!("## Routes");
     for route in &report.routes {
         println!("### {} ({})", route.route, route.file);
-        if route.fetches.is_empty() {
+        if route.api_calls.is_empty() {
             println!("(no fetches found)");
         } else {
-            println!("| Method | URL | File | Line | Side | Dynamic |");
+            println!("| Method | Path | Side | File | Line | RSC | Dynamic |");
             println!("| --- | --- | --- | --- | --- | --- |");
-            let mut unique_fetches = route.fetches.clone();
+            let mut unique_fetches = route.api_calls.clone();
             unique_fetches.sort();
             unique_fetches.dedup();
             for fetch in &unique_fetches {
                 println!(
-                    "| {} | `{}` | {} | {} | {} | {} |",
+                    "| {} | `{}` | {} | {} | {} | {} | {} |",
                     fetch.method,
-                    fetch.url,
+                    fetch.path,
                     fetch.file,
                     fetch.line,
-                    if fetch.is_rsc { "S" } else { "C" },
-                    if fetch.is_dynamic { "✅" } else { "❌" }
+                    if matches!(fetch.side, FetchSide::Client) {
+                        "client"
+                    } else {
+                        "server"
+                    },
+                    if fetch.rsc { "yes" } else { "no" },
+                    if fetch.dynamic { "✅" } else { "❌" }
                 );
             }
         }
@@ -596,20 +800,28 @@ fn print_markdown_report(report: &FinalReport) {
 
     if !report.duplicates.is_empty() {
         println!("## Duplicates");
-        println!("| Method | URL | Example File |");
-        println!("| --- | --- | --- |");
+        println!("| Key | Count | Route | File | Line |");
+        println!("| --- | --- | --- | --- | --- |");
         for fetch in &report.duplicates {
-            println!("| {} | `{}` | {} |", fetch.method, fetch.url, fetch.file);
+            for occurrence in &fetch.occurrences {
+                println!(
+                    "| `{}` | {} | {} | {} | {} |",
+                    fetch.key, fetch.count, occurrence.route, occurrence.file, occurrence.line
+                );
+            }
         }
         println!();
     }
 
     if !report.unsupported.is_empty() {
         println!("## Unsupported (Dynamic)");
-        println!("| Method | URL | File |");
-        println!("| --- | --- | --- |");
+        println!("| Route | File | Line | Reason | Path |");
+        println!("| --- | --- | --- | --- | --- |");
         for fetch in &report.unsupported {
-            println!("| {} | `{}` | {} |", fetch.method, fetch.url, fetch.file);
+            println!(
+                "| {} | {} | {} | {} | `{}` |",
+                fetch.route, fetch.file, fetch.line, fetch.reason, fetch.raw_path
+            );
         }
         println!();
     }
@@ -650,6 +862,7 @@ mod tests {
             file: "test.ts".to_string(),
             fetches: Vec::new(),
             is_client: false,
+            is_route_handler: false,
         };
         visitor.visit_program(&parsed.program);
         assert_eq!(visitor.fetches.len(), 0);
@@ -672,12 +885,13 @@ mod tests {
             file: "test.ts".to_string(),
             fetches: Vec::new(),
             is_client: false,
+            is_route_handler: false,
         };
         visitor.visit_program(&parsed.program);
         assert_eq!(visitor.fetches.len(), 5);
         for fetch in &visitor.fetches {
             assert_eq!(fetch.method, "GET");
-            assert!(fetch.is_dynamic);
+            assert!(fetch.dynamic);
             assert!(fetch.line > 0);
         }
     }
@@ -693,11 +907,12 @@ mod tests {
             file: "test.ts".to_string(),
             fetches: Vec::new(),
             is_client: false,
+            is_route_handler: false,
         };
         visitor.visit_program(&parsed.program);
         assert_eq!(visitor.fetches.len(), 1);
-        assert_eq!(visitor.fetches[0].url, "unknown");
-        assert!(!visitor.fetches[0].is_dynamic);
+        assert_eq!(visitor.fetches[0].path, "unknown");
+        assert!(!visitor.fetches[0].dynamic);
     }
 
     #[test]
@@ -711,20 +926,21 @@ mod tests {
             file: "test.ts".to_string(),
             fetches: Vec::new(),
             is_client: false,
+            is_route_handler: false,
         };
         visitor.visit_program(&parsed.program);
         assert_eq!(visitor.fetches.len(), 3);
-        assert_eq!(visitor.fetches[0].url, "dynamic");
-        assert!(visitor.fetches[0].is_dynamic);
-        assert!(visitor.fetches[0].is_rsc);
-        assert_eq!(visitor.fetches[1].url, "/api/${id}");
-        assert!(visitor.fetches[1].is_dynamic);
+        assert_eq!(visitor.fetches[0].path, "dynamic");
+        assert!(visitor.fetches[0].dynamic);
+        assert!(visitor.fetches[0].rsc);
+        assert_eq!(visitor.fetches[1].path, "/api/${id}");
+        assert!(visitor.fetches[1].dynamic);
         assert_eq!(visitor.fetches[1].method, "PATCH");
-        assert!(visitor.fetches[1].is_rsc);
-        assert_eq!(visitor.fetches[2].url, "/api/get");
-        assert!(!visitor.fetches[2].is_dynamic);
+        assert!(visitor.fetches[1].rsc);
+        assert_eq!(visitor.fetches[2].path, "/api/get");
+        assert!(!visitor.fetches[2].dynamic);
         assert_eq!(visitor.fetches[2].method, "GET");
-        assert!(visitor.fetches[2].is_rsc);
+        assert!(visitor.fetches[2].rsc);
     }
 
     #[test]
@@ -851,8 +1067,13 @@ mod tests {
             import { type Bar } from './bar';
             import { Baz } from './baz';
         ";
-        let source_type = oxc_span::SourceType::default();
+        let source_type = oxc_span::SourceType::from_path(std::path::Path::new("test.ts")).unwrap();
         let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        assert!(
+            parsed.errors.is_empty(),
+            "import parser errors: {:?}",
+            parsed.errors
+        );
         let imports = parsed
             .program
             .body
@@ -863,10 +1084,10 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(imports.len(), 4);
-        assert!(!is_runtime_import(imports[0]));
-        assert!(is_runtime_import(imports[1]));
-        assert!(!is_runtime_import(imports[2]));
-        assert!(is_runtime_import(imports[3]));
+        assert!(!is_runtime_import(imports[0], source));
+        assert!(is_runtime_import(imports[1], source));
+        assert!(!is_runtime_import(imports[2], source));
+        assert!(is_runtime_import(imports[3], source));
     }
 
     #[test]
@@ -878,8 +1099,13 @@ mod tests {
             export { type Bar } from './bar';
             export { Baz } from './baz';
         ";
-        let source_type = oxc_span::SourceType::default();
+        let source_type = oxc_span::SourceType::from_path(std::path::Path::new("test.ts")).unwrap();
         let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        assert!(
+            parsed.errors.is_empty(),
+            "export parser errors: {:?}",
+            parsed.errors
+        );
         let exports = parsed
             .program
             .body
@@ -890,10 +1116,10 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(exports.len(), 4);
-        assert!(!is_runtime_export(exports[0]));
-        assert!(is_runtime_export(exports[1]));
-        assert!(!is_runtime_export(exports[2]));
-        assert!(is_runtime_export(exports[3]));
+        assert!(!is_runtime_export(exports[0], source));
+        assert!(is_runtime_export(exports[1], source));
+        assert!(!is_runtime_export(exports[2], source));
+        assert!(is_runtime_export(exports[3], source));
     }
 
     #[test]
@@ -958,10 +1184,11 @@ mod tests {
             &mut fetches,
             &mut cache,
             false,
+            false,
         )
         .unwrap();
-        assert!(fetches.iter().any(|fetch| fetch.url == "/api/helper"));
-        assert!(fetches.iter().any(|fetch| !fetch.is_rsc));
+        assert!(fetches.iter().any(|fetch| fetch.path == "/api/helper"));
+        assert!(fetches.iter().any(|fetch| !fetch.rsc));
     }
 
     #[test]
@@ -990,6 +1217,7 @@ mod tests {
             &mut fetches,
             &mut cache,
             false,
+            false,
         )
         .unwrap();
         assert_eq!(fetches.len(), 1);
@@ -1003,10 +1231,11 @@ mod tests {
             &mut fetches2,
             &mut cache,
             false,
+            false,
         )
         .unwrap();
         assert_eq!(fetches2.len(), 1);
-        assert_eq!(fetches2[0].url, "/api/cache");
+        assert_eq!(fetches2[0].path, "/api/cache");
     }
 
     #[test]
@@ -1023,6 +1252,7 @@ mod tests {
             &mut visited,
             &mut fetches,
             &mut cache,
+            false,
             false,
         )
         .unwrap();
@@ -1075,6 +1305,7 @@ mod tests {
             &mut fetches,
             &mut cache,
             false,
+            false,
         )
         .unwrap();
         assert!(fetches.is_empty());
@@ -1097,6 +1328,7 @@ mod tests {
             &mut visited,
             &mut fetches,
             &mut cache,
+            false,
             false,
         )
         .err()

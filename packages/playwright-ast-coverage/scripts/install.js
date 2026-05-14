@@ -5,6 +5,12 @@ const { join } = require("node:path");
 const PACKAGE_ROOT = join(__dirname, "..");
 const pkg = require(join(PACKAGE_ROOT, "package.json"));
 const core = require("no-mistakes-core");
+const INSTALL_DEFAULTS = {
+  version: pkg.version,
+  vendorDir: join(PACKAGE_ROOT, "vendor"),
+  envVar: "PLAYWRIGHT_AST_COVERAGE_RELEASE_BASE_URL",
+  checkExisting: true,
+};
 
 async function main() {
   try {
@@ -12,10 +18,7 @@ async function main() {
       "playwright-ast-coverage",
       "jonathanong/playwright-ast-coverage",
       {
-        version: pkg.version,
-        vendorDir: join(PACKAGE_ROOT, "vendor"),
-        envVar: "PLAYWRIGHT_AST_COVERAGE_RELEASE_BASE_URL",
-        checkExisting: true,
+        ...INSTALL_DEFAULTS,
       },
     );
     console.log(`Installed playwright-ast-coverage native binary to ${destination}`);
@@ -42,9 +45,7 @@ module.exports = {
     if (typeof binName === "object" && repository === undefined) {
       // Old signature: install(options)
       const mergedOptions = {
-        version: pkg.version,
-        vendorDir: join(PACKAGE_ROOT, "vendor"),
-        envVar: "PLAYWRIGHT_AST_COVERAGE_RELEASE_BASE_URL",
+        ...INSTALL_DEFAULTS,
         ...binName,
       };
       return core.install(
@@ -53,6 +54,13 @@ module.exports = {
         mergedOptions,
       );
     }
-    return core.install(binName, repository, options);
+    return core.install(
+      binName,
+      repository,
+      {
+        ...INSTALL_DEFAULTS,
+        ...options,
+      },
+    );
   },
 };

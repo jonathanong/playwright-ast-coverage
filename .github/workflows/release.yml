@@ -68,7 +68,7 @@ jobs:
           version="$(node -p "require('./package.json').version")"
           
           # Bump npm workspace versions
-          for pkg in eslint-plugin-playwright-ast-coverage no-mistakes-core next-to-fetch; do
+          for pkg in eslint-plugin-playwright-ast-coverage no-mistakes-core next-to-fetch playwright-ast-coverage; do
             npm version "$version" --workspace "$pkg" --no-git-tag-version
           done
           

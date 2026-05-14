@@ -24,6 +24,6 @@
     "postinstall": "node scripts/install.js"
   },
   "dependencies": {
-    "no-mistakes-core": "*"
+    "no-mistakes-core": "workspace:*"
   }
 }

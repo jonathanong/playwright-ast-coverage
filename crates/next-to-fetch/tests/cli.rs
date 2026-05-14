@@ -216,7 +216,8 @@ fn test_cli_route_handler_is_client_directive_ignored() {
             "### /api/hello (app/api/hello/route.ts)",
         ))
         .stdout(predicate::str::contains("| GET | `/api/hello` |"))
-        .stdout(predicate::str::contains("| S | ❌ |"));
+        .stdout(predicate::str::contains("| GET | `/api/hello` | app/api/hello/route.ts | 7 | server |"))
+        .stdout(predicate::str::contains("| no | ❌ |"));
 
     fs::remove_dir_all(root).unwrap();
 }
