@@ -3,10 +3,15 @@
 # Pre-push hook: checks only, no mutations.
 
 remote="$1"
+remote_url="$2"
 
-# Fetch the latest from origin/main to ensure comparison is accurate
+# Fetch the latest main from the actual push destination to ensure comparison is accurate.
 echo "Fetching $remote main..."
-git fetch "$remote" main >/dev/null 2>&1
+if ! git fetch "$remote_url" main >/dev/null 2>&1; then
+  echo "Error: Could not fetch main from push destination '$remote_url'."
+  echo "Please check your network/authentication and retry."
+  exit 1
+fi
 
 while read local_ref local_sha remote_ref remote_sha
 do
@@ -17,11 +22,11 @@ do
       continue
     fi
 
-    # Check if the branch being pushed is behind origin/main
-    behind_count=$(git rev-list --count "$local_sha".."$remote"/main)
+    # Check if the branch being pushed is behind the push destination's main.
+    behind_count=$(git rev-list --count "$local_sha"..FETCH_HEAD)
     if [ "$behind_count" -gt 0 ]; then
-      echo "Error: Branch '${local_ref#refs/heads/}' is behind $remote/main by $behind_count commit(s)."
-      echo "Please rebase onto $remote/main before pushing."
+      echo "Error: Branch '${local_ref#refs/heads/}' is behind $remote main by $behind_count commit(s)."
+      echo "Please rebase onto the push destination's main before pushing."
       exit 1
     fi
   fi
@@ -38,6 +43,12 @@ npm run fmt:js:check || exit 1
 
 echo "Running oxlint..."
 npm run lint:js || exit 1
+
+if ! cargo llvm-cov --version >/dev/null 2>&1; then
+  echo "Error: cargo-llvm-cov is required for the pre-push coverage check."
+  echo "Install it with: cargo install cargo-llvm-cov"
+  exit 1
+fi
 
 echo "Checking Rust test coverage (99% required)..."
 cargo llvm-cov --all-features --workspace --fail-under-lines 99 || exit 1

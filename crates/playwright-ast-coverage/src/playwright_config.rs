@@ -683,6 +683,8 @@ mod tests {
         assert_eq!(parsed.projects[0].test_dir, ".");
     }
 
+    #[test]
+    fn parses_commonjs_define_config_exports() {
         let source = fixture_source(&["playwright_config", "commonjs-define-config.cjs"]);
         let parsed = parse_from_path(
             &source,
