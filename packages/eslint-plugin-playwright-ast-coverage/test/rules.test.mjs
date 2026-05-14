@@ -18,6 +18,8 @@ describe("defaulted prop helpers", () => {
   it("returns an empty set outside functions", () => {
     const { defaultedPropsForNode } = require("../src/defaulted-props");
     assert.equal(defaultedPropsForNode({ parent: null }).size, 0);
+    const fn = { type: "FunctionDeclaration", params: [], body: null, parent: null };
+    assert.equal(defaultedPropsForNode({ parent: fn }), defaultedPropsForNode({ parent: fn }));
   });
 });
 
@@ -88,13 +90,13 @@ describe("literals", () => {
   });
 
   it("accepts const destructured literal defaults", () => {
-    const code = `function A(props) { const { "data-pw": dataPw = "save" } = props; page.getByTestId(dataPw); return <button data-pw={dataPw} />; }`;
+    const code = `function A(props) { const { "data-pw": dataPw = "save", nested: { nestedPw = "open" } = {} } = props; page.getByTestId(dataPw); return <><button data-pw={dataPw} /><button data-pw={nestedPw} /></>; }`;
     assert.deepEqual(messages(code, "literals"), []);
   });
 
   it("rejects unsafe const destructured defaults", () => {
-    const code = `function A(props) { const { "data-pw": missing } = props; const { "data-testid": dynamic = id } = props; let { "data-qa": mutable = "open" } = props; return <><button data-pw={missing} /><button data-pw={dynamic} /><button data-pw={mutable} /></>; }`;
-    assert.deepEqual(messages(code, "literals"), ["literal", "literal", "literal"]);
+    const code = `function A(props) { function B() { const { "data-pw": inner = "inner" } = props; } const { "data-pw": missing } = props; const { "data-testid": dynamic = id } = props; let { "data-qa": mutable = "open" } = props; return <><button data-pw={inner} /><button data-pw={missing} /><button data-pw={dynamic} /><button data-pw={mutable} /></>; }`;
+    assert.deepEqual(messages(code, "literals"), ["literal", "literal", "literal", "literal"]);
   });
 
   it("rejects missing getByTestId arguments and identifiers outside functions", () => {
