@@ -145,7 +145,11 @@ fn test_cli_targets_imported_file() {
         ",
     )
     .unwrap();
-    fs::write(root.join("app/users.ts"), "export const getUsers = () => fetch('/api/users');").unwrap();
+    fs::write(
+        root.join("app/users.ts"),
+        "export const getUsers = () => fetch('/api/users');",
+    )
+    .unwrap();
 
     let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
     cmd.arg("--root").arg(root).arg("app/users.ts");
@@ -177,7 +181,11 @@ fn test_cli_skips_type_only_imports() {
         "export type User = {\n  id: string;\n};\nexport const getUser = () => fetch('/api/type-only');\n",
     )
     .unwrap();
-    fs::write(root.join("app/runtime.ts"), "export const getData = () => fetch('/api/runtime');").unwrap();
+    fs::write(
+        root.join("app/runtime.ts"),
+        "export const getData = () => fetch('/api/runtime');",
+    )
+    .unwrap();
 
     let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
     cmd.arg("--root").arg(root);

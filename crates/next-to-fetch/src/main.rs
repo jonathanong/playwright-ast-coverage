@@ -4,8 +4,7 @@ use no_mistakes_core::ast;
 use no_mistakes_core::config;
 use no_mistakes_core::routes;
 use oxc_ast::ast::{
-    Argument, CallExpression, Expression, ImportDeclarationSpecifier, ImportOrExportKind,
-    Statement,
+    Argument, CallExpression, Expression, ImportDeclarationSpecifier, ImportOrExportKind, Statement,
 };
 use oxc_ast_visit::{walk, Visit};
 use serde::{Deserialize, Serialize};
@@ -372,7 +371,9 @@ fn analyze_file(
         Ok(is_client)
     })??;
 
-    cache.files.insert((abs_path.clone(), is_client), file_fetches.clone());
+    cache
+        .files
+        .insert((abs_path.clone(), is_client), file_fetches.clone());
     fetches.extend(file_fetches);
 
     Ok(())
@@ -613,7 +614,7 @@ mod tests {
     fn test_visitor_complex_variants() {
         let allocator = oxc_allocator::Allocator::default();
         let source = "
-            fetch(url, options); 
+            fetch(url, options);
             fetch(url, { notMethod: 'POST' });
             fetch(url, { method: methodVar });
             fetch(url, { ...spread });
@@ -701,14 +702,17 @@ mod tests {
 
         let current = dir.path().join("main.ts");
         let resolved = resolve_import(&current, "./lib.ts").unwrap();
-        assert_eq!(resolved.canonicalize().unwrap(), file.canonicalize().unwrap());
+        assert_eq!(
+            resolved.canonicalize().unwrap(),
+            file.canonicalize().unwrap()
+        );
     }
 
     #[test]
     fn test_resolve_import_root() {
         assert_eq!(resolve_import(Path::new("page.ts"), "./lib"), None);
     }
-    
+
     #[test]
     fn test_route_reaches_target_client_file() {
         let dir = tempdir().unwrap();
@@ -732,7 +736,15 @@ mod tests {
         };
         let mut visited = HashSet::new();
         let mut fetches = Vec::new();
-        analyze_file(&file, dir.path(), &mut visited, &mut fetches, &mut cache, false).unwrap();
+        analyze_file(
+            &file,
+            dir.path(),
+            &mut visited,
+            &mut fetches,
+            &mut cache,
+            false,
+        )
+        .unwrap();
         assert!(fetches.iter().any(|fetch| fetch.url == "/api/helper"));
         assert!(fetches.iter().any(|fetch| !fetch.is_rsc));
     }
@@ -756,12 +768,28 @@ mod tests {
         };
         let mut visited = HashSet::new();
         let mut fetches = Vec::new();
-        analyze_file(&file, dir.path(), &mut visited, &mut fetches, &mut cache, false).unwrap();
+        analyze_file(
+            &file,
+            dir.path(),
+            &mut visited,
+            &mut fetches,
+            &mut cache,
+            false,
+        )
+        .unwrap();
         assert_eq!(fetches.len(), 1);
 
         let mut visited2 = HashSet::new();
         let mut fetches2 = Vec::new();
-        analyze_file(&file, dir.path(), &mut visited2, &mut fetches2, &mut cache, false).unwrap();
+        analyze_file(
+            &file,
+            dir.path(),
+            &mut visited2,
+            &mut fetches2,
+            &mut cache,
+            false,
+        )
+        .unwrap();
         assert_eq!(fetches2.len(), 1);
         assert_eq!(fetches2[0].url, "/api/cache");
     }
@@ -825,7 +853,15 @@ mod tests {
             files: HashMap::new(),
             imports: HashMap::new(),
         };
-        analyze_file(&file, dir.path(), &mut visited, &mut fetches, &mut cache, false).unwrap();
+        analyze_file(
+            &file,
+            dir.path(),
+            &mut visited,
+            &mut fetches,
+            &mut cache,
+            false,
+        )
+        .unwrap();
         assert!(fetches.is_empty());
     }
 
@@ -848,8 +884,8 @@ mod tests {
             &mut cache,
             false,
         )
-            .err()
-            .unwrap();
+        .err()
+        .unwrap();
         assert!(
             err.to_string().contains("failed to read")
                 || err.to_string().contains("Is a directory")
