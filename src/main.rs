@@ -24,6 +24,8 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use walkdir::WalkDir;
 
+const HTML_ID_ATTRIBUTE: &str = "id";
+
 #[derive(Parser)]
 #[command(author, version, about)]
 struct Cli {
@@ -48,7 +50,25 @@ struct Cli {
     #[arg(long, global = true)]
     allow_skipped_tests: bool,
 
-    #[arg(long, global = true)]
+    #[arg(
+        long,
+        global = true,
+        help = "Fail check when exact test ID values are used more than once"
+    )]
+    assert_unique_test_ids: bool,
+
+    #[arg(
+        long,
+        global = true,
+        help = "Fail check when exact HTML id values are used more than once"
+    )]
+    assert_unique_html_ids: bool,
+
+    #[arg(
+        long,
+        global = true,
+        help = "Deprecated: use --assert-unique-test-ids and --assert-unique-html-ids"
+    )]
     assert_unique_selectors: bool,
 
     #[command(subcommand)]
@@ -149,6 +169,12 @@ struct RelatedReport {
 struct Analysis {
     coverage: CoverageReport,
     edges: EdgeReport,
+}
+
+#[derive(Clone, Copy, Default)]
+struct UniqueSelectorPolicy {
+    test_ids: bool,
+    html_ids: bool,
 }
 
 struct RouteTarget {
@@ -269,7 +295,11 @@ fn run() -> Result<ExitCode> {
             assert_conditional_tests: cli.assert_conditional_tests,
             allow_skipped_tests: cli.allow_skipped_tests,
         },
-        cli.assert_unique_selectors,
+        UniqueSelectorPolicy {
+            test_ids: cli.assert_unique_test_ids || cli.assert_unique_selectors,
+            html_ids: cli.assert_unique_html_ids
+                || (cli.assert_unique_selectors && settings.html_ids),
+        },
     )?;
     match cli.command {
         Command::Check => {
@@ -313,7 +343,7 @@ fn analyze(root: &Path, settings: &Settings) -> Result<Analysis> {
         root,
         settings,
         playwright_tests::TestPolicy::default(),
-        false,
+        UniqueSelectorPolicy::default(),
     )
 }
 
@@ -321,7 +351,7 @@ fn analyze_with_policy(
     root: &Path,
     settings: &Settings,
     test_policy: playwright_tests::TestPolicy,
-    assert_unique_selectors: bool,
+    unique_selector_policy: UniqueSelectorPolicy,
 ) -> Result<Analysis> {
     let route_root = root.join(&settings.frontend_root);
     let routes = routes::collect_routes(&route_root)?;
@@ -346,15 +376,27 @@ fn analyze_with_policy(
         &settings.component_selector_attributes,
         settings.html_ids,
     );
+    let unique_html_id_scan = unique_selector_policy.html_ids && !settings.html_ids;
+    let app_selector_regexes = selectors::compile_selector_regexes_with_html_ids(
+        &settings.selector_attributes,
+        &settings.component_selector_attributes,
+        settings.html_ids || unique_html_id_scan,
+    );
     let app_selector_occurrences = if settings.selector_attributes.is_empty()
         && settings.component_selector_attributes.is_empty()
         && !settings.html_ids
+        && !unique_html_id_scan
     {
         Vec::new()
     } else {
-        collect_app_selector_occurrences(root, settings, &selector_regexes)?
+        collect_app_selector_occurrences(root, settings, &app_selector_regexes)?
     };
-    let mut app_selectors = app_selector_occurrences.clone();
+    let coverage_app_selector_occurrences: Vec<_> = app_selector_occurrences
+        .iter()
+        .filter(|selector| settings.html_ids || selector.attribute != HTML_ID_ATTRIBUTE)
+        .cloned()
+        .collect();
+    let mut app_selectors = coverage_app_selector_occurrences.clone();
     app_selectors.sort();
     app_selectors.dedup();
     let route_index = route_index(root, &routes);
@@ -391,7 +433,7 @@ fn analyze_with_policy(
         &app_selector_occurrences,
         &edge_report.edges,
         settings,
-        assert_unique_selectors,
+        unique_selector_policy,
     );
     Ok(Analysis {
         coverage,
@@ -829,7 +871,7 @@ fn build_coverage(
     app_selector_occurrences: &[selectors::AppSelector],
     edges: &[Edge],
     settings: &Settings,
-    assert_unique_selectors: bool,
+    unique_selector_policy: UniqueSelectorPolicy,
 ) -> CoverageReport {
     let ignored: Vec<String> = settings.ignore_routes.clone();
     let mut by_route: BTreeMap<&str, (BTreeSet<String>, BTreeSet<String>)> = BTreeMap::new();
@@ -921,11 +963,8 @@ fn build_coverage(
         .filter(|selector| selector.covered)
         .count();
     let uncovered_selectors = total_selectors.saturating_sub(covered_selectors);
-    let duplicate_selectors = if assert_unique_selectors {
-        build_duplicate_selectors(root, app_selector_occurrences)
-    } else {
-        Vec::new()
-    };
+    let duplicate_selectors =
+        build_duplicate_selectors(root, app_selector_occurrences, unique_selector_policy);
     let duplicate_selector_count = duplicate_selectors.len();
 
     CoverageReport {
@@ -947,23 +986,37 @@ fn build_coverage(
 fn build_duplicate_selectors(
     root: &Path,
     app_selectors: &[selectors::AppSelector],
+    policy: UniqueSelectorPolicy,
 ) -> Vec<DuplicateSelector> {
-    let mut by_value: BTreeMap<&str, Vec<&selectors::AppSelector>> = BTreeMap::new();
+    let mut by_value: BTreeMap<DuplicateSelectorKey<'_>, Vec<&selectors::AppSelector>> =
+        BTreeMap::new();
     for selector in app_selectors {
         if let selectors::AppSelectorValue::Exact(value) = &selector.value {
-            by_value.entry(value.as_str()).or_default().push(selector);
+            if selector.attribute == HTML_ID_ATTRIBUTE {
+                if policy.html_ids {
+                    by_value
+                        .entry(DuplicateSelectorKey::HtmlId(value.as_str()))
+                        .or_default()
+                        .push(selector);
+                }
+            } else if policy.test_ids {
+                by_value
+                    .entry(DuplicateSelectorKey::TestId(value.as_str()))
+                    .or_default()
+                    .push(selector);
+            }
         }
     }
 
     let mut duplicates = Vec::new();
-    for (value, selectors) in by_value {
+    for (key, selectors) in by_value {
         if selectors.len() < 2 {
             continue;
         }
         for selector in selectors {
             duplicates.push(DuplicateSelector {
                 attribute: selector.attribute.clone(),
-                value: value.to_string(),
+                value: key.value().to_string(),
                 file: relative_string(root, &selector.file),
             });
         }
@@ -975,6 +1028,20 @@ fn build_duplicate_selectors(
             .then_with(|| a.attribute.cmp(&b.attribute))
     });
     duplicates
+}
+
+#[derive(Eq, PartialEq, Ord, PartialOrd)]
+enum DuplicateSelectorKey<'a> {
+    TestId(&'a str),
+    HtmlId(&'a str),
+}
+
+impl DuplicateSelectorKey<'_> {
+    fn value(&self) -> &str {
+        match self {
+            Self::TestId(value) | Self::HtmlId(value) => value,
+        }
+    }
 }
 
 fn print_coverage_text(report: &CoverageReport) {
@@ -1401,7 +1468,15 @@ mod tests {
             selector_include: vec![],
             selector_exclude: vec![],
         };
-        let report = build_coverage(root, &routes, &[], &[], &[], &settings, false);
+        let report = build_coverage(
+            root,
+            &routes,
+            &[],
+            &[],
+            &[],
+            &settings,
+            UniqueSelectorPolicy::default(),
+        );
         assert_eq!(report.routes[0].file, "web/app/a/page.tsx");
         assert_eq!(report.routes[1].file, "web/app/b/page.tsx");
     }
@@ -1436,7 +1511,7 @@ mod tests {
             &app_selectors,
             &[],
             &settings,
-            false,
+            UniqueSelectorPolicy::default(),
         );
         assert_eq!(report.summary.total_selectors, 1);
         assert_eq!(report.summary.uncovered_selectors, 1);
@@ -1485,7 +1560,7 @@ mod tests {
             &app_selectors,
             &[],
             &settings,
-            false,
+            UniqueSelectorPolicy::default(),
         );
         assert_eq!(report.selectors[0].file, "web/app/a.tsx");
         assert_eq!(report.selectors[1].file, "web/app/b.tsx");
@@ -1528,12 +1603,46 @@ mod tests {
             },
         ];
 
-        let duplicates = build_duplicate_selectors(root, &app_selectors);
+        let duplicates = build_duplicate_selectors(
+            root,
+            &app_selectors,
+            UniqueSelectorPolicy {
+                test_ids: true,
+                html_ids: false,
+            },
+        );
         assert_eq!(duplicates.len(), 4);
         assert_eq!(duplicates[0].file, "web/app/a.tsx");
         assert_eq!(duplicates[1].attribute, "data-pw");
         assert_eq!(duplicates[2].attribute, "data-pw");
         assert_eq!(duplicates[3].attribute, "data-testid");
+    }
+
+    #[test]
+    fn duplicate_selector_report_keeps_html_ids_separate_from_test_ids() {
+        let root = Path::new("/repo");
+        let app_selectors = vec![
+            selectors::AppSelector {
+                file: PathBuf::from("/repo/web/app/a.tsx"),
+                attribute: "data-testid".to_string(),
+                value: selectors::AppSelectorValue::Exact("same".to_string()),
+            },
+            selectors::AppSelector {
+                file: PathBuf::from("/repo/web/app/b.tsx"),
+                attribute: "id".to_string(),
+                value: selectors::AppSelectorValue::Exact("same".to_string()),
+            },
+        ];
+
+        let duplicates = build_duplicate_selectors(
+            root,
+            &app_selectors,
+            UniqueSelectorPolicy {
+                test_ids: true,
+                html_ids: true,
+            },
+        );
+        assert!(duplicates.is_empty());
     }
 
     #[test]
@@ -1573,7 +1682,7 @@ mod tests {
             &app_selectors,
             &edges,
             &settings,
-            false,
+            UniqueSelectorPolicy::default(),
         );
         assert_eq!(report.summary.covered_selectors, 1);
         assert_eq!(report.selectors[0].tests, vec!["tests/e2e/app.spec.ts"]);
@@ -1607,7 +1716,15 @@ mod tests {
             selector_include: vec![],
             selector_exclude: vec![],
         };
-        let report = build_coverage(root, &routes, &[], &[], &edges, &settings, false);
+        let report = build_coverage(
+            root,
+            &routes,
+            &[],
+            &[],
+            &edges,
+            &settings,
+            UniqueSelectorPolicy::default(),
+        );
         assert_eq!(report.summary.covered_routes, 1);
         assert_eq!(report.routes[0].urls, vec!["/users/42"]);
     }

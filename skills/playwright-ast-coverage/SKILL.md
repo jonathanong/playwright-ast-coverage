@@ -28,8 +28,9 @@ or Playwright test-hook selector coverage.
 - Use `related <file>` to identify Playwright tests for a changed page or
   selector-bearing component.
 - Use `edges --json` to debug why a route or selector is counted as covered.
-- Add `--assert-unique-selectors` in CI when exact selector values must be unique
-  across the configured app, not just within one linted file.
+- Add `--assert-unique-test-ids` in CI when exact test ID values must be unique
+  across the configured app, not just within one linted file. Add
+  `--assert-unique-html-ids` when HTML `id` values must also be unique.
 
 ## Fix Patterns
 

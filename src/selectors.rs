@@ -5,7 +5,9 @@ use oxc_ast_visit::Visit;
 use oxc_span::{GetSpan, Span};
 use oxc_syntax::scope::ScopeFlags;
 use regex::Regex;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
+#[cfg(test)]
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 #[cfg(test)]
 use walkdir::WalkDir;
@@ -335,10 +337,10 @@ pub fn extract_app_selectors_with_regexes(
             component_attributes: &regexes.component_attributes,
             html_ids: regexes.html_ids,
             scoped_static_identifier_defaults: &scoped_static_identifier_defaults,
-            selectors: BTreeSet::new(),
+            selectors: Vec::new(),
         };
         visitor.visit_program(program);
-        visitor.selectors.into_iter().collect()
+        visitor.selectors
     })
 }
 
@@ -438,7 +440,7 @@ struct AppSelectorVisitor<'a, 'r> {
     component_attributes: &'r BTreeMap<String, String>,
     html_ids: bool,
     scoped_static_identifier_defaults: &'r [ScopedStaticIdentifierDefault],
-    selectors: BTreeSet<AppSelector>,
+    selectors: Vec<AppSelector>,
 }
 
 impl<'a> oxc_ast_visit::Visit<'a> for AppSelectorVisitor<'a, '_> {
@@ -460,7 +462,7 @@ impl<'a> oxc_ast_visit::Visit<'a> for AppSelectorVisitor<'a, '_> {
                 self.source,
                 self.scoped_static_identifier_defaults,
             ) {
-                self.selectors.insert(AppSelector {
+                self.selectors.push(AppSelector {
                     file: self.path.to_path_buf(),
                     attribute: mapped_attribute.to_string(),
                     value,
@@ -1499,6 +1501,7 @@ mod tests {
 
         let mut values: Vec<String> = selectors.iter().map(AppSelector::display_value).collect();
         values.sort();
+        values.dedup();
         assert_eq!(
             values,
             vec![

@@ -32,7 +32,9 @@ playwright-ast-coverage related [OPTIONS] <FILES>...
 | `--json`                                  | `false`                                                                                           | Emit pretty-printed JSON instead of text output.                                                                                                                              |
 | `--assert-conditional-tests`              | `false`                                                                                           | Require coverage from active tests. URLs and selectors found only in conditional tests or suites do not count.                                                                |
 | `--allow-skipped-tests`                   | `false`                                                                                           | Allow URLs and selectors found in unconditionally skipped tests or suites to count.                                                                                           |
-| `--assert-unique-selectors`               | `false`                                                                                           | Fail `check` when an exact selector value is used more than once across configured selector roots. Template and unsupported dynamic values are ignored.                       |
+| `--assert-unique-test-ids`                | `false`                                                                                           | Fail `check` when an exact test ID value is used more than once across configured selector roots. Template and unsupported dynamic values are ignored.                        |
+| `--assert-unique-html-ids`                | `false`                                                                                           | Fail `check` when an exact HTML `id` value is used more than once across configured selector roots. This check does not enable HTML ID coverage.                              |
+| `--assert-unique-selectors`               | `false`                                                                                           | Deprecated. Use `--assert-unique-test-ids` and `--assert-unique-html-ids`. For compatibility, checks test IDs and also HTML IDs when `htmlIds: true` is configured.           |
 | `-h`, `--help`                            |                                                                                                   | Print CLI help.                                                                                                                                                               |
 | `-V`, `--version`                         |                                                                                                   | Print package version.                                                                                                                                                        |
 
@@ -57,8 +59,10 @@ By default the tool:
 - counts coverage from active tests and conditionally skipped tests,
 - ignores coverage from unconditionally skipped tests and suites,
 - exits `1` when any non-ignored route or selector is uncovered,
-- optionally exits `1` for duplicate exact selector values when
-  `--assert-unique-selectors` is set,
+- optionally exits `1` for duplicate exact test ID values when
+  `--assert-unique-test-ids` is set,
+- optionally exits `1` for duplicate exact HTML `id` values when
+  `--assert-unique-html-ids` is set,
 - exits `2` for configuration or parse errors.
 
 Skipped and conditional Playwright tests are detected statically. Unconditional

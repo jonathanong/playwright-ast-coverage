@@ -95,7 +95,21 @@ fn duplicate_routes_and_selectors_are_sorted_deterministically() {
 }
 
 #[test]
-fn check_can_fail_on_duplicate_selector_literals() {
+fn check_can_fail_on_duplicate_test_id_literals() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("sort-tiebreakers"))
+        .arg("--assert-unique-test-ids")
+        .arg("check")
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Duplicate selectors:"))
+        .stdout(predicate::str::contains(r#"[data-testid="dup"]"#));
+}
+
+#[test]
+fn deprecated_unique_selectors_flag_still_checks_test_ids() {
     Command::cargo_bin("playwright-ast-coverage")
         .unwrap()
         .arg("--root")
@@ -106,6 +120,35 @@ fn check_can_fail_on_duplicate_selector_literals() {
         .code(1)
         .stdout(predicate::str::contains("Duplicate selectors:"))
         .stdout(predicate::str::contains(r#"[data-testid="dup"]"#));
+}
+
+#[test]
+fn check_can_fail_on_duplicate_html_id_literals_without_html_id_coverage() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("unique-html-ids"))
+        .arg("--assert-unique-html-ids")
+        .arg("check")
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("\nUncovered selectors:\n").not())
+        .stdout(predicate::str::contains("Duplicate selectors:"))
+        .stdout(predicate::str::contains(r#"[id="save"]"#));
+}
+
+#[test]
+fn test_ids_and_html_ids_with_the_same_value_are_not_duplicates() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("unique-cross-attribute"))
+        .arg("--assert-unique-test-ids")
+        .arg("--assert-unique-html-ids")
+        .arg("check")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Duplicate selectors: 0"));
 }
 
 #[test]
