@@ -203,7 +203,11 @@ mod tests {
             .err()
             .unwrap();
         let err_str = err.to_string();
-        assert!(err_str.contains("Is a directory") || err_str.contains("Permission denied") || err_str.contains("failed to read"));
+        assert!(
+            err_str.contains("Is a directory")
+                || err_str.contains("Permission denied")
+                || err_str.contains("failed to read")
+        );
     }
 
     #[test]
@@ -224,7 +228,9 @@ mod tests {
         let err = parse_config::<TestConfig>("", Path::new("test.toml"))
             .err()
             .unwrap();
-        assert!(err.to_string().contains("unsupported config file extension"));
+        assert!(err
+            .to_string()
+            .contains("unsupported config file extension"));
     }
 
     #[test]

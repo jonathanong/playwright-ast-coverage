@@ -88,7 +88,8 @@ impl<'a> Visit<'a> for FetchVisitor<'a> {
                     file: self.file.clone(),
                 });
             }
-        } walk::walk_call_expression(self, expr);
+        }
+        walk::walk_call_expression(self, expr);
     }
 }
 
@@ -226,7 +227,8 @@ fn resolve_import(current_file: &Path, specifier: &str) -> Option<PathBuf> {
                 return Some(index);
             }
         }
-    } None
+    }
+    None
 }
 
 fn relative_string(root: &Path, path: &Path) -> String {
@@ -263,8 +265,12 @@ mod tests {
         let source_type = oxc_span::SourceType::default();
         let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
         let stmt = &parsed.program.body[0];
-        let Statement::ExpressionStatement(expr_stmt) = stmt else { unreachable!() };
-        let Expression::CallExpression(call) = &expr_stmt.expression else { unreachable!() };
+        let Statement::ExpressionStatement(expr_stmt) = stmt else {
+            unreachable!()
+        };
+        let Expression::CallExpression(call) = &expr_stmt.expression else {
+            unreachable!()
+        };
         let arg = &call.arguments[0];
         assert_eq!(extract_string_literal_from_argument(arg, source), None);
     }
