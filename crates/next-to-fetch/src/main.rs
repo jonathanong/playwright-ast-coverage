@@ -563,7 +563,7 @@ fn run() -> Result<()> {
     let mut duplicates = Vec::new();
     for ((method, path, side, rsc), occurrences) in duplicate_key_map {
         if occurrences.len() > 1 {
-        duplicates.push(DuplicateApiCall {
+            duplicates.push(DuplicateApiCall {
                 key: format!(
                     "{method} {path} {:?} {}",
                     match side {
@@ -635,7 +635,11 @@ fn analyze_file(
     }
 
     let abs_path = path.canonicalize()?;
-    let visit_key = (abs_path.clone(), inherited_is_client, inherited_is_route_handler);
+    let visit_key = (
+        abs_path.clone(),
+        inherited_is_client,
+        inherited_is_route_handler,
+    );
     if visited.contains(&visit_key) {
         return Ok(());
     }
