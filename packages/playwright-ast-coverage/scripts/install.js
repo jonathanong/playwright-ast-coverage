@@ -32,19 +32,9 @@ function isPlatform(value) {
 
 function unsupportedPlatformMessage(binNameOrPlatform, platform, arch, report) {
   if (isPlatform(binNameOrPlatform) && typeof platform === "string") {
-    return core.unsupportedPlatformMessage(
-      DEFAULT_BIN_NAME,
-      binNameOrPlatform,
-      platform,
-      arch,
-    );
+    return core.unsupportedPlatformMessage(DEFAULT_BIN_NAME, binNameOrPlatform, platform, arch);
   }
-  return core.unsupportedPlatformMessage(
-    binNameOrPlatform,
-    platform,
-    arch,
-    report,
-  );
+  return core.unsupportedPlatformMessage(binNameOrPlatform, platform, arch, report);
 }
 
 async function main() {
@@ -74,8 +64,7 @@ module.exports = {
     const targetDir = typeof dir === "string" ? dir : PACKAGE_ROOT;
     return require(join(targetDir, "package.json")).version;
   },
-  assetName: (version, target) =>
-    core.assetName("playwright-ast-coverage", version, target),
+  assetName: (version, target) => core.assetName("playwright-ast-coverage", version, target),
   releaseBaseUrl: (version, envVar = "PLAYWRIGHT_AST_COVERAGE_RELEASE_BASE_URL") =>
     core.releaseBaseUrl("jonathanong/playwright-ast-coverage", version, envVar),
   install: (binName, repository, options) => {
