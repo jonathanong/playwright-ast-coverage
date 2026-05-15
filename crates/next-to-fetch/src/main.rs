@@ -3752,6 +3752,32 @@ mod tests {
     }
 
     #[test]
+    fn test_cli_target_file_match_skips_non_matching_wrapper_then_matches_outer() {
+        use assert_cmd::Command;
+
+        let root = tempdir().unwrap();
+        let app = root.path().join("app");
+        fs::create_dir_all(app.join("dashboard")).unwrap();
+
+        // inner layout does NOT import the target
+        let inner_layout = app.join("dashboard/layout.tsx");
+        fs::write(&inner_layout, "export default function Layout({ children }) { return children; }").unwrap();
+        let page = app.join("dashboard/page.tsx");
+        fs::write(&page, "fetch('/api/dashboard');").unwrap();
+        // outer layout DOES import the target
+        let outer_layout = app.join("layout.tsx");
+        fs::write(&outer_layout, "import { x } from './target.ts'; fetch('/api/root');").unwrap();
+        let target = app.join("target.ts");
+        fs::write(&target, "export const x = 1;").unwrap();
+
+        let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
+        cmd.arg("--root").arg(root.path()).arg(&target);
+        cmd.assert()
+            .success()
+            .stdout(predicates::str::contains("/api/root"));
+    }
+
+    #[test]
     fn test_cli_includes_client_side_fetches() {
         use assert_cmd::Command;
 
