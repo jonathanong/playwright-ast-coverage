@@ -209,7 +209,9 @@ impl<'a> Visit<'a> for FetchVisitor<'a> {
                 if let Some(cached_kind) = &self.cached_kind {
                     cached = true;
                     cache_kind = cached_kind.clone();
-                } else if let Some(Argument::ObjectExpression(obj)) = expr.arguments.get(1) {
+                }
+
+                if let Some(Argument::ObjectExpression(obj)) = expr.arguments.get(1) {
                     for prop in &obj.properties {
                         if let oxc_ast::ast::ObjectPropertyKind::ObjectProperty(p) = prop {
                             if let Some(name) = p.key.static_name() {
@@ -222,8 +224,10 @@ impl<'a> Visit<'a> for FetchVisitor<'a> {
                         }
                     }
                     let (seen_cached, seen_cache_kind) = extract_fetch_cache_options(obj);
-                    cached = seen_cached;
-                    cache_kind = seen_cache_kind;
+                    if !cached {
+                        cached = seen_cached;
+                        cache_kind = seen_cache_kind;
+                    }
                 }
 
                 let side = if self.is_client {
@@ -1771,10 +1775,7 @@ mod tests {
         fs::write(&page, "fetch('/api/explicit-target');").unwrap();
 
         let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
-        cmd.arg("--root")
-            .arg(root.path())
-            .arg("--target")
-            .arg(&page);
+        cmd.arg("--root").arg(root.path()).arg(&page);
         cmd.assert()
             .success()
             .stdout(predicates::str::contains("/api/explicit-target"));
@@ -1794,10 +1795,7 @@ mod tests {
         fs::write(&page, "fetch('/api/page');").unwrap();
 
         let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
-        cmd.arg("--root")
-            .arg(root.path())
-            .arg("--target")
-            .arg(&layout);
+        cmd.arg("--root").arg(root.path()).arg(&layout);
         cmd.assert()
             .success()
             .stdout(predicates::str::contains("/api/layout"));
@@ -1812,10 +1810,7 @@ mod tests {
         fs::write(root.path().join("app/page.tsx"), "fetch('/api/page');").unwrap();
 
         let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
-        cmd.arg("--root")
-            .arg(root.path())
-            .arg("--target")
-            .arg("does-not-exist.ts");
+        cmd.arg("--root").arg(root.path()).arg("does-not-exist.ts");
         cmd.assert()
             .code(2)
             .stderr(predicates::str::contains("Error: targets not found"));

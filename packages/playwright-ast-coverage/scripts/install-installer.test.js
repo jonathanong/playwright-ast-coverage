@@ -19,7 +19,6 @@ function executableName(target) {
 }
 
 const binName = "playwright-ast-coverage";
-const repository = "jonathanong/playwright-ast-coverage";
 const version = "9.8.7";
 
 test("rejects unsupported install targets", async () => {
