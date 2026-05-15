@@ -68,6 +68,11 @@ module.exports = {
   releaseBaseUrl: (version, envVar = "PLAYWRIGHT_AST_COVERAGE_RELEASE_BASE_URL") =>
     core.releaseBaseUrl("jonathanong/playwright-ast-coverage", version, envVar),
   install: (binName, repository, options) => {
+    if (binName === undefined) {
+      return core.install("playwright-ast-coverage", "jonathanong/playwright-ast-coverage", {
+        ...INSTALL_DEFAULTS,
+      });
+    }
     if (typeof binName === "object" && repository === undefined) {
       // Old signature: install(options)
       const mergedOptions = {

@@ -177,7 +177,8 @@ impl<'a> Visit<'a> for FetchVisitor<'a> {
         if let Some((wrapper_name, cached_kind)) = cache_wrapper_name(expr) {
             let previous_cached_function = self.cached_function.clone();
             let previous_cached_kind = self.cached_kind.clone();
-            self.cached_function = Some(wrapper_name);
+            self.cached_function =
+                infer_cached_wrapper_name(self.source, expr).or(Some(wrapper_name));
             self.cached_kind = Some(cached_kind);
             walk::walk_call_expression(self, expr);
             self.cached_function = previous_cached_function;
@@ -248,6 +249,43 @@ impl<'a> Visit<'a> for FetchVisitor<'a> {
         }
         walk::walk_call_expression(self, expr);
     }
+}
+
+fn infer_cached_wrapper_name(source: &str, expr: &CallExpression<'_>) -> Option<String> {
+    let statement_start = source[..expr.span().start as usize].rfind('\n').map_or(0, |idx| idx + 1);
+    let assignment = source[statement_start..expr.span().start as usize].trim_end();
+    let equal_sign = assignment.rfind('=')?;
+
+    let lhs = assignment[..equal_sign].trim_end();
+    if lhs.is_empty() {
+        return None;
+    }
+
+    let mut cursor = lhs.len();
+    let bytes = lhs.as_bytes();
+    while cursor > 0 && bytes[cursor - 1].is_ascii_whitespace() {
+        cursor -= 1;
+    }
+    let end = cursor;
+    while cursor > 0 && is_identifier_char(bytes[cursor - 1]) {
+        cursor -= 1;
+    }
+    if cursor == end {
+        return None;
+    }
+
+    let name = &lhs[cursor..end];
+    if name.chars().next().is_some_and(|char| {
+        char.is_ascii_alphabetic() || char == '_' || char == '$'
+    }) {
+        Some(name.to_string())
+    } else {
+        None
+    }
+}
+
+fn is_identifier_char(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'$'
 }
 
 fn cache_wrapper_name(expr: &CallExpression<'_>) -> Option<(String, CacheKind)> {
@@ -460,13 +498,6 @@ fn run() -> Result<()> {
             }
         }
 
-        let route_is_route_handler = is_route_handler_file(&route.file);
-        let route_is_client = if route_is_route_handler {
-            false
-        } else {
-            is_client_route_file(&route.file)?
-        };
-
         let mut visited = HashSet::new();
         let mut fetches = Vec::new();
 
@@ -474,14 +505,15 @@ fn run() -> Result<()> {
             continue;
         }
 
+        let route_is_route_handler = is_route_handler_file(&route.file);
         // Analyze the page/route file itself
-        analyze_file(
+        let _route_is_client = analyze_file(
             &route.file,
             &root,
             &mut visited,
             &mut fetches,
             &mut cache,
-            route_is_client,
+            false,
             route_is_route_handler,
         )?;
 
@@ -664,9 +696,9 @@ fn analyze_file(
     cache: &mut Cache,
     inherited_is_client: bool,
     inherited_is_route_handler: bool,
-) -> Result<()> {
+) -> Result<bool> {
     if !path.exists() {
-        return Ok(());
+        return Ok(false);
     }
 
     let abs_path = path.canonicalize()?;
@@ -676,7 +708,7 @@ fn analyze_file(
         inherited_is_route_handler,
     );
     if visited.contains(&visit_key) {
-        return Ok(());
+        return Ok(false);
     }
     visited.insert(visit_key);
 
@@ -686,7 +718,7 @@ fn analyze_file(
         inherited_is_route_handler,
     )) {
         fetches.extend(cached_fetches.clone());
-        return Ok(());
+        return Ok(inherited_is_client);
     }
 
     let source = std::fs::read_to_string(&abs_path)?;
@@ -732,7 +764,7 @@ fn analyze_file(
     );
     fetches.extend(file_fetches);
 
-    Ok(())
+    Ok(is_client)
 }
 
 fn collect_imports(
@@ -1197,6 +1229,47 @@ mod tests {
     }
 
     #[test]
+    fn test_visitor_cache_wrappers_mark_fetch_calls() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "
+            cache(fetch('/api/cached', { method: 'POST' }));
+            unstable_cache(fetch('/api/unstable', { next: { revalidate: 60 } }));
+            const getUsers = cache(fetch('/api/users', { method: 'PUT' }));
+        ";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let mut visitor = FetchVisitor {
+            source,
+            file: "test.ts".to_string(),
+            fetches: Vec::new(),
+            is_client: false,
+            is_route_handler: false,
+            cached_function: None,
+            cached_kind: None,
+        };
+        visitor.visit_program(&parsed.program);
+        assert_eq!(visitor.fetches.len(), 3);
+
+        assert!(visitor.fetches[0].cached);
+        assert_eq!(visitor.fetches[0].cache_kind, CacheKind::ReactCache);
+        assert_eq!(visitor.fetches[0].cached_function.as_deref(), Some("cache"));
+        assert_eq!(visitor.fetches[0].method, "POST");
+
+        assert!(visitor.fetches[1].cached);
+        assert_eq!(visitor.fetches[1].cache_kind, CacheKind::UnstableCache);
+        assert_eq!(
+            visitor.fetches[1].cached_function.as_deref(),
+            Some("unstable_cache")
+        );
+        assert_eq!(visitor.fetches[1].method, "GET");
+
+        assert!(visitor.fetches[2].cached);
+        assert_eq!(visitor.fetches[2].cache_kind, CacheKind::ReactCache);
+        assert_eq!(visitor.fetches[2].cached_function.as_deref(), Some("getUsers"));
+        assert_eq!(visitor.fetches[2].method, "PUT");
+    }
+
+    #[test]
     fn test_visitor_no_args() {
         let allocator = oxc_allocator::Allocator::default();
         let source = "fetch();";
@@ -1325,11 +1398,58 @@ mod tests {
     }
 
     #[test]
+    fn test_fetch_cache_kind_names() {
+        assert_eq!(cache_kind_name(&CacheKind::None), "none");
+        assert_eq!(cache_kind_name(&CacheKind::FetchCache), "fetch-cache");
+        assert_eq!(cache_kind_name(&CacheKind::FetchNextRevalidate), "next-revalidate");
+        assert_eq!(cache_kind_name(&CacheKind::FetchNextTags), "next-tags");
+        assert_eq!(cache_kind_name(&CacheKind::ReactCache), "react-cache");
+        assert_eq!(cache_kind_name(&CacheKind::Cache), "cache");
+        assert_eq!(cache_kind_name(&CacheKind::UnstableCache), "unstable-cache");
+    }
+
+    #[test]
+    fn test_fetch_cache_label_includes_cached_function() {
+        let fetch = FetchOccurrence {
+            path: "/api/example".to_string(),
+            raw_path: "/api/example".to_string(),
+            method: "GET".to_string(),
+            file: "app/page.tsx".to_string(),
+            line: 1,
+            side: FetchSide::Server,
+            rsc: true,
+            cached: true,
+            cache_kind: CacheKind::ReactCache,
+            cached_function: Some("cache".to_string()),
+            dynamic: false,
+            unsupported: false,
+        };
+        assert_eq!(fetch_cache_label(&fetch), "react-cache (cache)");
+    }
+
+    #[test]
     fn test_is_route_handler_file_variants() {
         assert!(is_route_handler_file(Path::new("route.ts")));
         assert!(is_route_handler_file(Path::new("route")));
         assert!(!is_route_handler_file(Path::new("page.tsx")));
         assert!(!is_route_handler_file(Path::new("not-route.txt")));
+    }
+
+    #[test]
+    fn test_collect_layout_chain_files_includes_parent_chain() {
+        let dir = tempdir().unwrap();
+        let app = dir.path().join("app");
+        fs::create_dir_all(app.join("dashboard")).unwrap();
+
+        fs::write(app.join("layout.tsx"), "export {}").unwrap();
+        fs::write(app.join("dashboard/layout.tsx"), "export {}").unwrap();
+        let page = app.join("dashboard/page.tsx");
+        fs::write(&page, "export {}").unwrap();
+
+        let chain = collect_layout_chain_files(&page, &app);
+        assert_eq!(chain.len(), 2);
+        assert!(chain.contains(&app.join("dashboard/layout.tsx")));
+        assert!(chain.contains(&app.join("layout.tsx")));
     }
 
     #[test]
@@ -1628,6 +1748,60 @@ mod tests {
         cmd.assert()
             .success()
             .stdout(predicates::str::contains("(no fetches found)"));
+    }
+
+    #[test]
+    fn test_cli_matches_explicit_target_file() {
+        use assert_cmd::Command;
+
+        let root = tempdir().unwrap();
+        fs::create_dir(root.path().join("app")).unwrap();
+        let page = root.path().join("app/page.tsx");
+        fs::write(&page, "fetch('/api/explicit-target');").unwrap();
+
+        let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
+        cmd.arg("--root").arg(root.path()).arg("--target").arg(&page);
+        cmd.assert()
+            .success()
+            .stdout(predicates::str::contains("/api/explicit-target"));
+    }
+
+    #[test]
+    fn test_cli_target_matching_uses_layout_wrapper_chain() {
+        use assert_cmd::Command;
+
+        let root = tempdir().unwrap();
+        let app = root.path().join("app");
+        fs::create_dir_all(app.join("dashboard")).unwrap();
+
+        let layout = app.join("layout.tsx");
+        fs::write(&layout, "fetch('/api/layout');").unwrap();
+        let page = app.join("dashboard/page.tsx");
+        fs::write(&page, "fetch('/api/page');").unwrap();
+
+        let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
+        cmd.arg("--root").arg(root.path()).arg("--target").arg(&layout);
+        cmd.assert()
+            .success()
+            .stdout(predicates::str::contains("/api/layout"));
+    }
+
+    #[test]
+    fn test_cli_target_missing_reports_unmatched_error() {
+        use assert_cmd::Command;
+
+        let root = tempdir().unwrap();
+        fs::create_dir(root.path().join("app")).unwrap();
+        fs::write(root.path().join("app/page.tsx"), "fetch('/api/page');").unwrap();
+
+        let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
+        cmd.arg("--root")
+            .arg(root.path())
+            .arg("--target")
+            .arg("does-not-exist.ts");
+        cmd.assert()
+            .code(2)
+            .stderr(predicates::str::contains("Error: targets not found"));
     }
 
     #[test]

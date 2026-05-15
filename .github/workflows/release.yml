@@ -298,6 +298,19 @@ jobs:
             if curl --fail --silent --output /dev/null "https://crates.io/api/v1/crates/$pkg/$version"; then
               echo "$pkg $version is already published on crates.io; skipping"
             else
+              if [ "$pkg" != "no-mistakes-core" ]; then
+                for attempt in 1 2 3 4 5; do
+                  echo "Checking whether no-mistakes-core@$version is visible for $pkg publish..."
+                  if curl --fail --silent --output /dev/null "https://crates.io/api/v1/crates/no-mistakes-core/$version"; then
+                    break
+                  fi
+                  if [ "$attempt" = 5 ]; then
+                    echo "Timed out waiting for no-mistakes-core@$version on crates.io"
+                    exit 1
+                  fi
+                  sleep 15
+                done
+              fi
               cargo publish --locked -p "$pkg"
             fi
           done
