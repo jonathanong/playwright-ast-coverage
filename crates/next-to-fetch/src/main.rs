@@ -997,6 +997,7 @@ fn resolve_target_file(root: &Path, target: &str) -> Result<PathBuf> {
     Ok(candidate.canonicalize()?)
 }
 
+#[cfg(test)]
 fn is_client_route_file(path: &Path) -> Result<bool> {
     if !path.exists() {
         return Ok(false);
