@@ -104,9 +104,7 @@ mod tests {
         assert_eq!(span_text("abc", Span::new(9, 10)), "");
     }
 
-    fn statement_expression<'a>(
-        statement: &'a oxc_ast::ast::Statement<'a>,
-    ) -> &'a Expression<'a> {
+    fn statement_expression<'a>(statement: &'a oxc_ast::ast::Statement<'a>) -> &'a Expression<'a> {
         let oxc_ast::ast::Statement::ExpressionStatement(expr) = statement else {
             panic!("expected expression statement");
         };
@@ -126,7 +124,8 @@ mod tests {
     fn statement_template_literal<'a>(
         statement: &'a oxc_ast::ast::Statement<'a>,
     ) -> &'a TemplateLiteral<'a> {
-        let oxc_ast::ast::Expression::TemplateLiteral(template) = statement_expression(statement) else {
+        let oxc_ast::ast::Expression::TemplateLiteral(template) = statement_expression(statement)
+        else {
             panic!("expected template literal");
         };
         template
@@ -199,7 +198,10 @@ mod tests {
             "parse errors: {:?}",
             parsed.errors
         );
-        assert_eq!(expression_path(statement_expression(&parsed.program.body[0])), None);
+        assert_eq!(
+            expression_path(statement_expression(&parsed.program.body[0])),
+            None
+        );
 
         let source = "a['b']";
         let parsed = Parser::new(&allocator, source, source_type).parse();
@@ -208,6 +210,9 @@ mod tests {
             "parse errors: {:?}",
             parsed.errors
         );
-        assert_eq!(expression_path(statement_expression(&parsed.program.body[0])), None);
+        assert_eq!(
+            expression_path(statement_expression(&parsed.program.body[0])),
+            None
+        );
     }
 }

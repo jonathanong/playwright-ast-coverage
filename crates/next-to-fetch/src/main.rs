@@ -350,19 +350,17 @@ fn extract_fetch_cache_options(obj: &oxc_ast::ast::ObjectExpression<'_>) -> (boo
                         let Some(next_name) = next_property.key.static_name() else {
                             continue;
                         };
-                match next_name.as_ref() {
-                    "revalidate" => {
-                        match &next_property.value {
-                            Expression::NumericLiteral(value) if value.value > 0.0 => {
+                        match next_name.as_ref() {
+                            "revalidate" => match &next_property.value {
+                                Expression::NumericLiteral(value) if value.value > 0.0 => {
+                                    cached = true;
+                                    cache_kind = CacheKind::FetchNextRevalidate;
+                                }
+                                _ => {}
+                            },
+                            "tags" => {
                                 cached = true;
-                                cache_kind = CacheKind::FetchNextRevalidate;
-                            }
-                            _ => {}
-                        }
-                    }
-                    "tags" => {
-                        cached = true;
-                        cache_kind = CacheKind::FetchNextTags;
+                                cache_kind = CacheKind::FetchNextTags;
                             }
                             _ => {}
                         }
@@ -484,8 +482,12 @@ fn run() -> Result<()> {
 
             if let Some(target_file) = &target.file {
                 let mut visited_targets = HashSet::new();
-                if route_reaches_target(&route.file, target_file, &mut visited_targets, &mut cache.imports)?
-                {
+                if route_reaches_target(
+                    &route.file,
+                    target_file,
+                    &mut visited_targets,
+                    &mut cache.imports,
+                )? {
                     matched = true;
                     matched_targets.insert(target.raw.clone());
                     continue 'target_match;
@@ -498,7 +500,13 @@ fn run() -> Result<()> {
                         break;
                     }
 
-                    if collect_imports(wrapper_file, &mut cache.imports)?.iter().any(|import| import == target_file) { wrapper_file_matches = true; break; }
+                    if collect_imports(wrapper_file, &mut cache.imports)?
+                        .iter()
+                        .any(|import| import == target_file)
+                    {
+                        wrapper_file_matches = true;
+                        break;
+                    }
                 }
 
                 if wrapper_file_matches {
@@ -518,7 +526,15 @@ fn run() -> Result<()> {
 
         let route_is_route_handler = is_route_handler_file(&route.file);
         // Analyze the page/route file itself
-        let _route_is_client = analyze_file(&route.file, &root, &mut visited, &mut fetches, &mut cache, false, route_is_route_handler)?;
+        let _route_is_client = analyze_file(
+            &route.file,
+            &root,
+            &mut visited,
+            &mut fetches,
+            &mut cache,
+            false,
+            route_is_route_handler,
+        )?;
 
         // Traverse up and find parent layouts/loadings if it's a page (UI)
         if route_is_page {
@@ -532,7 +548,15 @@ fn run() -> Result<()> {
                     for ext in ["tsx", "ts", "jsx", "js"] {
                         let layout_file = parent.join(format!("{stem}.{ext}"));
                         if layout_file.exists() {
-                            analyze_file(&layout_file, &root, &mut visited, &mut fetches, &mut cache, false, route_is_route_handler)?;
+                            analyze_file(
+                                &layout_file,
+                                &root,
+                                &mut visited,
+                                &mut fetches,
+                                &mut cache,
+                                false,
+                                route_is_route_handler,
+                            )?;
                         }
                     }
                 }
@@ -750,8 +774,12 @@ fn analyze_file(
 
     let mut file_fetches = Vec::new();
     let is_client = ast::with_program(path, &source, |program, source| -> Result<bool> {
-        let is_client =
-            inherited_is_client || (!inherited_is_route_handler && program.directives.iter().any(|d| d.directive == "use client"));
+        let is_client = inherited_is_client
+            || (!inherited_is_route_handler
+                && program
+                    .directives
+                    .iter()
+                    .any(|d| d.directive == "use client"));
         let mut visitor = FetchVisitor {
             source,
             file: rel_file,
@@ -765,7 +793,15 @@ fn analyze_file(
         file_fetches.extend(visitor.fetches);
         let imports = collect_imports_from_program(&abs_path, program, source, &mut cache.imports)?;
         for import in imports {
-            analyze_file(&import, root, visited, &mut file_fetches, cache, is_client, inherited_is_route_handler)?;
+            analyze_file(
+                &import,
+                root,
+                visited,
+                &mut file_fetches,
+                cache,
+                is_client,
+                inherited_is_route_handler,
+            )?;
         }
         Ok(is_client)
     })??;
@@ -777,11 +813,7 @@ fn analyze_file(
     cache.files.insert(cache_key.clone(), cached.clone());
     if cached.is_client != inherited_is_client {
         cache.files.insert(
-            (
-                abs_path.clone(),
-                is_client,
-                inherited_is_route_handler,
-            ),
+            (abs_path.clone(), is_client, inherited_is_route_handler),
             cached,
         );
     }
@@ -1175,7 +1207,8 @@ mod tests {
         let oxc_ast::ast::Statement::ExpressionStatement(expr_stmt) = statement else {
             panic!("expected expression statement");
         };
-        let oxc_ast::ast::Expression::AssignmentExpression(assignment) = &expr_stmt.expression else {
+        let oxc_ast::ast::Expression::AssignmentExpression(assignment) = &expr_stmt.expression
+        else {
             panic!("expected assignment expression");
         };
         let oxc_ast::ast::Expression::CallExpression(call) = &assignment.right else {
@@ -2459,8 +2492,11 @@ mod tests {
 
         let root = tempdir().unwrap();
         fs::create_dir(root.path().join("app")).unwrap();
-        fs::write(root.path().join("app/page.tsx"), "import { fetchUsers } from './helper';")
-            .unwrap();
+        fs::write(
+            root.path().join("app/page.tsx"),
+            "import { fetchUsers } from './helper';",
+        )
+        .unwrap();
         fs::write(
             root.path().join("app/helper.ts"),
             "export const fetchUsers = () => fetch('/api/users');",
