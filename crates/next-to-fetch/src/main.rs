@@ -1795,7 +1795,7 @@ mod tests {
         fs::write(&page, "fetch('/api/page');").unwrap();
 
         let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
-        cmd.arg("--root").arg(root.path()).arg(&layout);
+        cmd.arg("--root").arg(root.path()).arg(&page);
         cmd.assert()
             .success()
             .stdout(predicates::str::contains("/api/layout"));
