@@ -39,7 +39,7 @@ if [ "$rg_exit" -eq 0 ]; then
     echo "    mod tests;"
     echo
     echo "and put the tests in src/<module>/tests.rs"
-  echo "or src/<module>/tests/mod.rs (with sibling files) for larger test modules"
+    echo "or src/<module>/tests/mod.rs (with sibling files) for larger test modules"
     exit 1
 fi
 

@@ -20,7 +20,8 @@ TEST_MAX=500
 fail=0
 
 # All workspace crates must live under crates/; this scope is intentional.
-json=$(tokei crates --files --output json)
+# --exclude target guards against a non-default CARGO_TARGET_DIR landing inside crates/.
+json=$(tokei crates --files --output json --exclude target)
 
 # Sanity check: ensure tokei produced at least one Rust report so schema changes are caught loudly.
 rust_count=$(echo "$json" | jq -r '(.Rust?.reports // []) | length')
@@ -40,6 +41,9 @@ done < <(echo "$json" | jq -r '.Rust?.reports[]?
   | select(.name | test("(^|/)tests([/.]|$)") | not)
   | [.stats.code, .name] | @tsv')
 
+# The src-pass exclusion above (any path segment named "tests") is intentionally a
+# superset of the three test-pass selectors below, so every src file falls in exactly
+# one bucket and is never double-counted or silently skipped.
 while IFS=$'\t' read -r lines file; do
     if [ -n "$file" ] && [[ "$lines" =~ ^[0-9]+$ ]] && [ "$lines" -gt "$TEST_MAX" ]; then
         echo "$file: $lines code lines exceeds max $TEST_MAX" >&2
