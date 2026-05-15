@@ -335,4 +335,3 @@ fn invalid_root_config_exits_with_error() {
         .code(2)
         .stderr(predicate::str::contains("expected string literal"));
 }
-
