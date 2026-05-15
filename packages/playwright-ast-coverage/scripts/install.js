@@ -1,19 +1,51 @@
 #!/usr/bin/env node
 "use strict";
 
-const { assetName, parseChecksum, releaseBaseUrl } = require("./install/assets");
-const { download, fetchText, isRedirectStatus, request } = require("./install/download");
-const {
-  install,
-  packageVersion,
-  sha256,
-  unsupportedPlatformMessage,
-} = require("./install/installer");
-const { glibcVersion, isGlibc, platformTarget, supportedGlibc } = require("./install/platform");
+const { join } = require("node:path");
+const PACKAGE_ROOT = join(__dirname, "..");
+const pkg = require(join(PACKAGE_ROOT, "package.json"));
+const core = require("no-mistakes-core");
+const INSTALL_DEFAULTS = {
+  version: pkg.version,
+  vendorDir: join(PACKAGE_ROOT, "vendor"),
+  envVar: "PLAYWRIGHT_AST_COVERAGE_RELEASE_BASE_URL",
+  checkExisting: true,
+};
+const DEFAULT_BIN_NAME = "playwright-ast-coverage";
+
+function isPlatform(value) {
+  return (
+    typeof value === "string" &&
+    [
+      "aix",
+      "android",
+      "darwin",
+      "freebsd",
+      "linux",
+      "netbsd",
+      "openbsd",
+      "sunos",
+      "win32",
+    ].includes(value)
+  );
+}
+
+function unsupportedPlatformMessage(binNameOrPlatform, platform, arch, report) {
+  if (isPlatform(binNameOrPlatform) && typeof platform === "string") {
+    return core.unsupportedPlatformMessage(DEFAULT_BIN_NAME, binNameOrPlatform, platform, arch);
+  }
+  return core.unsupportedPlatformMessage(binNameOrPlatform, platform, arch, report);
+}
 
 async function main() {
   try {
-    const destination = await install();
+    const destination = await core.install(
+      "playwright-ast-coverage",
+      "jonathanong/playwright-ast-coverage",
+      {
+        ...INSTALL_DEFAULTS,
+      },
+    );
     console.log(`Installed playwright-ast-coverage native binary to ${destination}`);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
@@ -26,19 +58,36 @@ if (require.main === module) {
 }
 
 module.exports = {
-  assetName,
-  download,
-  fetchText,
-  glibcVersion,
-  install,
-  isGlibc,
-  isRedirectStatus,
-  packageVersion,
-  parseChecksum,
-  platformTarget,
-  releaseBaseUrl,
-  request,
-  sha256,
-  supportedGlibc,
+  ...core,
   unsupportedPlatformMessage,
+  packageVersion: (dir) => {
+    const targetDir = typeof dir === "string" ? dir : PACKAGE_ROOT;
+    return require(join(targetDir, "package.json")).version;
+  },
+  assetName: (version, target) => core.assetName("playwright-ast-coverage", version, target),
+  releaseBaseUrl: (version, envVar = "PLAYWRIGHT_AST_COVERAGE_RELEASE_BASE_URL") =>
+    core.releaseBaseUrl("jonathanong/playwright-ast-coverage", version, envVar),
+  install: (binName, repository, options) => {
+    if (binName === undefined) {
+      return core.install("playwright-ast-coverage", "jonathanong/playwright-ast-coverage", {
+        ...INSTALL_DEFAULTS,
+      });
+    }
+    if (typeof binName === "object" && repository === undefined) {
+      // Old signature: install(options)
+      const mergedOptions = {
+        ...INSTALL_DEFAULTS,
+        ...binName,
+      };
+      return core.install(
+        "playwright-ast-coverage",
+        "jonathanong/playwright-ast-coverage",
+        mergedOptions,
+      );
+    }
+    return core.install(binName, repository, {
+      ...INSTALL_DEFAULTS,
+      ...options,
+    });
+  },
 };

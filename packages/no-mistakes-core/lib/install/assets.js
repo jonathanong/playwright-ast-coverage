@@ -2,17 +2,15 @@
 
 const { basename } = require("node:path");
 
-const REPOSITORY = "jonathanong/playwright-ast-coverage";
-
-function assetName(version, target) {
+function assetName(binName, version, target) {
   const ext = target.endsWith("windows-msvc") ? ".exe" : "";
-  return `playwright-ast-coverage-v${version}-${target}${ext}`;
+  return `${binName}-v${version}-${target}${ext}`;
 }
 
-function releaseBaseUrl(version) {
+function releaseBaseUrl(repository, version, envVar) {
   return (
-    process.env.PLAYWRIGHT_AST_COVERAGE_RELEASE_BASE_URL ||
-    `https://github.com/${REPOSITORY}/releases/download/v${version}`
+    (envVar && process.env[envVar]) ||
+    `https://github.com/${repository}/releases/download/v${version}`
   );
 }
 

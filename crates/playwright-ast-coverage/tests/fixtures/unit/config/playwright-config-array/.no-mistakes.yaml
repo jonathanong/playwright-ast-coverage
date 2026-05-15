@@ -1,0 +1,3 @@
+playwrightConfig:
+  - playwright.config.ts
+  - playwright.other.config.ts

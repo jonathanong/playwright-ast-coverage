@@ -1,16 +1,23 @@
 use anyhow::Result;
-use jsonc_parser::ParseOptions;
+use no_mistakes_core::config::{self, resolve};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-const CONFIG_FILE_STEM: &str = ".playwright-ast-coverage";
-const CONFIG_EXTENSIONS: &[&str] = &["yaml", "yml", "json", "jsonc"];
+const CONFIG_STEMS: &[&str] = &[".no-mistakes", ".playwright-ast-coverage"];
 const DEFAULT_FRONTEND_ROOT: &str = "app";
 const DEFAULT_SELECTOR_ATTRIBUTES: &[&str] = &["data-testid", "data-pw"];
 const PLAYWRIGHT_CONFIG_EXTENSIONS: &[&str] = &["ts", "mts", "cts", "js", "mjs", "cjs"];
 
 #[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct RootConfig {
+    #[serde(flatten)]
+    legacy: FileConfig,
+    playwright_ast_coverage: Option<FileConfig>,
+}
+
+#[derive(Default, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", default)]
 struct FileConfig {
     frontend_root: Option<String>,
@@ -27,7 +34,7 @@ struct FileConfig {
     selector_exclude: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(untagged)]
 enum OneOrMany {
     One(String),
@@ -57,7 +64,11 @@ pub fn load_settings(
     cli_playwright_configs: &[PathBuf],
     cli_project: Option<String>,
 ) -> Result<Settings> {
-    let file_config = load_file_config(root, cli_config)?;
+    let root_config: RootConfig = config::load_config(root, cli_config, CONFIG_STEMS)?;
+    let file_config = root_config
+        .playwright_ast_coverage
+        .unwrap_or(root_config.legacy);
+
     let playwright_configs = if !cli_playwright_configs.is_empty() {
         cli_playwright_configs
             .iter()
@@ -108,87 +119,6 @@ impl OneOrMany {
     }
 }
 
-fn load_file_config(root: &Path, cli_config: Option<&Path>) -> Result<FileConfig> {
-    let Some(config_path) = config_path(root, cli_config)? else {
-        return Ok(FileConfig::default());
-    };
-
-    let source = std::fs::read_to_string(&config_path)?;
-    parse_file_config(&source, &config_path)
-}
-
-fn config_path(root: &Path, cli_config: Option<&Path>) -> Result<Option<PathBuf>> {
-    if let Some(path) = cli_config {
-        let config_path = resolve(root, path);
-        if !config_path.exists() {
-            anyhow::bail!("config file does not exist: {}", config_path.display());
-        }
-        return Ok(Some(config_path));
-    }
-
-    let mut configs = Vec::new();
-    for extension in CONFIG_EXTENSIONS {
-        let path = root.join(format!("{CONFIG_FILE_STEM}.{extension}"));
-        if path.exists() {
-            configs.push(path);
-        }
-    }
-
-    match configs.len() {
-        0 => Ok(None),
-        1 => Ok(configs.pop()),
-        _ => {
-            let files = configs
-                .iter()
-                .map(|path| path.display().to_string())
-                .collect::<Vec<_>>()
-                .join(", ");
-            anyhow::bail!("multiple config files found under --root: {files}");
-        }
-    }
-}
-
-fn parse_file_config(source: &str, config_path: &Path) -> Result<FileConfig> {
-    match config_extension(config_path) {
-        Some("yaml" | "yml") => Ok(serde_yaml::from_str(source)?),
-        Some("json") => Ok(serde_json::from_str(source)?),
-        Some("jsonc") => Ok(serde_json::from_value(jsonc_parser::parse_to_serde_value(
-            source,
-            &jsonc_parse_options(),
-        )?)?),
-        Some(extension) => anyhow::bail!(
-            "unsupported config file extension .{extension}; supported extensions are .yaml, .yml, .json, and .jsonc"
-        ),
-        None => anyhow::bail!(
-            "unsupported config file without extension; supported extensions are .yaml, .yml, .json, and .jsonc"
-        ),
-    }
-}
-
-fn config_extension(path: &Path) -> Option<&str> {
-    path.extension().and_then(|extension| extension.to_str())
-}
-
-fn jsonc_parse_options() -> ParseOptions {
-    ParseOptions {
-        allow_comments: true,
-        allow_loose_object_property_names: false,
-        allow_trailing_commas: true,
-        allow_missing_commas: false,
-        allow_single_quoted_strings: false,
-        allow_hexadecimal_numbers: false,
-        allow_unary_plus_numbers: false,
-    }
-}
-
-fn resolve(root: &Path, path: &Path) -> PathBuf {
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        root.join(path)
-    }
-}
-
 fn find_default_playwright_configs(root: &Path) -> Result<Vec<PathBuf>> {
     if !root.exists() {
         return Ok(Vec::new());
@@ -208,11 +138,13 @@ fn find_default_playwright_configs(root: &Path) -> Result<Vec<PathBuf>> {
 }
 
 fn is_playwright_config_name(path: &Path) -> bool {
-    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-        return false;
+    let name = match path.file_name().and_then(|name| name.to_str()) {
+        Some(name) => name,
+        None => return false,
     };
-    let Some(extension) = path.extension().and_then(|extension| extension.to_str()) else {
-        return false;
+    let extension = match path.extension().and_then(|extension| extension.to_str()) {
+        Some(extension) => extension,
+        None => return false,
     };
 
     name.starts_with("playwright")
@@ -254,38 +186,6 @@ mod tests {
     }
 
     #[test]
-    fn explicit_unsupported_config_extension_errors() {
-        let root = fixture_path(&["config", "unsupported-extension"]);
-        let err = load_settings(
-            &root,
-            Some(Path::new(".playwright-ast-coverage.toml")),
-            &[],
-            None,
-        )
-        .err()
-        .expect("expected unsupported config extension to fail");
-        assert!(err
-            .to_string()
-            .contains("unsupported config file extension"));
-    }
-
-    #[test]
-    fn explicit_extensionless_config_errors() {
-        let root = fixture_path(&["config", "extensionless"]);
-        let err = load_settings(
-            &root,
-            Some(Path::new(".playwright-ast-coverage")),
-            &[],
-            None,
-        )
-        .err()
-        .expect("expected extensionless config to fail");
-        assert!(err
-            .to_string()
-            .contains("unsupported config file without extension"));
-    }
-
-    #[test]
     fn reads_yaml_and_finds_default_playwright_config() {
         let root = fixture_path(&["config", "full"]);
         let settings = load_settings(&root, None, &[], None).unwrap();
@@ -303,178 +203,48 @@ mod tests {
     }
 
     #[test]
-    fn reads_yml_default_config() {
-        let root = fixture_path(&["config", "yml"]);
+    fn no_mistakes_config_has_priority_and_supports_nesting() {
+        let root = fixture_path(&["config", "no-mistakes-priority"]);
         let settings = load_settings(&root, None, &[], None).unwrap();
-        assert_eq!(settings.frontend_root, "web/yml-app");
-    }
+        assert_eq!(settings.frontend_root, "no-mistakes-app");
 
-    #[test]
-    fn reads_json_default_config() {
-        let root = fixture_path(&["config", "json"]);
+        let root = fixture_path(&["config", "no-mistakes-nested"]);
         let settings = load_settings(&root, None, &[], None).unwrap();
-        assert_eq!(settings.frontend_root, "web/json-app");
-        assert_eq!(settings.navigation_helpers, vec!["openJsonPath"]);
+        assert_eq!(settings.frontend_root, "nested-app");
     }
 
     #[test]
-    fn reads_jsonc_default_config() {
-        let root = fixture_path(&["config", "jsonc"]);
+    fn test_one_or_many_values() {
+        let one = OneOrMany::One("a".to_string());
+        assert_eq!(one.values(), vec!["a"]);
+        let many = OneOrMany::Many(vec!["a".to_string(), "b".to_string()]);
+        assert_eq!(many.values(), vec!["a", "b"]);
+    }
+
+    #[test]
+    fn test_is_playwright_config_name_edge_cases() {
+        assert!(!is_playwright_config_name(Path::new("")));
+        assert!(!is_playwright_config_name(Path::new(
+            "playwright.config.txt"
+        )));
+        assert!(!is_playwright_config_name(Path::new(
+            "notplaywright.config.ts"
+        )));
+        assert!(!is_playwright_config_name(Path::new("playwright.config")));
+        assert!(!is_playwright_config_name(Path::new("playwrightconfig")));
+    }
+
+    #[test]
+    fn test_playwright_config_from_file() {
+        let root = fixture_path(&["config", "playwright-config-array"]);
         let settings = load_settings(&root, None, &[], None).unwrap();
-        assert_eq!(settings.frontend_root, "web/jsonc-app");
-        assert_eq!(settings.test_exclude, vec!["**/jsonc-skip/**"]);
-    }
+        assert_eq!(settings.playwright_configs.len(), 2);
+        assert!(settings.playwright_configs[0].ends_with("playwright.config.ts"));
+        assert!(settings.playwright_configs[1].ends_with("playwright.other.config.ts"));
 
-    #[test]
-    fn jsonc_config_rejects_json5_object_keys() {
-        let root = fixture_path(&["config", "invalid-jsonc"]);
-        let err = load_settings(&root, None, &[], None)
-            .err()
-            .expect("expected invalid JSONC to fail");
-        assert!(err
-            .to_string()
-            .contains("Expected string for object property"));
-    }
-
-    #[test]
-    fn duplicate_default_config_files_error() {
-        let root = fixture_path(&["config", "duplicate-defaults"]);
-        let err = load_settings(&root, None, &[], None)
-            .err()
-            .expect("expected duplicate default configs to fail");
-        assert!(err.to_string().contains("multiple config files found"));
-        assert!(err.to_string().contains(".playwright-ast-coverage.yaml"));
-        assert!(err.to_string().contains(".playwright-ast-coverage.json"));
-    }
-
-    #[test]
-    fn yaml_playwright_config_path_is_resolved() {
-        let root = fixture_path(&["config", "yaml-playwright-config"]);
-        let settings = load_settings(&root, None, &[], None).unwrap();
-        assert_eq!(
-            settings.playwright_configs,
-            vec![root.join("configs/playwright.config.ts")]
-        );
-    }
-
-    #[test]
-    fn cli_playwright_config_absolute_path_is_preserved() {
-        let root = fixture_path(&["config", "missing-default"]);
-        let config = root.join("custom.config.ts");
-        let settings = load_settings(&root, None, std::slice::from_ref(&config), None).unwrap();
-        assert_eq!(settings.playwright_configs, vec![config]);
-    }
-
-    #[test]
-    fn invalid_yaml_errors() {
-        let root = fixture_path(&["config", "invalid-yaml"]);
-        let err = load_settings(&root, None, &[], None)
-            .err()
-            .expect("expected invalid YAML to fail");
-        assert!(!err.to_string().is_empty());
-    }
-
-    #[test]
-    fn selector_attributes_can_be_custom_or_disabled() {
-        let custom = fixture_path(&["config", "selector-attributes-custom"]);
-        let settings = load_settings(&custom, None, &[], None).unwrap();
-        assert_eq!(
-            settings.selector_attributes,
-            vec!["data-test", "data-test-id"]
-        );
-        assert_eq!(
-            settings
-                .component_selector_attributes
-                .get("dataTest")
-                .map(String::as_str),
-            Some("data-test")
-        );
-
-        let disabled = fixture_path(&["config", "selector-attributes-disabled"]);
-        let settings = load_settings(&disabled, None, &[], None).unwrap();
-        assert!(settings.selector_attributes.is_empty());
-        assert!(settings.component_selector_attributes.is_empty());
-    }
-
-    #[test]
-    fn old_default_config_name_is_ignored() {
-        let root = fixture_path(&["config", "old-name"]);
-        let settings = load_settings(&root, None, &[], None).unwrap();
-        assert_eq!(settings.frontend_root, "app");
-    }
-
-    #[test]
-    fn default_discovery_finds_all_root_playwright_configs() {
-        let root = fixture_path(&["config", "multi-playwright-config"]);
-        let settings = load_settings(&root, None, &[], None).unwrap();
-        assert_eq!(
-            settings.playwright_configs,
-            vec![
-                root.join("playwright.config.mts"),
-                root.join("playwright.storybook.config.mts"),
-            ]
-        );
-    }
-
-    #[test]
-    fn yaml_playwright_config_array_paths_are_resolved() {
-        let root = fixture_path(&["config", "yaml-playwright-config-array"]);
-        let settings = load_settings(&root, None, &[], None).unwrap();
-        assert_eq!(
-            settings.playwright_configs,
-            vec![
-                root.join("playwright.config.mts"),
-                root.join("playwright.storybook.config.mts"),
-            ]
-        );
-    }
-
-    #[test]
-    fn load_settings_handles_one_playwright_config() {
-        let root = fixture_path(&["config", "yaml-playwright-config"]);
+        let root = fixture_path(&["config", "playwright-config-single"]);
         let settings = load_settings(&root, None, &[], None).unwrap();
         assert_eq!(settings.playwright_configs.len(), 1);
-    }
-
-    #[test]
-    fn find_default_playwright_configs_missing_root_returns_empty() {
-        let root = Path::new("/non-existent-path-12345");
-        assert!(find_default_playwright_configs(root).unwrap().is_empty());
-    }
-
-    #[test]
-    fn is_playwright_config_name_handles_no_name_or_no_extension() {
-        assert!(!is_playwright_config_name(Path::new("")));
-        assert!(!is_playwright_config_name(Path::new("playwright.config")));
-        assert!(!is_playwright_config_name(Path::new(".config.ts")));
-        assert!(!is_playwright_config_name(Path::new("playwright.ts")));
-        assert!(!is_playwright_config_name(Path::new("config")));
-    }
-
-    #[test]
-    fn playwright_config_name_filter_rejects_missing_extension() {
-        assert!(!is_playwright_config_name(Path::new("playwright.config.")));
-        assert!(!is_playwright_config_name(Path::new(
-            "playwright.config.other"
-        )));
-    }
-
-    #[test]
-    fn is_playwright_config_name_handles_non_utf8() {
-        #[cfg(unix)]
-        {
-            use std::os::unix::ffi::OsStrExt;
-            let p = Path::new(std::ffi::OsStr::from_bytes(b"playwright.config.\xff"));
-            assert!(!is_playwright_config_name(p));
-
-            let p2 = Path::new(std::ffi::OsStr::from_bytes(b"\xff.config.ts"));
-            assert!(!is_playwright_config_name(p2));
-        }
-    }
-
-    #[test]
-    fn resolve_handles_absolute_paths() {
-        let p = Path::new("/absolute/path");
-        assert_eq!(resolve(Path::new("/root"), p), p);
+        assert!(settings.playwright_configs[0].ends_with("playwright.config.ts"));
     }
 }

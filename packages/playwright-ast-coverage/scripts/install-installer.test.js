@@ -18,15 +18,21 @@ function executableName(target) {
     : "playwright-ast-coverage";
 }
 
+const binName = "playwright-ast-coverage";
+const version = "9.8.7";
+
 test("rejects unsupported install targets", async () => {
-  await assert.rejects(() => install({ target: null }), /Unsupported platform/);
-  assert.match(unsupportedPlatformMessage("freebsd", "x64"), /Unsupported platform freebsd\/x64/);
+  await assert.rejects(() => install({ target: null, version }), /Unsupported platform/);
   assert.match(
-    unsupportedPlatformMessage("linux", "x64", { getReport: () => ({ header: {} }) }),
+    unsupportedPlatformMessage(binName, "freebsd", "x64"),
+    /Unsupported platform freebsd\/x64/,
+  );
+  assert.match(
+    unsupportedPlatformMessage(binName, "linux", "x64", { getReport: () => ({ header: {} }) }),
     /glibc 2\.35/,
   );
   assert.match(
-    unsupportedPlatformMessage("linux", "arm64", { getReport: () => ({ header: {} }) }),
+    unsupportedPlatformMessage(binName, "linux", "arm64", { getReport: () => ({ header: {} }) }),
     /glibc 2\.35/,
   );
 });
@@ -35,7 +41,6 @@ test("installs only the requested platform binary and verifies checksum", async 
   const root = await mkdtemp(join(tmpdir(), "playwright-ast-coverage-test-"));
   const vendorDir = join(root, "vendor");
   const target = "x86_64-unknown-linux-gnu";
-  const version = "9.8.7";
   const asset = assetName(version, target);
   const content = Buffer.from("#!/bin/sh\nexit 0\n");
   const hash = createHash("sha256").update(content).digest("hex");
@@ -92,7 +97,6 @@ test("installs with default target and release base environment", async () => {
     await rm(root, { recursive: true, force: true });
     return;
   }
-  const version = "9.8.7";
   const asset = assetName(version, target);
   const content = Buffer.from("#!/bin/sh\nexit 0\n");
   const hash = createHash("sha256").update(content).digest("hex");
@@ -119,7 +123,6 @@ test("installs Windows assets without chmod", async () => {
   const root = await mkdtemp(join(tmpdir(), "playwright-ast-coverage-windows-install-"));
   const vendorDir = join(root, "vendor");
   const target = "x86_64-pc-windows-msvc";
-  const version = "9.8.7";
   const asset = assetName(version, target);
   const content = Buffer.from("windows");
   const hash = createHash("sha256").update(content).digest("hex");
@@ -145,7 +148,6 @@ test("rejects checksum mismatches and cleans temporary files", async () => {
   const root = await mkdtemp(join(tmpdir(), "playwright-ast-coverage-bad-checksum-"));
   const vendorDir = join(root, "vendor");
   const target = "x86_64-unknown-linux-gnu";
-  const version = "9.8.7";
   const asset = assetName(version, target);
   const content = Buffer.from("#!/bin/sh\nexit 0\n");
 

@@ -28,5 +28,8 @@
   "scripts": {
     "postinstall": "node scripts/install.js",
     "pack:check": "npm pack --dry-run"
+  },
+  "dependencies": {
+    "no-mistakes-core": "^0.1.0"
   }
 }

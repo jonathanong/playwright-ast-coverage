@@ -1,0 +1,29 @@
+{
+  "name": "next-to-fetch",
+  "version": "0.1.0",
+  "description": "Map Next.js App Router routes to fetch API calls",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jonathanong/playwright-ast-coverage.git",
+    "directory": "packages/next-to-fetch"
+  },
+  "bin": {
+    "next-to-fetch": "bin/next-to-fetch.js"
+  },
+  "files": [
+    "bin/",
+    "scripts/install.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install.js"
+  },
+  "dependencies": {
+    "no-mistakes-core": "^0.1.0"
+  }
+}

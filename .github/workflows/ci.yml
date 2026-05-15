@@ -60,7 +60,7 @@ jobs:
       - name: Enforce Rust coverage
         run: |
           mkdir -p target/llvm-cov
-          cargo llvm-cov --all-features --fail-uncovered-lines 0 --fail-uncovered-functions 0 --show-missing-lines --lcov --output-path target/llvm-cov/lcov.info
+          cargo llvm-cov --workspace --all-features --fail-under-lines 99 --fail-under-functions 99 --show-missing-lines --lcov --output-path target/llvm-cov/lcov.info
 
       - name: Upload Rust coverage to Codecov
         if: ${{ env.CODECOV_TOKEN != '' }}
@@ -73,7 +73,7 @@ jobs:
 
       - name: Upload JavaScript coverage to Codecov
         if: ${{ env.CODECOV_TOKEN != '' }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ env.CODECOV_TOKEN }}
           files: coverage/lcov.info

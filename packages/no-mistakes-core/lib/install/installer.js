@@ -8,13 +8,7 @@ const { join } = require("node:path");
 const { assetName, parseChecksum, releaseBaseUrl } = require("./assets");
 const { download, fetchText } = require("./download");
 const { platformTarget, supportedGlibc } = require("./platform");
-
-const PACKAGE_ROOT = join(__dirname, "..", "..");
-const VENDOR_DIR = join(PACKAGE_ROOT, "vendor");
-
-function packageVersion() {
-  return require(join(PACKAGE_ROOT, "package.json")).version;
-}
+const { existsSync } = require("node:fs");
 
 async function sha256(path) {
   const hash = createHash("sha256");
@@ -24,29 +18,50 @@ async function sha256(path) {
   return hash.digest("hex");
 }
 
-async function install(options = {}) {
-  const version = options.version || packageVersion();
+async function install(binName, repository, options = {}) {
+  const version = options.version;
+  if (!version) {
+    throw new Error("version is required for install()");
+  }
   const target = Object.hasOwn(options, "target") ? options.target : platformTarget();
   if (!target) {
-    throw new Error(unsupportedPlatformMessage());
+    throw new Error(unsupportedPlatformMessage(binName));
   }
 
-  const asset = assetName(version, target);
-  const baseUrl = options.baseUrl || releaseBaseUrl(version);
-  /* v8 ignore next -- default package vendor dir is reserved for npm postinstall */
-  const vendorDir = options.vendorDir || VENDOR_DIR;
   const executable =
     process.platform === "win32" || target.endsWith("windows-msvc")
-      ? "playwright-ast-coverage.exe"
-      : "playwright-ast-coverage";
+      ? `${binName}.exe`
+      : binName;
+
+  const vendorDir = options.vendorDir;
+  if (!vendorDir) {
+    throw new Error("vendorDir is required for install()");
+  }
   const destination = join(vendorDir, executable);
+
+  // Skip download if binary already exists (e.g. from a local build or previous install)
+  // In development/local environments, we might already have the binary.
+  if (process.env.SKIP_BINARY_DOWNLOAD || (options.checkExisting && existsSync(destination))) {
+    return destination;
+  }
+
+  const asset = assetName(binName, version, target);
+  const baseUrl = options.baseUrl || releaseBaseUrl(repository, version, options.envVar);
   const temp = `${destination}.tmp-${process.pid}`;
 
   await mkdir(vendorDir, { recursive: true });
 
   try {
+    console.log(`Downloading ${binName} v${version} for ${target}...`);
     await download(`${baseUrl}/${asset}`, temp);
-    const checksumText = await fetchText(`${baseUrl}/${asset}.sha256`);
+    
+    let checksumText;
+    try {
+      checksumText = await fetchText(`${baseUrl}/${asset}.sha256`);
+    } catch (e) {
+      throw new Error(`Failed to fetch checksum for ${asset}: ${e.message}`);
+    }
+
     const expected = parseChecksum(checksumText, asset);
     const actual = await sha256(temp);
     if (actual !== expected) {
@@ -59,24 +74,24 @@ async function install(options = {}) {
     return destination;
   } catch (error) {
     await rm(temp, { force: true });
-    throw error;
+    throw new Error(`Failed to install ${binName}: ${error.message}`);
   }
 }
 
 function unsupportedPlatformMessage(
+  binName,
   platform = process.platform,
   arch = process.arch,
   report = process.report,
 ) {
   if (platform === "linux" && (arch === "x64" || arch === "arm64") && !supportedGlibc(report)) {
-    return "Linux npm installs require glibc 2.35 or newer. Install with `cargo install playwright-ast-coverage` instead.";
+    return `Linux npm installs require glibc 2.35 or newer. Install with \`cargo install ${binName}\` instead.`;
   }
-  return `Unsupported platform ${platform}/${arch}. Install with \`cargo install playwright-ast-coverage\` instead.`;
+  return `Unsupported platform ${platform}/${arch}. Install with \`cargo install ${binName}\` instead.`;
 }
 
 module.exports = {
   install,
-  packageVersion,
   sha256,
   unsupportedPlatformMessage,
 };
