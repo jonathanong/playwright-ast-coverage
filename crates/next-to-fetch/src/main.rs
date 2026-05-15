@@ -190,7 +190,12 @@ impl<'a> Visit<'a> for FetchVisitor<'a> {
                 let (path, raw_path, is_dynamic, is_unsupported) =
                     if let Some(arg) = expr.arguments.first() {
                         let result = extract_url_from_argument(arg, self.source);
-                        (result.path, result.raw_path, result.is_dynamic, result.is_unsupported)
+                        (
+                            result.path,
+                            result.raw_path,
+                            result.is_dynamic,
+                            result.is_unsupported,
+                        )
                     } else {
                         ("unknown".to_string(), "unknown".to_string(), true, true)
                     };
@@ -320,7 +325,7 @@ fn extract_url_from_argument(arg: &Argument, source: &str) -> UrlExtraction {
         _ => UrlExtraction {
             path: "dynamic".to_string(),
             raw_path: source_text(arg.span().start as usize, arg.span().end as usize, source)
-            .unwrap_or_else(|| "dynamic".to_string()),
+                .unwrap_or_else(|| "dynamic".to_string()),
             is_dynamic: true,
             is_unsupported: true,
         },
