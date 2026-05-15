@@ -1,4 +1,4 @@
-use crate::analyze::import_shape::{is_runtime_import, parse_named_specifiers};
+use crate::analyze::import_shape::is_runtime_import;
 use crate::analyze::imports::{
     collect_identifier_references, collect_imports, collect_imports_from_program,
     collect_runtime_imports_from_program,
@@ -9,11 +9,6 @@ use oxc_ast::ast::Statement;
 use std::collections::HashMap;
 use std::fs;
 use tempfile::tempdir;
-
-#[test]
-fn test_parse_named_specifiers_returns_empty_when_invalid_order() {
-    assert_eq!(parse_named_specifiers("}{"), Some(Vec::new()));
-}
 
 #[test]
 fn test_collect_imports_reuses_cached_imports() {
@@ -54,11 +49,11 @@ fn test_collect_imports_from_program_reuses_cached_value() {
     let source = std::fs::read_to_string(&abs_path).unwrap();
     let mut import_cache = HashMap::new();
     let mut from_source = false;
-    let _ = ast::with_program(&abs_path, &source, |program, source| -> Result<()> {
+    let _ = ast::with_program(&abs_path, &source, |program, _source| -> Result<()> {
         let first =
-            collect_imports_from_program(&abs_path, program, source, &mut import_cache).unwrap();
+            collect_imports_from_program(&abs_path, program, &mut import_cache).unwrap();
         let second =
-            collect_imports_from_program(&abs_path, program, source, &mut import_cache).unwrap();
+            collect_imports_from_program(&abs_path, program, &mut import_cache).unwrap();
         assert_eq!(first, second);
         assert_eq!(first.len(), 1);
         from_source = !first.is_empty();

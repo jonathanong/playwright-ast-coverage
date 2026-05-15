@@ -30,10 +30,10 @@ fn test_is_runtime_export_variants() {
         })
         .collect::<Vec<_>>();
     assert_eq!(exports.len(), 4);
-    assert!(!is_runtime_export(exports[0], source));
-    assert!(is_runtime_export(exports[1], source));
-    assert!(!is_runtime_export(exports[2], source));
-    assert!(is_runtime_export(exports[3], source));
+    assert!(!is_runtime_export(exports[0]));
+    assert!(is_runtime_export(exports[1]));
+    assert!(!is_runtime_export(exports[2]));
+    assert!(is_runtime_export(exports[3]));
 }
 
 #[test]
@@ -54,7 +54,41 @@ fn test_is_runtime_export_declaration_without_named_specifiers_is_runtime() {
             }
         })
         .expect("expected export declaration");
-    assert!(is_runtime_export(export, source));
+    assert!(is_runtime_export(export));
+}
+
+#[test]
+fn test_is_runtime_export_declaration_variants() {
+    let allocator = oxc_allocator::Allocator::default();
+    let source = "
+        export interface Foo { bar: string }
+        export type Alias = string;
+        export class Bar { method() {} }
+        export function baz() {}
+        export const qux = 1;
+    ";
+    let source_type = oxc_span::SourceType::from_path(std::path::Path::new("test.ts")).unwrap();
+    let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+    assert!(
+        parsed.errors.is_empty(),
+        "parse errors: {:?}",
+        parsed.errors
+    );
+    let exports: Vec<_> = parsed
+        .program
+        .body
+        .iter()
+        .filter_map(|stmt| match stmt {
+            Statement::ExportNamedDeclaration(e) => Some(e),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(exports.len(), 5);
+    assert!(!is_runtime_export(exports[0])); // export interface
+    assert!(!is_runtime_export(exports[1])); // export type alias
+    assert!(is_runtime_export(exports[2]));  // export class
+    assert!(is_runtime_export(exports[3]));  // export function
+    assert!(is_runtime_export(exports[4]));  // export const
 }
 
 #[test]
