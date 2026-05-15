@@ -177,7 +177,7 @@ impl<'a> Visit<'a> for FetchVisitor<'a> {
         if let Some((wrapper_name, cached_kind)) = cache_wrapper_name(expr) {
             let previous_cached_function = self.cached_function.clone();
             let previous_cached_kind = self.cached_kind.clone();
-            self.cached_function = Some(wrapper_name.to_string());
+            self.cached_function = Some(wrapper_name);
             self.cached_kind = Some(cached_kind);
             walk::walk_call_expression(self, expr);
             self.cached_function = previous_cached_function;
@@ -250,13 +250,16 @@ impl<'a> Visit<'a> for FetchVisitor<'a> {
     }
 }
 
-fn cache_wrapper_name<'a>(expr: &CallExpression<'a>) -> Option<(&'a str, CacheKind)> {
+fn cache_wrapper_name(expr: &CallExpression<'_>) -> Option<(String, CacheKind)> {
     let Expression::Identifier(identifier) = &expr.callee else {
         return None;
     };
     match identifier.name.as_ref() {
-        "cache" => Some((identifier.name.as_ref(), CacheKind::ReactCache)),
-        "unstable_cache" => Some((identifier.name.as_ref(), CacheKind::UnstableCache)),
+        "cache" => Some((identifier.name.to_string(), CacheKind::ReactCache)),
+        "unstable_cache" => Some((
+            identifier.name.to_string(),
+            CacheKind::UnstableCache,
+        )),
         _ => None,
     }
 }
