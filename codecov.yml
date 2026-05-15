@@ -3,7 +3,7 @@ coverage:
     project:
       default: off
       rust:
-        target: 99%
+        target: 100%
         threshold: 0%
         require_base: false
         flags:
@@ -19,7 +19,7 @@ coverage:
     patch:
       default: off
       rust:
-        target: 99%
+        target: 100%
         threshold: 0%
         flags:
           - rust
