@@ -19,6 +19,7 @@ SRC_MAX=200
 TEST_MAX=500
 fail=0
 
+# All workspace crates must live under crates/; this scope is intentional.
 json=$(tokei crates --files --output json)
 
 # Sanity check: ensure tokei produced at least one Rust report so schema changes are caught loudly.

@@ -12,6 +12,7 @@ fi
 # rg exits 0 on match, 1 on no match, 2+ on error (including missing PCRE2 support).
 # Capture stdout and stderr separately; temporarily disable errexit to capture the exit code.
 _rg_stderr_tmp=$(mktemp)
+trap 'rm -f "$_rg_stderr_tmp"' EXIT
 set +e
 rg_stdout=$(rg -n -U --pcre2 \
     '#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\](?:\s*|//.*|/\*[\s\S]*?\*/|#\s*\[[^\]]*\])*(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{' \
