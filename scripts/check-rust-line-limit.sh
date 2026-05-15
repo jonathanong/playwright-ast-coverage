@@ -3,6 +3,18 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+if ! command -v tokei >/dev/null 2>&1; then
+    echo "Error: tokei is required."
+    echo "Install with: brew install tokei  (or cargo install tokei)"
+    exit 1
+fi
+
+if ! command -v jq >/dev/null 2>&1; then
+    echo "Error: jq is required."
+    echo "Install with: brew install jq  (or apt-get install jq)"
+    exit 1
+fi
+
 SRC_MAX=200
 TEST_MAX=500
 fail=0
@@ -31,4 +43,4 @@ if [ "$fail" -eq 0 ]; then
     echo "All Rust files within line limits (src ≤$SRC_MAX, tests ≤$TEST_MAX)."
 fi
 
-exit $fail
+exit "$fail"

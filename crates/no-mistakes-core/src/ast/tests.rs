@@ -20,12 +20,6 @@ fn parser_reports_invalid_sources_and_extensions() {
 }
 
 #[test]
-fn test_with_program_panic_simulation() {
-    // Not easy to trigger panic in parser without internal knowledge,
-    // but we've covered the error return path above.
-}
-
-#[test]
 fn test_span_text() {
     assert_eq!(span_text("abc", Span::new(0, 3)), "abc");
     assert_eq!(span_text("abc", Span::new(0, 0)), "");
