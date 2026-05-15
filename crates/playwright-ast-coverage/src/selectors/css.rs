@@ -160,12 +160,4 @@ fn is_css_identifier_char(ch: char) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn css_escapes_handle_hex_and_non_hex() {
-        assert_eq!(css_escape(r#"\20"#, 0).unwrap().0, ' ');
-        assert_eq!(css_escape(r#"\:"#, 0).unwrap().0, ':');
-    }
-}
+mod tests;

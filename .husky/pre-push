@@ -34,6 +34,20 @@ do
   fi
 done
 
+echo "Checking Rust file line limits..."
+if ! command -v tokei >/dev/null 2>&1; then
+  echo "Error: tokei is required. Install with: brew install tokei (or cargo install tokei)"
+  exit 1
+fi
+bash scripts/check-rust-line-limit.sh || exit 1
+
+echo "Checking for inline #[cfg(test)] mod blocks..."
+if ! command -v rg >/dev/null 2>&1; then
+  echo "Error: rg (ripgrep) is required. Install with: brew install ripgrep"
+  exit 1
+fi
+bash scripts/check-rust-test-modules.sh || exit 1
+
 echo "Running cargo fmt..."
 cargo fmt --all -- --check || exit 1
 

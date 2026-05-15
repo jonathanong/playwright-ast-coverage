@@ -14,7 +14,7 @@ fi
 set +e
 rg_output=$(rg -n -U --pcre2 \
     '#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\](?:\s*|//.*|/\*[\s\S]*?\*/|#\s*\[[^\]]*\])*(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{' \
-    --glob '*/src/**/*.rs' \
+    --glob '**/src/**/*.rs' \
     crates 2>&1)
 rg_exit=$?
 set -e

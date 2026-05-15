@@ -139,6 +139,11 @@ jobs:
       - name: Install npm dependencies
         run: SKIP_BINARY_DOWNLOAD=1 npm ci
 
+      - name: Install tokei
+        uses: taiki-e/install-action@v2
+        with:
+          tool: tokei
+
       - name: Verify versions
         shell: bash
         run: |
@@ -148,6 +153,12 @@ jobs:
           npm_version="$(node -p "require('./package.json').version")"
           test "$tag" = "$cargo_version"
           test "$tag" = "$npm_version"
+
+      - name: Check Rust file line limits
+        run: bash scripts/check-rust-line-limit.sh
+
+      - name: Check for inline test modules
+        run: bash scripts/check-rust-test-modules.sh
 
       - name: Check formatting
         run: cargo fmt --all -- --check
