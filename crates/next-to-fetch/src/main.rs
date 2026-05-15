@@ -256,10 +256,7 @@ fn cache_wrapper_name(expr: &CallExpression<'_>) -> Option<(String, CacheKind)> 
     };
     match identifier.name.as_ref() {
         "cache" => Some((identifier.name.to_string(), CacheKind::ReactCache)),
-        "unstable_cache" => Some((
-            identifier.name.to_string(),
-            CacheKind::UnstableCache,
-        )),
+        "unstable_cache" => Some((identifier.name.to_string(), CacheKind::UnstableCache)),
         _ => None,
     }
 }
