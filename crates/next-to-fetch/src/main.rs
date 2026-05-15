@@ -175,9 +175,109 @@ struct FetchVisitor<'a> {
     is_route_handler: bool,
     cached_function: Option<String>,
     cached_kind: Option<CacheKind>,
+    fetch_scope_stack: Vec<HashSet<String>>,
+}
+
+impl<'a> FetchVisitor<'a> {
+    fn new(
+        source: &'a str,
+        file: &str,
+        is_client: bool,
+        is_route_handler: bool,
+    ) -> Self {
+        Self {
+            source,
+            file: file.to_string(),
+            fetches: Vec::new(),
+            is_client,
+            is_route_handler,
+            cached_function: None,
+            cached_kind: None,
+            fetch_scope_stack: vec![HashSet::new()],
+        }
+    }
+
+    fn enter_fetch_scope(&mut self) {
+        self.fetch_scope_stack.push(HashSet::new());
+    }
+
+    fn leave_fetch_scope(&mut self) {
+        self.fetch_scope_stack.pop();
+    }
+
+    fn mark_fetch_shadowed(&mut self) {
+        if let Some(scope) = self.fetch_scope_stack.last_mut() {
+            scope.insert("fetch".to_string());
+        }
+    }
+
+    fn mark_identifier_shadowed(&mut self, name: &str) {
+        if let Some(scope) = self.fetch_scope_stack.last_mut() {
+            scope.insert(name.to_string());
+        }
+    }
+
+    fn is_fetch_shadowed(&self) -> bool {
+        self.fetch_scope_stack.iter().any(|scope| scope.contains("fetch"))
+    }
 }
 
 impl<'a> Visit<'a> for FetchVisitor<'a> {
+    fn visit_binding_identifier(&mut self, ident: &oxc_ast::ast::BindingIdentifier<'a>) {
+        self.mark_identifier_shadowed(ident.name.as_ref());
+        if ident.name.as_ref() == "fetch" {
+            self.mark_fetch_shadowed();
+        }
+        walk::walk_binding_identifier(self, ident);
+    }
+
+    fn visit_import_declaration(&mut self, import: &oxc_ast::ast::ImportDeclaration<'a>) {
+        if let Some(specifiers) = import.specifiers.as_ref() {
+            for specifier in specifiers {
+                match specifier {
+                    ImportDeclarationSpecifier::ImportDefaultSpecifier(default_import) => {
+                        self.mark_identifier_shadowed(default_import.local.name.as_ref());
+                    }
+                    ImportDeclarationSpecifier::ImportNamespaceSpecifier(namespace_import) => {
+                        self.mark_identifier_shadowed(namespace_import.local.name.as_ref());
+                    }
+                    ImportDeclarationSpecifier::ImportSpecifier(import_specifier) => {
+                        self.mark_identifier_shadowed(import_specifier.local.name.as_ref());
+                    }
+                }
+            }
+        }
+        walk::walk_import_declaration(self, import);
+    }
+
+    fn visit_function(
+        &mut self,
+        function: &oxc_ast::ast::Function<'a>,
+        flags: oxc_syntax::scope::ScopeFlags,
+    ) {
+        self.enter_fetch_scope();
+        walk::walk_function(self, function, flags);
+        self.leave_fetch_scope();
+    }
+
+    fn visit_arrow_function_expression(&mut self, arrow: &oxc_ast::ast::ArrowFunctionExpression<'a>) {
+        self.enter_fetch_scope();
+        walk::walk_arrow_function_expression(self, arrow);
+        self.leave_fetch_scope();
+    }
+
+    fn visit_catch_clause(&mut self, catch_clause: &oxc_ast::ast::CatchClause<'a>) {
+        self.enter_fetch_scope();
+        walk::walk_catch_clause(self, catch_clause);
+        self.leave_fetch_scope();
+    }
+
+    fn visit_block_statement(&mut self, block: &oxc_ast::ast::BlockStatement<'a>) {
+        self.enter_fetch_scope();
+        walk::walk_block_statement(self, block);
+        self.leave_fetch_scope();
+    }
+
     fn visit_call_expression(&mut self, expr: &CallExpression<'a>) {
         if let Some((wrapper_name, cached_kind)) = cache_wrapper_name(expr) {
             let previous_cached_function = self.cached_function.clone();
@@ -192,7 +292,7 @@ impl<'a> Visit<'a> for FetchVisitor<'a> {
         }
 
         if let Expression::Identifier(ident) = &expr.callee {
-            if ident.name == "fetch" {
+            if ident.name.as_ref() == "fetch" && !self.is_fetch_shadowed() {
                 let mut method = "GET".to_string();
                 let mut cached = false;
                 let mut cache_kind = CacheKind::None;
@@ -261,11 +361,12 @@ impl<'a> Visit<'a> for FetchVisitor<'a> {
 }
 
 fn infer_cached_wrapper_name(source: &str, expr: &CallExpression<'_>) -> Option<String> {
-    let statement_start = source[..expr.span().start as usize]
-        .rfind('\n')
-        .map_or(0, |idx| idx + 1);
-    let assignment = source[statement_start..expr.span().start as usize].trim_end();
+    let assignment = &source[..expr.span().start as usize];
+    let assignment = assignment.trim_end();
     let equal_sign = assignment.rfind('=')?;
+    if !assignment[equal_sign + 1..].trim().is_empty() {
+        return None;
+    }
 
     let lhs = assignment[..equal_sign].trim_end();
 
@@ -482,12 +583,8 @@ fn run() -> Result<()> {
 
             if let Some(target_file) = &target.file {
                 let mut visited_targets = HashSet::new();
-                if route_reaches_target(
-                    &route.file,
-                    target_file,
-                    &mut visited_targets,
-                    &mut cache.imports,
-                )? {
+                let reaches_route_target = route_reaches_target(&route.file, target_file, &mut visited_targets, &mut cache.imports)?;
+                if reaches_route_target {
                     matched = true;
                     matched_targets.insert(target.raw.clone());
                     continue 'target_match;
@@ -500,13 +597,9 @@ fn run() -> Result<()> {
                         break;
                     }
 
-                    if collect_imports(wrapper_file, &mut cache.imports)?
-                        .iter()
-                        .any(|import| import == target_file)
-                    {
-                        wrapper_file_matches = true;
-                        break;
-                    }
+                    let mut wrapper_targets = HashSet::new();
+                    let reaches_wrapper_target = route_reaches_target(wrapper_file, target_file, &mut wrapper_targets, &mut cache.imports)?;
+                    if reaches_wrapper_target { wrapper_file_matches = true; break; }
                 }
 
                 if wrapper_file_matches {
@@ -526,15 +619,7 @@ fn run() -> Result<()> {
 
         let route_is_route_handler = is_route_handler_file(&route.file);
         // Analyze the page/route file itself
-        let _route_is_client = analyze_file(
-            &route.file,
-            &root,
-            &mut visited,
-            &mut fetches,
-            &mut cache,
-            false,
-            route_is_route_handler,
-        )?;
+        let _route_is_client = analyze_file(&route.file, &root, &mut visited, &mut fetches, &mut cache, false, route_is_route_handler)?;
 
         // Traverse up and find parent layouts/loadings if it's a page (UI)
         if route_is_page {
@@ -548,15 +633,7 @@ fn run() -> Result<()> {
                     for ext in ["tsx", "ts", "jsx", "js"] {
                         let layout_file = parent.join(format!("{stem}.{ext}"));
                         if layout_file.exists() {
-                            analyze_file(
-                                &layout_file,
-                                &root,
-                                &mut visited,
-                                &mut fetches,
-                                &mut cache,
-                                false,
-                                route_is_route_handler,
-                            )?;
+                            let _ = analyze_file(&layout_file, &root, &mut visited, &mut fetches, &mut cache, false, route_is_route_handler)?;
                         }
                     }
                 }
@@ -780,28 +857,12 @@ fn analyze_file(
                     .directives
                     .iter()
                     .any(|d| d.directive == "use client"));
-        let mut visitor = FetchVisitor {
-            source,
-            file: rel_file,
-            fetches: Vec::new(),
-            is_client,
-            is_route_handler: inherited_is_route_handler,
-            cached_function: None,
-            cached_kind: None,
-        };
+        let mut visitor = FetchVisitor::new(source, &rel_file, is_client, inherited_is_route_handler);
         visitor.visit_program(program);
         file_fetches.extend(visitor.fetches);
         let imports = collect_imports_from_program(&abs_path, program, source, &mut cache.imports)?;
         for import in imports {
-            analyze_file(
-                &import,
-                root,
-                visited,
-                &mut file_fetches,
-                cache,
-                is_client,
-                inherited_is_route_handler,
-            )?;
+            let _ = analyze_file(&import, root, visited, &mut file_fetches, cache, is_client, inherited_is_route_handler)?;
         }
         Ok(is_client)
     })??;
@@ -1011,8 +1072,8 @@ fn cache_kind_name(cache_kind: &CacheKind) -> &'static str {
     match cache_kind {
         CacheKind::None => "none",
         CacheKind::FetchCache => "fetch-cache",
-        CacheKind::FetchNextRevalidate => "next-revalidate",
-        CacheKind::FetchNextTags => "next-tags",
+        CacheKind::FetchNextRevalidate => "fetch-next-revalidate",
+        CacheKind::FetchNextTags => "fetch-next-tags",
         CacheKind::ReactCache => "react-cache",
         CacheKind::Cache => "cache",
         CacheKind::UnstableCache => "unstable-cache",
@@ -1387,6 +1448,16 @@ mod tests {
     }
 
     #[test]
+    fn test_infer_cached_wrapper_name_returns_none_when_text_after_equals() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "wrapped = /*cache helper*/ cache(() => {});";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let call = first_statement_assignment_call_expression(&parsed.program.body[0]);
+        assert_eq!(infer_cached_wrapper_name(source, call), None);
+    }
+
+    #[test]
     fn test_infer_cached_wrapper_name_returns_none_for_member_access_target() {
         let allocator = oxc_allocator::Allocator::default();
         let source = "obj['value'] = cache(() => {});";
@@ -1414,6 +1485,20 @@ mod tests {
         let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
         let call = first_statement_assignment_call_expression(&parsed.program.body[0]);
         assert_eq!(infer_cached_wrapper_name(source, call), None);
+    }
+
+    #[test]
+    fn test_infer_cached_wrapper_name_parses_multiline_assignment() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "
+            cachedFn =\n            cache(() => {});\n        ";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let call = first_statement_assignment_call_expression(&parsed.program.body[0]);
+        assert_eq!(
+            infer_cached_wrapper_name(source, call),
+            Some("cachedFn".to_string())
+        );
     }
 
     #[test]
@@ -1502,15 +1587,7 @@ mod tests {
         ";
         let source_type = oxc_span::SourceType::default();
         let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
-        let mut visitor = FetchVisitor {
-            source,
-            file: "test.ts".to_string(),
-            fetches: Vec::new(),
-            is_client: false,
-            is_route_handler: false,
-            cached_function: None,
-            cached_kind: None,
-        };
+        let mut visitor = FetchVisitor::new(source, "test.ts", false, false);
         visitor.visit_program(&parsed.program);
         assert_eq!(visitor.fetches.len(), 3);
         for fetch in &visitor.fetches {
@@ -1592,15 +1669,7 @@ mod tests {
         let source = "notFetch();";
         let source_type = oxc_span::SourceType::default();
         let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
-        let mut visitor = FetchVisitor {
-            source,
-            file: "test.ts".to_string(),
-            fetches: Vec::new(),
-            is_client: false,
-            is_route_handler: false,
-            cached_function: None,
-            cached_kind: None,
-        };
+        let mut visitor = FetchVisitor::new(source, "test.ts", false, false);
         visitor.visit_program(&parsed.program);
         assert_eq!(visitor.fetches.len(), 0);
     }
@@ -1617,15 +1686,7 @@ mod tests {
         ";
         let source_type = oxc_span::SourceType::default();
         let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
-        let mut visitor = FetchVisitor {
-            source,
-            file: "test.ts".to_string(),
-            fetches: Vec::new(),
-            is_client: false,
-            is_route_handler: false,
-            cached_function: None,
-            cached_kind: None,
-        };
+        let mut visitor = FetchVisitor::new(source, "test.ts", false, false);
         visitor.visit_program(&parsed.program);
         assert_eq!(visitor.fetches.len(), 5);
         for fetch in &visitor.fetches {
@@ -1646,15 +1707,7 @@ mod tests {
         ";
         let source_type = oxc_span::SourceType::default();
         let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
-        let mut visitor = FetchVisitor {
-            source,
-            file: "test.ts".to_string(),
-            fetches: Vec::new(),
-            is_client: false,
-            is_route_handler: false,
-            cached_function: None,
-            cached_kind: None,
-        };
+        let mut visitor = FetchVisitor::new(source, "test.ts", false, false);
         visitor.visit_program(&parsed.program);
         assert_eq!(visitor.fetches.len(), 4);
         assert!(visitor.fetches[0].cached);
@@ -1668,6 +1721,85 @@ mod tests {
         assert_eq!(visitor.fetches[2].cache_kind, CacheKind::None);
         assert!(visitor.fetches[3].cached);
         assert_eq!(visitor.fetches[3].cache_kind, CacheKind::FetchNextTags);
+    }
+
+    #[test]
+    fn test_visitor_shadowed_fetch_is_not_counted() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "
+            fetch('/api/outer');
+            {
+                const fetch = () => {};
+                fetch('/api/inner');
+            }
+        ";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let mut visitor = FetchVisitor::new(source, "test.ts", false, false);
+        visitor.visit_program(&parsed.program);
+        assert_eq!(visitor.fetches.len(), 1);
+        assert_eq!(visitor.fetches[0].path, "/api/outer");
+    }
+
+    #[test]
+    fn test_visitor_shadowed_fetch_in_catch_clause_is_not_counted() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "
+            fetch('/api/outer');
+            try {
+                throw new Error('boom');
+            } catch (fetch) {
+                fetch('/api/inner');
+            }
+        ";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let mut visitor = FetchVisitor::new(source, "test.ts", false, false);
+        visitor.visit_program(&parsed.program);
+        assert_eq!(visitor.fetches.len(), 1);
+        assert_eq!(visitor.fetches[0].path, "/api/outer");
+    }
+
+    #[test]
+    fn test_visitor_imported_fetch_is_not_counted() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "
+            import { fetch } from './legacy-fetch';
+            fetch('/api/imported');
+        ";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let mut visitor = FetchVisitor::new(source, "test.ts", false, false);
+        visitor.visit_program(&parsed.program);
+        assert_eq!(visitor.fetches.len(), 0);
+    }
+
+    #[test]
+    fn test_visitor_default_imported_fetch_is_not_counted() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "
+            import fetch from './legacy-fetch';
+            fetch('/api/imported');
+        ";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let mut visitor = FetchVisitor::new(source, "test.ts", false, false);
+        visitor.visit_program(&parsed.program);
+        assert_eq!(visitor.fetches.len(), 0);
+    }
+
+    #[test]
+    fn test_visitor_namespace_imported_fetch_is_not_counted() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "
+            import * as fetch from './legacy-fetch';
+            fetch('/api/imported');
+        ";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let mut visitor = FetchVisitor::new(source, "test.ts", false, false);
+        visitor.visit_program(&parsed.program);
+        assert_eq!(visitor.fetches.len(), 0);
     }
 
     #[test]
@@ -1699,15 +1831,7 @@ mod tests {
         ";
         let source_type = oxc_span::SourceType::default();
         let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
-        let mut visitor = FetchVisitor {
-            source,
-            file: "test.ts".to_string(),
-            fetches: Vec::new(),
-            is_client: false,
-            is_route_handler: false,
-            cached_function: None,
-            cached_kind: None,
-        };
+        let mut visitor = FetchVisitor::new(source, "test.ts", false, false);
         visitor.visit_program(&parsed.program);
         assert_eq!(visitor.fetches.len(), 3);
 
@@ -1739,15 +1863,7 @@ mod tests {
         let source = "fetch();";
         let source_type = oxc_span::SourceType::default();
         let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
-        let mut visitor = FetchVisitor {
-            source,
-            file: "test.ts".to_string(),
-            fetches: Vec::new(),
-            is_client: false,
-            is_route_handler: false,
-            cached_function: None,
-            cached_kind: None,
-        };
+        let mut visitor = FetchVisitor::new(source, "test.ts", false, false);
         visitor.visit_program(&parsed.program);
         assert_eq!(visitor.fetches.len(), 1);
         assert_eq!(visitor.fetches[0].path, "unknown");
@@ -1761,15 +1877,7 @@ mod tests {
         let source = "fetch(url); fetch(`/api/${id}`, { method: 'PATCH' }); fetch('/api/get');";
         let source_type = oxc_span::SourceType::default();
         let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
-        let mut visitor = FetchVisitor {
-            source,
-            file: "test.ts".to_string(),
-            fetches: Vec::new(),
-            is_client: false,
-            is_route_handler: false,
-            cached_function: None,
-            cached_kind: None,
-        };
+        let mut visitor = FetchVisitor::new(source, "test.ts", false, false);
         visitor.visit_program(&parsed.program);
         assert_eq!(visitor.fetches.len(), 3);
         assert_eq!(visitor.fetches[0].path, "dynamic");
@@ -1791,15 +1899,7 @@ mod tests {
         let source = "fetch('/api/route');";
         let source_type = oxc_span::SourceType::default();
         let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
-        let mut visitor = FetchVisitor {
-            source,
-            file: "app/api/route.ts".to_string(),
-            fetches: Vec::new(),
-            is_client: false,
-            is_route_handler: true,
-            cached_function: None,
-            cached_kind: None,
-        };
+        let mut visitor = FetchVisitor::new(source, "app/api/route.ts", false, true);
         visitor.visit_program(&parsed.program);
         assert_eq!(visitor.fetches.len(), 1);
         assert!(!visitor.fetches[0].rsc);
@@ -1895,9 +1995,9 @@ mod tests {
         assert_eq!(cache_kind_name(&CacheKind::FetchCache), "fetch-cache");
         assert_eq!(
             cache_kind_name(&CacheKind::FetchNextRevalidate),
-            "next-revalidate"
+            "fetch-next-revalidate"
         );
-        assert_eq!(cache_kind_name(&CacheKind::FetchNextTags), "next-tags");
+        assert_eq!(cache_kind_name(&CacheKind::FetchNextTags), "fetch-next-tags");
         assert_eq!(cache_kind_name(&CacheKind::ReactCache), "react-cache");
         assert_eq!(cache_kind_name(&CacheKind::Cache), "cache");
         assert_eq!(cache_kind_name(&CacheKind::UnstableCache), "unstable-cache");
@@ -1939,6 +2039,44 @@ mod tests {
             unsupported: false,
         };
         assert_eq!(fetch_cache_label(&fetch), "fetch-cache");
+    }
+
+    #[test]
+    fn test_fetch_cache_label_with_next_revalidate_kind() {
+        let fetch = FetchOccurrence {
+            path: "/api/example".to_string(),
+            raw_path: "/api/example".to_string(),
+            method: "GET".to_string(),
+            file: "app/page.tsx".to_string(),
+            line: 1,
+            side: FetchSide::Server,
+            rsc: true,
+            cached: true,
+            cache_kind: CacheKind::FetchNextRevalidate,
+            cached_function: None,
+            dynamic: false,
+            unsupported: false,
+        };
+        assert_eq!(fetch_cache_label(&fetch), "fetch-next-revalidate");
+    }
+
+    #[test]
+    fn test_fetch_cache_label_with_next_tags_kind() {
+        let fetch = FetchOccurrence {
+            path: "/api/example".to_string(),
+            raw_path: "/api/example".to_string(),
+            method: "GET".to_string(),
+            file: "app/page.tsx".to_string(),
+            line: 1,
+            side: FetchSide::Server,
+            rsc: true,
+            cached: true,
+            cache_kind: CacheKind::FetchNextTags,
+            cached_function: None,
+            dynamic: false,
+            unsupported: false,
+        };
+        assert_eq!(fetch_cache_label(&fetch), "fetch-next-tags");
     }
 
     #[test]
@@ -2392,6 +2530,36 @@ mod tests {
 
         assert_eq!(fetches.len(), 1);
         assert_eq!(fetches[0].path, "/api/helper");
+    }
+
+    #[test]
+    fn test_analyze_file_side_effect_import_is_analyzed() {
+        let dir = tempdir().unwrap();
+        let helper = dir.path().join("helper.ts");
+        fs::write(&helper, "fetch('/api/helper');").unwrap();
+        let file = dir.path().join("file.ts");
+        fs::write(&file, "import './helper';\nfetch('/api/file');").unwrap();
+
+        let mut cache = Cache {
+            files: HashMap::new(),
+            imports: HashMap::new(),
+        };
+        let mut visited = HashSet::new();
+        let mut fetches = Vec::new();
+        analyze_file(
+            &file,
+            dir.path(),
+            &mut visited,
+            &mut fetches,
+            &mut cache,
+            false,
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(fetches.len(), 2);
+        assert_eq!(fetches[0].path, "/api/file");
+        assert_eq!(fetches[1].path, "/api/helper");
     }
 
     #[test]

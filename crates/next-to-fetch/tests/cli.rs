@@ -162,6 +162,152 @@ fn test_cli_targets_imported_file() {
 }
 
 #[test]
+fn test_cli_targets_imported_file_abs_path() {
+    let root = Path::new("tests/fixtures/targets-imported-abs");
+    fs::create_dir_all(root.join("app")).unwrap();
+    fs::write(root.join(".no-mistakes.yaml"), "frontendRoot: app\n").unwrap();
+    fs::write(
+        root.join("app/page.tsx"),
+        "
+        import { getUsers } from './users';
+        getUsers();
+        ",
+    )
+    .unwrap();
+    fs::write(
+        root.join("app/users.ts"),
+        "export const getUsers = () => fetch('/api/users');",
+    )
+    .unwrap();
+
+    let target = root.join("app/users.ts").canonicalize().unwrap();
+    let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
+    cmd.arg("--root").arg(root).arg(target);
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("### / (app/page.tsx)"))
+        .stdout(predicate::str::contains("GET | `/api/users`"));
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn test_cli_target_file_match_uses_layout_direct_target() {
+    let root = Path::new("tests/fixtures/targets-layout-direct");
+    fs::create_dir_all(root.join("app")).unwrap();
+    fs::write(root.join(".no-mistakes.yaml"), "frontendRoot: app\n").unwrap();
+    fs::write(
+        root.join("app/layout.tsx"),
+        "
+        fetch('/api/layout');
+        ",
+    )
+    .unwrap();
+    fs::write(root.join("app/page.tsx"), "fetch('/api/page');").unwrap();
+
+    let _layout = root.join("app/layout.tsx");
+    let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
+    cmd.arg("--root").arg(root).arg("app/layout.tsx");
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("### / (app/page.tsx)"))
+        .stdout(predicate::str::contains("GET | `/api/page`"))
+        .stdout(predicate::str::contains("GET | `/api/layout`"));
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn test_cli_target_file_match_uses_layout_import_chain() {
+    let root = Path::new("tests/fixtures/targets-layout-import-chain");
+    fs::create_dir_all(root.join("app")).unwrap();
+    fs::write(root.join(".no-mistakes.yaml"), "frontendRoot: app\n").unwrap();
+    fs::write(
+        root.join("app/layout.tsx"),
+        "
+        import './shared';
+        fetch('/api/layout');
+        ",
+    )
+    .unwrap();
+    fs::write(
+        root.join("app/shared.ts"),
+        "export const shared = () => fetch('/api/shared');",
+    )
+    .unwrap();
+    fs::write(root.join("app/page.tsx"), "fetch('/api/page');").unwrap();
+
+    let _target = root.join("app/shared.ts");
+    let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
+    cmd.arg("--root").arg(root).arg("app/shared.ts");
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("### / (app/page.tsx)"))
+        .stdout(predicate::str::contains("GET | `/api/page`"))
+        .stdout(predicate::str::contains("GET | `/api/layout`"));
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn test_cli_target_file_match_uses_layout_import_chain_transitively() {
+    let root = Path::new("tests/fixtures/targets-layout-import-chain-transitive");
+    fs::create_dir_all(root.join("app")).unwrap();
+    fs::write(root.join(".no-mistakes.yaml"), "frontendRoot: app\n").unwrap();
+    fs::write(
+        root.join("app/layout.tsx"),
+        "
+        import './shared';
+        fetch('/api/layout');
+        ",
+    )
+    .unwrap();
+    fs::write(root.join("app/shared.ts"), "import { target } from './target';").unwrap();
+    fs::write(root.join("app/target.ts"), "export const target = 123;").unwrap();
+    fs::write(root.join("app/page.tsx"), "fetch('/api/page');").unwrap();
+
+    let _target = root.join("app/target.ts");
+    let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
+    cmd.arg("--root").arg(root).arg("app/target.ts");
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("### / (app/page.tsx)"))
+        .stdout(predicate::str::contains("GET | `/api/page`"))
+        .stdout(predicate::str::contains("GET | `/api/layout`"));
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn test_cli_target_file_match_uses_layout_import_chain_transitively_abs_path() {
+    let root = Path::new("tests/fixtures/targets-layout-import-chain-transitive-abs");
+    fs::create_dir_all(root.join("app")).unwrap();
+    fs::write(root.join(".no-mistakes.yaml"), "frontendRoot: app\n").unwrap();
+    fs::write(
+        root.join("app/layout.tsx"),
+        "
+        import './shared';
+        fetch('/api/layout');
+        ",
+    )
+    .unwrap();
+    fs::write(root.join("app/shared.ts"), "import { target } from './target';").unwrap();
+    fs::write(root.join("app/target.ts"), "export const target = 123;").unwrap();
+    fs::write(root.join("app/page.tsx"), "fetch('/api/page');").unwrap();
+
+    let target = root.join("app/target.ts").canonicalize().unwrap();
+    let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
+    cmd.arg("--root").arg(root).arg(target);
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("### / (app/page.tsx)"))
+        .stdout(predicate::str::contains("GET | `/api/page`"))
+        .stdout(predicate::str::contains("GET | `/api/layout`"));
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn test_cli_target_match_modes() {
     let root = Path::new("tests/fixtures/targets-match-modes");
     fs::create_dir_all(root.join("app/users/profile")).unwrap();
