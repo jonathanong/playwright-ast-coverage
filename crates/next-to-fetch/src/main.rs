@@ -3,12 +3,12 @@ use clap::Parser;
 use no_mistakes_core::ast;
 use no_mistakes_core::config;
 use no_mistakes_core::routes;
-use oxc_span::GetSpan;
 use oxc_ast::ast::{
     Argument, CallExpression, ExportNamedDeclaration, Expression, ImportDeclarationSpecifier,
     ImportOrExportKind, Statement,
 };
 use oxc_ast_visit::{walk, Visit};
+use oxc_span::GetSpan;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
