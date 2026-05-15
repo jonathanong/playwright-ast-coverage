@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 #[test]
 fn run_check_errors_on_empty_app() {
-    let root = fixture_path(&["config", "missing-default"]);
+    let root = fixture_path(&["scan-config", "missing-default"]);
     let cli = Cli {
         root,
         config: None,
@@ -49,7 +49,7 @@ fn run_errors_on_invalid_root() {
 
 #[test]
 fn run_errors_on_empty_routes() {
-    let root = fixture_path(&["main", "empty-app"]);
+    let root = fixture_path(&["ast-snippets", "main", "empty-app"]);
     let cli = Cli {
         root,
         config: None,
@@ -68,7 +68,7 @@ fn run_errors_on_empty_routes() {
 
 #[test]
 fn run_errors_on_missing_playwright_config() {
-    let root = fixture_path(&["covered"]);
+    let root = fixture_path(&["nextjs-coverage", "covered"]);
     let cli = Cli {
         root: root.clone(),
         config: None,
@@ -87,7 +87,7 @@ fn run_errors_on_missing_playwright_config() {
 
 #[test]
 fn discover_test_files_walks_shared_project_test_dir_once() {
-    let root = fixture_path(&["main", "analyze-basic"]);
+    let root = fixture_path(&["ast-snippets", "main", "analyze-basic"]);
     let settings = Settings {
         frontend_root: "web/app".to_string(),
         playwright_configs: vec![],
@@ -132,7 +132,7 @@ fn discover_test_files_walks_shared_project_test_dir_once() {
 
 #[test]
 fn discover_test_files_applies_yaml_exclude_before_project_matching() {
-    let root = fixture_path(&["main", "analyze-basic"]);
+    let root = fixture_path(&["ast-snippets", "main", "analyze-basic"]);
     let settings = Settings {
         frontend_root: "web/app".to_string(),
         playwright_configs: vec![],

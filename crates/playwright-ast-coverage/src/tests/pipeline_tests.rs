@@ -11,8 +11,7 @@ use std::process::ExitCode;
 
 #[test]
 fn analyze_discovers_tests_and_builds_reports() {
-    let mut root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    root.extend(["tests", "fixtures", "covered"]);
+    let root = fixture_path(&["nextjs-coverage", "covered"]);
     let settings = Settings {
         frontend_root: "web/app".to_string(),
         playwright_configs: vec![],
@@ -80,7 +79,7 @@ fn analyze_discovers_tests_and_builds_reports() {
 
 #[test]
 fn analyze_surfaces_parser_errors() {
-    let root = fixture_path(&["main", "invalid-test-source"]);
+    let root = fixture_path(&["ast-snippets", "main", "invalid-test-source"]);
     let settings = Settings {
         frontend_root: "web/app".to_string(),
         playwright_configs: vec![],
@@ -100,7 +99,7 @@ fn analyze_surfaces_parser_errors() {
     let err = analyze(&root, &settings).err().unwrap();
     assert!(err.to_string().contains("failed to parse"));
 
-    let root = fixture_path(&["main", "invalid-selector-source"]);
+    let root = fixture_path(&["ast-snippets", "main", "invalid-selector-source"]);
     let settings = Settings {
         frontend_root: "web/app".to_string(),
         playwright_configs: vec![],

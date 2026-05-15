@@ -17,7 +17,7 @@ fn component_attrs() -> BTreeMap<String, String> {
 
 #[test]
 fn extracts_static_jsx_selectors() {
-    let source = fixture_source(&["selectors", "static-jsx.tsx"]);
+    let source = fixture_source(&["ast-snippets", "selectors", "static-jsx.tsx"]);
     let selectors = extract_app_selectors(
         Path::new("app/page.tsx"),
         &source,
@@ -32,7 +32,7 @@ fn extracts_static_jsx_selectors() {
 
 #[test]
 fn extracts_template_and_unsupported_jsx_selectors() {
-    let source = fixture_source(&["selectors", "template-and-unsupported.tsx"]);
+    let source = fixture_source(&["ast-snippets", "selectors", "template-and-unsupported.tsx"]);
     let selectors = extract_app_selectors(
         Path::new("app/page.tsx"),
         &source,
@@ -89,14 +89,14 @@ fn maps_component_selector_attributes_to_dom_attributes() {
 
 #[test]
 fn collect_app_selectors_reads_source_files_and_skips_build_dirs() {
-    let root = fixture_path(&["selectors", "collect-app"]);
+    let root = fixture_path(&["ast-snippets", "selectors", "collect-app"]);
     let selectors = collect_app_selectors(&root, &attrs()).unwrap();
     assert_eq!(selectors.len(), 1);
     assert_eq!(selectors[0].display_value(), "ok");
     assert!(collect_app_selectors(&root.join("missing"), &attrs())
         .unwrap()
         .is_empty());
-    let invalid = fixture_path(&["main", "invalid-selector-source", "web", "app"]);
+    let invalid = fixture_path(&["ast-snippets", "main", "invalid-selector-source", "web", "app"]);
     assert!(collect_app_selectors(&invalid, &attrs()).is_err());
 }
 
@@ -143,7 +143,7 @@ fn exact_and_operator_matchers_cover_static_values() {
         attribute: "data-testid".to_string(),
         value: AppSelectorValue::Exact("save-button".to_string()),
     };
-    let source = fixture_source(&["selectors", "exact-operator-matchers.ts"]);
+    let source = fixture_source(&["ast-snippets", "selectors", "exact-operator-matchers.ts"]);
     let selectors = crate::selectors::extract_playwright_selectors(
         &source,
         &["data-testid".to_string()],

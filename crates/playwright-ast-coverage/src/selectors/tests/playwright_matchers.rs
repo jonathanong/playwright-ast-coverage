@@ -10,7 +10,7 @@ fn attrs() -> Vec<String> {
 
 #[test]
 fn selector_parser_handles_ast_edge_shapes() {
-    let source = fixture_source(&["selectors", "edge-jsx.tsx"]);
+    let source = fixture_source(&["ast-snippets", "selectors", "edge-jsx.tsx"]);
     let selectors = crate::selectors::extract_app_selectors(
         Path::new("app/page.tsx"),
         &source,
@@ -20,7 +20,7 @@ fn selector_parser_handles_ast_edge_shapes() {
     .unwrap();
     assert!(selectors.iter().any(|s| s.display_value() == "save"));
 
-    let source = fixture_source(&["selectors", "edge-playwright.ts"]);
+    let source = fixture_source(&["ast-snippets", "selectors", "edge-playwright.ts"]);
     let selectors = extract_playwright_selectors(&source, &attrs(), &["data-testid".to_string()]);
     assert!(selectors.iter().any(|s| s.selector == "getByTestId(save)"));
     assert!(selectors
@@ -48,7 +48,7 @@ fn selector_parser_handles_ast_edge_shapes() {
 
 #[test]
 fn custom_test_id_attribute_maps_get_by_test_id() {
-    let source = fixture_source(&["selectors", "custom-testid.ts"]);
+    let source = fixture_source(&["ast-snippets", "selectors", "custom-testid.ts"]);
     let selectors = extract_playwright_selectors(
         &source,
         &["data-test".to_string()],
@@ -64,7 +64,7 @@ fn template_matchers_cover_structured_dynamic_values() {
         attribute: "data-testid".to_string(),
         value: AppSelectorValue::Template(TemplatePattern::new("user-${id}-button").unwrap()),
     };
-    let source = fixture_source(&["selectors", "template-matchers.ts"]);
+    let source = fixture_source(&["ast-snippets", "selectors", "template-matchers.ts"]);
     let selectors = extract_playwright_selectors(
         &source,
         &["data-testid".to_string()],
@@ -81,14 +81,14 @@ fn mismatched_attributes_and_values_do_not_cover() {
         attribute: "data-testid".to_string(),
         value: AppSelectorValue::Exact("save".to_string()),
     };
-    let source = fixture_source(&["selectors", "mismatched.ts"]);
+    let source = fixture_source(&["ast-snippets", "selectors", "mismatched.ts"]);
     let selectors = extract_playwright_selectors(&source, &attrs(), &["data-testid".to_string()]);
     assert!(selectors.iter().all(|s| !app.matches_playwright(s)));
 }
 
 #[test]
 fn unsupported_dynamic_values_never_match() {
-    let source = fixture_source(&["selectors", "unsupported-dynamic.ts"]);
+    let source = fixture_source(&["ast-snippets", "selectors", "unsupported-dynamic.ts"]);
     let app = AppSelector {
         file: PathBuf::from("app/page.tsx"),
         attribute: "data-testid".to_string(),

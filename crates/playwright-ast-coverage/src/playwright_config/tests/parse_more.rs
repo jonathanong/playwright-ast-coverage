@@ -4,7 +4,7 @@ use std::path::Path;
 
 #[test]
 fn resolves_identifier_backed_use_object() {
-    let source = fixture_source(&["playwright_config", "use-identifier.ts"]);
+    let source = fixture_source(&["ast-snippets", "playwright_config", "use-identifier.ts"]);
     let parsed = parse(&source, Path::new("/repo")).unwrap();
     assert_eq!(parsed.projects[0].test_dir, "./use-identifier-tests");
     assert_eq!(
@@ -16,14 +16,14 @@ fn resolves_identifier_backed_use_object() {
 
 #[test]
 fn cyclic_identifier_configs_fall_back_without_recursing() {
-    let source = fixture_source(&["playwright_config", "cyclic-config.ts"]);
+    let source = fixture_source(&["ast-snippets", "playwright_config", "cyclic-config.ts"]);
     let parsed = parse(&source, Path::new("/repo")).unwrap();
     assert_eq!(parsed.projects[0].test_dir, ".");
 }
 
 #[test]
 fn template_literals_use_cooked_text() {
-    let source = fixture_source(&["playwright_config", "cooked-template.ts"]);
+    let source = fixture_source(&["ast-snippets", "playwright_config", "cooked-template.ts"]);
     let parsed = parse(&source, Path::new("/repo")).unwrap();
     assert_eq!(parsed.projects[0].test_dir, r#"tests\e2e"#);
     assert_eq!(parsed.projects[0].test_match, vec![r#"**\/*.spec.ts"#]);
@@ -31,7 +31,7 @@ fn template_literals_use_cooked_text() {
 
 #[test]
 fn parser_handles_advanced_export_shapes() {
-    let source = fixture_source(&["playwright_config", "advanced-export-shapes.ts"]);
+    let source = fixture_source(&["ast-snippets", "playwright_config", "advanced-export-shapes.ts"]);
     let parsed = parse(&source, Path::new("/repo")).unwrap();
     assert_eq!(parsed.projects[0].test_dir, "./advanced-export-tests");
     assert_eq!(
@@ -39,14 +39,14 @@ fn parser_handles_advanced_export_shapes() {
         vec!["**/*.advanced-export.ts"]
     );
 
-    let source = fixture_source(&["playwright_config", "non-object-binding.ts"]);
+    let source = fixture_source(&["ast-snippets", "playwright_config", "non-object-binding.ts"]);
     let parsed = parse(&source, Path::new("/repo")).unwrap();
     assert_eq!(parsed.projects[0].test_dir, ".");
 }
 
 #[test]
 fn ignores_non_literal_optional_playwright_values() {
-    let source = fixture_source(&["playwright_config", "nonliteral-optional-values.ts"]);
+    let source = fixture_source(&["ast-snippets", "playwright_config", "nonliteral-optional-values.ts"]);
     let parsed = parse(&source, Path::new("/repo")).unwrap();
     assert_eq!(parsed.projects[0].test_dir, "./tests");
     assert_eq!(parsed.projects[0].base_url, None);
@@ -55,7 +55,7 @@ fn ignores_non_literal_optional_playwright_values() {
 
 #[test]
 fn parse_accepts_spaced_property_and_escaped_string() {
-    let source = fixture_source(&["playwright_config", "spaced-property.ts"]);
+    let source = fixture_source(&["ast-snippets", "playwright_config", "spaced-property.ts"]);
     let parsed = parse(&source, Path::new("/repo")).unwrap();
     assert_eq!(parsed.projects[0].test_dir, r#"tests\e2e"#);
 }
@@ -89,7 +89,7 @@ fn malformed_projects_value_falls_back_to_single_project() {
 
 #[test]
 fn root_options_ignore_project_values() {
-    let source = fixture_source(&["playwright_config", "project-values-only.ts"]);
+    let source = fixture_source(&["ast-snippets", "playwright_config", "project-values-only.ts"]);
     let parsed = parse(&source, Path::new("/repo")).unwrap();
     assert_eq!(parsed.projects[0].test_dir, "./project-tests");
     assert_eq!(parsed.projects[0].test_match, vec!["**/*.project.ts"]);
@@ -110,19 +110,19 @@ fn unsupported_array_elements_are_rejected() {
 
 #[test]
 fn parser_handles_ast_edge_shapes() {
-    let source = fixture_source(&["playwright_config", "no-default-export.ts"]);
+    let source = fixture_source(&["ast-snippets", "playwright_config", "no-default-export.ts"]);
     let parsed = parse(&source, Path::new("/repo")).unwrap();
     assert_eq!(parsed.projects[0].test_dir, ".");
 
-    let source = fixture_source(&["playwright_config", "non-object-default.ts"]);
+    let source = fixture_source(&["ast-snippets", "playwright_config", "non-object-default.ts"]);
     let parsed = parse(&source, Path::new("/repo")).unwrap();
     assert_eq!(parsed.projects[0].test_dir, ".");
 
-    let source = fixture_source(&["playwright_config", "default-function.ts"]);
+    let source = fixture_source(&["ast-snippets", "playwright_config", "default-function.ts"]);
     let parsed = parse(&source, Path::new("/repo")).unwrap();
     assert_eq!(parsed.projects[0].test_dir, ".");
 
-    let source = fixture_source(&["playwright_config", "edge-shapes.ts"]);
+    let source = fixture_source(&["ast-snippets", "playwright_config", "edge-shapes.ts"]);
     let parsed = parse(&source, Path::new("/repo")).unwrap();
     assert_eq!(parsed.projects.len(), 1);
     assert_eq!(parsed.projects[0].test_dir, "./project-tests");

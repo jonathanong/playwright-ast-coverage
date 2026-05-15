@@ -4,7 +4,7 @@ use std::path::Path;
 
 #[test]
 fn parses_test_dir_and_match() {
-    let source = fixture_source(&["playwright_config", "test-dir-and-match.ts"]);
+    let source = fixture_source(&["ast-snippets", "playwright_config", "test-dir-and-match.ts"]);
     let parsed = parse(&source, Path::new("/repo")).unwrap();
     assert_eq!(parsed.name, None);
     assert_eq!(parsed.projects[0].test_dir, "./tests/e2e");
@@ -48,7 +48,7 @@ fn parser_handles_advanced_assignment_targets() {
 
 #[test]
 fn parses_projects_with_inheritance() {
-    let source = fixture_source(&["playwright_config", "projects-with-inheritance.ts"]);
+    let source = fixture_source(&["ast-snippets", "playwright_config", "projects-with-inheritance.ts"]);
     let parsed = parse(&source, Path::new("/repo")).unwrap();
     assert_eq!(parsed.projects.len(), 2);
     assert_eq!(parsed.projects[0].test_dir, "./tests");
@@ -66,7 +66,7 @@ fn parses_projects_with_inheritance() {
 
 #[test]
 fn parses_top_level_base_url_and_string_ignore() {
-    let source = fixture_source(&["playwright_config", "top-level-base-url.ts"]);
+    let source = fixture_source(&["ast-snippets", "playwright_config", "top-level-base-url.ts"]);
     let parsed = parse(&source, Path::new("/repo")).unwrap();
     assert_eq!(
         parsed.projects[0].base_url.as_deref(),
@@ -78,7 +78,7 @@ fn parses_top_level_base_url_and_string_ignore() {
 
 #[test]
 fn parses_default_export_identifier() {
-    let source = fixture_source(&["playwright_config", "default-identifier.ts"]);
+    let source = fixture_source(&["ast-snippets", "playwright_config", "default-identifier.ts"]);
     let parsed = parse(&source, Path::new("/repo")).unwrap();
     assert_eq!(parsed.projects[0].test_dir, "./identifier-tests");
     assert_eq!(parsed.projects[0].test_match, vec!["**/*.identifier.ts"]);
@@ -91,7 +91,7 @@ fn parses_default_export_identifier() {
 
 #[test]
 fn parses_define_config_identifier_argument() {
-    let source = fixture_source(&["playwright_config", "define-config-identifier.ts"]);
+    let source = fixture_source(&["ast-snippets", "playwright_config", "define-config-identifier.ts"]);
     let parsed = parse(&source, Path::new("/repo")).unwrap();
     assert_eq!(parsed.projects[0].test_dir, "./define-config-tests");
     assert_eq!(parsed.projects[0].test_match, vec!["**/*.define-config.ts"]);
@@ -99,7 +99,7 @@ fn parses_define_config_identifier_argument() {
 
 #[test]
 fn parses_commonjs_config_exports() {
-    let source = fixture_source(&["playwright_config", "commonjs-object.cjs"]);
+    let source = fixture_source(&["ast-snippets", "playwright_config", "commonjs-object.cjs"]);
     let parsed = parse_from_path(
         &source,
         Path::new("playwright.config.cjs"),
@@ -125,7 +125,7 @@ fn parses_commonjs_config_exports() {
 
 #[test]
 fn parses_commonjs_define_config_exports() {
-    let source = fixture_source(&["playwright_config", "commonjs-define-config.cjs"]);
+    let source = fixture_source(&["ast-snippets", "playwright_config", "commonjs-define-config.cjs"]);
     let parsed = parse_from_path(
         &source,
         Path::new("playwright.config.cjs"),

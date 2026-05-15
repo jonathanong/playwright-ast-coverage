@@ -3,7 +3,7 @@ use crate::test_support::fixture_path;
 
 #[test]
 fn missing_default_config_uses_defaults() {
-    let root = fixture_path(&["config", "missing-default"]);
+    let root = fixture_path(&["scan-config", "missing-default"]);
     let settings = load_settings(&root, None, &[], None).unwrap();
     assert_eq!(settings.frontend_root, "app");
     assert!(settings.playwright_configs.is_empty());
@@ -15,7 +15,7 @@ fn missing_default_config_uses_defaults() {
 
 #[test]
 fn explicit_missing_config_errors() {
-    let root = fixture_path(&["config", "missing-default"]);
+    let root = fixture_path(&["scan-config", "missing-default"]);
     let err = load_settings(&root, Some(Path::new("missing.yaml")), &[], None)
         .err()
         .expect("expected missing config to fail");
@@ -24,7 +24,7 @@ fn explicit_missing_config_errors() {
 
 #[test]
 fn reads_yaml_and_finds_default_playwright_config() {
-    let root = fixture_path(&["config", "full"]);
+    let root = fixture_path(&["scan-config", "full"]);
     let settings = load_settings(&root, None, &[], None).unwrap();
     assert_eq!(settings.frontend_root, "web/app");
     assert_eq!(settings.test_exclude, vec!["**/skip/**"]);
@@ -41,11 +41,11 @@ fn reads_yaml_and_finds_default_playwright_config() {
 
 #[test]
 fn no_mistakes_config_has_priority_and_supports_nesting() {
-    let root = fixture_path(&["config", "no-mistakes-priority"]);
+    let root = fixture_path(&["scan-config", "no-mistakes-priority"]);
     let settings = load_settings(&root, None, &[], None).unwrap();
     assert_eq!(settings.frontend_root, "no-mistakes-app");
 
-    let root = fixture_path(&["config", "no-mistakes-nested"]);
+    let root = fixture_path(&["scan-config", "no-mistakes-nested"]);
     let settings = load_settings(&root, None, &[], None).unwrap();
     assert_eq!(settings.frontend_root, "nested-app");
 }
@@ -73,13 +73,13 @@ fn test_is_playwright_config_name_edge_cases() {
 
 #[test]
 fn test_playwright_config_from_file() {
-    let root = fixture_path(&["config", "playwright-config-array"]);
+    let root = fixture_path(&["scan-config", "playwright-config-array"]);
     let settings = load_settings(&root, None, &[], None).unwrap();
     assert_eq!(settings.playwright_configs.len(), 2);
     assert!(settings.playwright_configs[0].ends_with("playwright.config.ts"));
     assert!(settings.playwright_configs[1].ends_with("playwright.other.config.ts"));
 
-    let root = fixture_path(&["config", "playwright-config-single"]);
+    let root = fixture_path(&["scan-config", "playwright-config-single"]);
     let settings = load_settings(&root, None, &[], None).unwrap();
     assert_eq!(settings.playwright_configs.len(), 1);
     assert!(settings.playwright_configs[0].ends_with("playwright.config.ts"));

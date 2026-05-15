@@ -1,0 +1,1 @@
+- Test fixtures live under `fixtures/<category>/<name>/` at the repo root. Do NOT create fixtures inline in test code (no `fs::create_dir_all` / `fs::write` to build a fixture during a test run). Save the files to `fixtures/*` and reference them via the per-crate / per-package fixture helper.

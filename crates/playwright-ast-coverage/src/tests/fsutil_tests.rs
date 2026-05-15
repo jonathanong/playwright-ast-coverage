@@ -20,7 +20,7 @@ fn build_globset_rejects_invalid_patterns() {
 
 #[test]
 fn walk_files_returns_files_and_skips_configured_directories() {
-    let root = fixture_path(&["main", "walk-files"]);
+    let root = fixture_path(&["ast-snippets", "main", "walk-files"]);
     let files: Vec<String> = walk_files(&root)
         .into_iter()
         .map(|path| relative_string(&root, &path))
@@ -30,7 +30,7 @@ fn walk_files_returns_files_and_skips_configured_directories() {
 
 #[test]
 fn collect_app_selectors_skips_missing_roots_and_non_source_files() {
-    let root = fixture_path(&["main", "selector-source"]);
+    let root = fixture_path(&["ast-snippets", "main", "selector-source"]);
     let settings = Settings {
         frontend_root: "web/app".to_string(),
         playwright_configs: vec![],
