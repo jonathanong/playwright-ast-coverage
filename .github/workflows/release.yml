@@ -82,8 +82,12 @@ jobs:
             const crates = ['Cargo.toml', 'crates/no-mistakes-core/Cargo.toml', 'crates/next-to-fetch/Cargo.toml', 'crates/playwright-ast-coverage/Cargo.toml'];
             for (const file of crates) {
               if (!fs.existsSync(file)) continue;
-              const cargo = fs.readFileSync(file, 'utf8')
+              let cargo = fs.readFileSync(file, 'utf8')
                 .replace(/^version = \".*\"$/m, \`version = \"\${version}\"\`);
+              cargo = cargo.replace(
+                /(\s*no-mistakes-core\s*=\s*\{[^{}]*\bversion\s*=\s*)"[^"]*"/g,
+                \`$1\"\\${version}\"\`,
+              );
               fs.writeFileSync(file, cargo);
             }
           " "$version"

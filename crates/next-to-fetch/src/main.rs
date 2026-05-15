@@ -62,7 +62,7 @@ struct FetchOccurrence {
     unsupported: bool,
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 struct UrlExtraction {
     path: String,
     raw_path: String,
@@ -167,37 +167,39 @@ struct FetchVisitor<'a> {
     fetches: Vec<FetchOccurrence>,
     is_client: bool,
     is_route_handler: bool,
+    cached_function: Option<String>,
 }
 
 impl<'a> Visit<'a> for FetchVisitor<'a> {
     fn visit_call_expression(&mut self, expr: &CallExpression<'a>) {
+        if let Some(wrapper_name) = cache_wrapper_name(expr) {
+            let previous_cached_function = self.cached_function.clone();
+            self.cached_function = Some(wrapper_name.to_string());
+            walk::walk_call_expression(self, expr);
+            self.cached_function = previous_cached_function;
+            return;
+        }
+
         if let Expression::Identifier(ident) = &expr.callee {
             if ident.name == "fetch" {
-                let mut path = "unknown".to_string();
-                let mut raw_path = "unknown".to_string();
                 let mut method = "GET".to_string();
-                let mut is_dynamic = false;
-                let mut is_unsupported = false;
                 let mut cached = false;
                 let mut cache_kind = CacheKind::None;
-                let line = self.source[..expr.span.start as usize].lines().count() + 1;
+                let line = self.source[..expr.span().start as usize].lines().count() + 1;
 
-                if let Some(arg) = expr.arguments.first() {
+                let (path, raw_path, is_dynamic, is_unsupported) = if let Some(arg) =
+                    expr.arguments.first()
+                {
                     let result = extract_url_from_argument(arg, self.source);
-                    let (path_from_arg, raw_path_from_arg, dynamic, unsupported) = (
-                        result.path,
-                        result.raw_path,
-                        result.is_dynamic,
-                        result.is_unsupported,
-                    );
-                    path = path_from_arg;
-                    is_dynamic = dynamic;
-                    raw_path = raw_path_from_arg;
-                    is_unsupported = unsupported;
+                    (result.path, result.raw_path, result.is_dynamic, result.is_unsupported)
                 } else {
-                    is_dynamic = true;
-                    is_unsupported = true;
-                }
+                    (
+                        "unknown".to_string(),
+                        "unknown".to_string(),
+                        true,
+                        true,
+                    )
+                };
 
                 if let Some(Argument::ObjectExpression(obj)) = expr.arguments.get(1) {
                     for prop in &obj.properties {
@@ -231,13 +233,23 @@ impl<'a> Visit<'a> for FetchVisitor<'a> {
                     rsc: !self.is_client && !self.is_route_handler,
                     cached,
                     cache_kind,
-                    cached_function: None,
+                    cached_function: self.cached_function.clone(),
                     dynamic: is_dynamic,
                     unsupported: is_unsupported,
                 });
             }
         }
         walk::walk_call_expression(self, expr);
+    }
+}
+
+fn cache_wrapper_name(expr: &CallExpression<'_>) -> Option<&str> {
+    let Expression::Identifier(identifier) = &expr.callee else {
+        return None;
+    };
+    match identifier.name.as_ref() {
+        "cache" | "unstable_cache" => Some(identifier.name.as_ref()),
+        _ => None,
     }
 }
 
@@ -305,7 +317,7 @@ fn extract_url_from_argument(arg: &Argument, source: &str) -> UrlExtraction {
             let is_dynamic = !t.expressions.is_empty();
             UrlExtraction {
                 path: ast::template_literal_text(t, source),
-                raw_path: source_text(t.span.start as usize, t.span.end as usize, source)
+                raw_path: source_text(t.span().start as usize, t.span().end as usize, source)
                     .unwrap_or_else(|| "dynamic".to_string()),
                 is_dynamic,
                 is_unsupported: is_dynamic,
@@ -313,8 +325,12 @@ fn extract_url_from_argument(arg: &Argument, source: &str) -> UrlExtraction {
         }
         _ => UrlExtraction {
             path: "dynamic".to_string(),
-            raw_path: source_text(arg.span.start as usize, arg.span.end as usize, source)
-                .unwrap_or_else(|| "dynamic".to_string()),
+            raw_path: source_text(
+                arg.span().start as usize,
+                arg.span().end as usize,
+                source,
+            )
+            .unwrap_or_else(|| "dynamic".to_string()),
             is_dynamic: true,
             is_unsupported: true,
         },
@@ -565,7 +581,7 @@ fn run() -> Result<()> {
         if occurrences.len() > 1 {
             duplicates.push(DuplicateApiCall {
                 key: format!(
-                    "{method} {path} {:?} {}",
+                    "{method} {path} {} {}",
                     match side {
                         FetchSide::Client => "client",
                         FetchSide::Server => "server",
@@ -671,6 +687,7 @@ fn analyze_file(
             fetches: Vec::new(),
             is_client,
             is_route_handler: inherited_is_route_handler,
+            cached_function: None,
         };
         visitor.visit_program(program);
         file_fetches.extend(visitor.fetches);
@@ -788,8 +805,8 @@ fn is_runtime_import(import: &oxc_ast::ast::ImportDeclaration) -> bool {
 }
 
 fn is_runtime_export(export: &ExportNamedDeclaration, source: &str) -> bool {
-    let raw =
-        declaration_text(export.span.start as usize, export.span.end as usize, source).trim_start();
+    let raw = declaration_text(export.span().start as usize, export.span().end as usize, source)
+        .trim_start();
     if raw.starts_with("export type ") {
         return false;
     }
@@ -1065,7 +1082,7 @@ mod tests {
                     extract_url_from_argument(arg, source),
                     UrlExtraction {
                         path: "dynamic".to_string(),
-                        raw_path: "url".to_string(),
+                        raw_path: "true".to_string(),
                         is_dynamic: true,
                         is_unsupported: true,
                     }
@@ -1086,6 +1103,7 @@ mod tests {
             fetches: Vec::new(),
             is_client: false,
             is_route_handler: false,
+            cached_function: None,
         };
         visitor.visit_program(&parsed.program);
         assert_eq!(visitor.fetches.len(), 0);
@@ -1109,6 +1127,7 @@ mod tests {
             fetches: Vec::new(),
             is_client: false,
             is_route_handler: false,
+            cached_function: None,
         };
         visitor.visit_program(&parsed.program);
         assert_eq!(visitor.fetches.len(), 5);
@@ -1135,6 +1154,7 @@ mod tests {
             fetches: Vec::new(),
             is_client: false,
             is_route_handler: false,
+            cached_function: None,
         };
         visitor.visit_program(&parsed.program);
         assert_eq!(visitor.fetches.len(), 3);
@@ -1161,6 +1181,7 @@ mod tests {
             fetches: Vec::new(),
             is_client: false,
             is_route_handler: false,
+            cached_function: None,
         };
         visitor.visit_program(&parsed.program);
         assert_eq!(visitor.fetches.len(), 1);
@@ -1181,6 +1202,7 @@ mod tests {
             fetches: Vec::new(),
             is_client: false,
             is_route_handler: false,
+            cached_function: None,
         };
         visitor.visit_program(&parsed.program);
         assert_eq!(visitor.fetches.len(), 3);
@@ -1209,6 +1231,7 @@ mod tests {
             fetches: Vec::new(),
             is_client: false,
             is_route_handler: true,
+            cached_function: None,
         };
         visitor.visit_program(&parsed.program);
         assert_eq!(visitor.fetches.len(), 1);

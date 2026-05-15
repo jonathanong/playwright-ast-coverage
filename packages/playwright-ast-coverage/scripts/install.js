@@ -11,6 +11,36 @@ const INSTALL_DEFAULTS = {
   envVar: "PLAYWRIGHT_AST_COVERAGE_RELEASE_BASE_URL",
   checkExisting: true,
 };
+const DEFAULT_BIN_NAME = "playwright-ast-coverage";
+
+function isPlatform(value) {
+  return (
+    typeof value === "string" &&
+    [
+      "aix",
+      "android",
+      "darwin",
+      "freebsd",
+      "linux",
+      "netbsd",
+      "openbsd",
+      "sunos",
+      "win32",
+    ].includes(value)
+  );
+}
+
+function unsupportedPlatformMessage(binNameOrPlatform, platform, arch, report) {
+  if (isPlatform(binNameOrPlatform) && typeof platform === "string") {
+    return core.unsupportedPlatformMessage(
+      DEFAULT_BIN_NAME,
+      binNameOrPlatform,
+      platform,
+      arch,
+    );
+  }
+  return core.unsupportedPlatformMessage(binNameOrPlatform, platform, arch, report);
+}
 
 async function main() {
   try {
@@ -34,6 +64,7 @@ if (require.main === module) {
 
 module.exports = {
   ...core,
+  unsupportedPlatformMessage,
   packageVersion: (dir) => {
     const targetDir = typeof dir === "string" ? dir : PACKAGE_ROOT;
     return require(join(targetDir, "package.json")).version;
