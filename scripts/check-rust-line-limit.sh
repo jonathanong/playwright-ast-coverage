@@ -22,7 +22,7 @@ fail=0
 json=$(tokei crates --files --output json)
 
 while IFS=$'\t' read -r lines file; do
-    if [ -n "$file" ] && [ "$lines" -gt "$SRC_MAX" ]; then
+    if [ -n "$file" ] && [[ "$lines" =~ ^[0-9]+$ ]] && [ "$lines" -gt "$SRC_MAX" ]; then
         echo "::error file=$file::$file has $lines code lines (max $SRC_MAX)"
         fail=1
     fi
@@ -31,7 +31,7 @@ done < <(echo "$json" | jq -r '.Rust?.reports[]?
   | [.stats.code, .name] | @tsv')
 
 while IFS=$'\t' read -r lines file; do
-    if [ -n "$file" ] && [ "$lines" -gt "$TEST_MAX" ]; then
+    if [ -n "$file" ] && [[ "$lines" =~ ^[0-9]+$ ]] && [ "$lines" -gt "$TEST_MAX" ]; then
         echo "::error file=$file::$file has $lines code lines (max $TEST_MAX)"
         fail=1
     fi
