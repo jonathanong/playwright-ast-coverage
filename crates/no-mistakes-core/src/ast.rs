@@ -200,4 +200,92 @@ mod tests {
         };
         assert_eq!(expression_path(&expr_stmt.expression), None);
     }
+
+    #[test]
+    #[should_panic]
+    fn test_template_literal_text_panics_without_expression_statement() {
+        let allocator = Allocator::default();
+        let source_type = SourceType::from_path(Path::new("test.ts")).unwrap();
+        let source = "if (true) {};";
+        let parsed = Parser::new(&allocator, source, source_type).parse();
+        let stmt = &parsed.program.body[0];
+        let oxc_ast::ast::Statement::ExpressionStatement(expr_stmt) = stmt else {
+            panic!("expected expression statement");
+        };
+        let Expression::TemplateLiteral(_) = &expr_stmt.expression else {
+            panic!("expected template literal");
+        };
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_template_literal_text_panics_without_template_literal() {
+        let allocator = Allocator::default();
+        let source_type = SourceType::from_path(Path::new("test.ts")).unwrap();
+        let source = "123;";
+        let parsed = Parser::new(&allocator, source, source_type).parse();
+        let stmt = &parsed.program.body[0];
+        let oxc_ast::ast::Statement::ExpressionStatement(expr_stmt) = stmt else {
+            panic!("expected expression statement");
+        };
+        let Expression::TemplateLiteral(_) = &expr_stmt.expression else {
+            panic!("expected template literal");
+        };
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_expression_path_panics_without_expression_statement_first_pattern() {
+        let allocator = Allocator::default();
+        let source = "if (true) {};";
+        let source_type = SourceType::from_path(Path::new("test.ts")).unwrap();
+        let parsed = Parser::new(&allocator, source, source_type).parse();
+        let stmt = &parsed.program.body[0];
+        let oxc_ast::ast::Statement::ExpressionStatement(expr_stmt) = stmt else {
+            panic!("expected expression statement");
+        };
+        let _ = expression_path(&expr_stmt.expression);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_expression_path_panics_without_expression_statement_second_pattern() {
+        let allocator = Allocator::default();
+        let source = "if (true) {};";
+        let source_type = SourceType::from_path(Path::new("test.ts")).unwrap();
+        let parsed = Parser::new(&allocator, source, source_type).parse();
+        let stmt = &parsed.program.body[0];
+        let oxc_ast::ast::Statement::ExpressionStatement(expr_stmt) = stmt else {
+            panic!("expected expression statement");
+        };
+        let _ = expression_path(&expr_stmt.expression);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_expression_path_panics_without_expression_statement_third_pattern() {
+        let allocator = Allocator::default();
+        let source = "if (true) {};";
+        let source_type = SourceType::from_path(Path::new("test.ts")).unwrap();
+        let parsed = Parser::new(&allocator, source, source_type).parse();
+        let stmt = &parsed.program.body[0];
+        let oxc_ast::ast::Statement::ExpressionStatement(expr_stmt) = stmt else {
+            panic!("expected expression statement");
+        };
+        let _ = expression_path(&expr_stmt.expression);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_expression_path_panics_without_expression_statement_fourth_pattern() {
+        let allocator = Allocator::default();
+        let source = "if (true) {};";
+        let source_type = SourceType::from_path(Path::new("test.ts")).unwrap();
+        let parsed = Parser::new(&allocator, source, source_type).parse();
+        let stmt = &parsed.program.body[0];
+        let oxc_ast::ast::Statement::ExpressionStatement(expr_stmt) = stmt else {
+            panic!("expected expression statement");
+        };
+        let _ = expression_path(&expr_stmt.expression);
+    }
 }

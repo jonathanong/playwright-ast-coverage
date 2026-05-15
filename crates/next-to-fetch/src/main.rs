@@ -732,8 +732,13 @@ fn route_matches_target(route_pattern: &str, target_raw: &str) -> bool {
         return false;
     };
 
+    if normalized_target == "/" {
+        return route_pattern == "/";
+    }
+
     if normalized_target.ends_with('/') {
-        return route_pattern.starts_with(&normalized_target);
+        let prefix = format!("{}/", normalized_target.trim_end_matches('/'));
+        return route_pattern.starts_with(&prefix);
     }
 
     route_pattern == normalized_target
@@ -763,11 +768,12 @@ fn analyze_file(
     }
     visited.insert(visit_key);
 
-    if let Some(cached_fetches) = cache.files.get(&(
+    let cache_key = (
         abs_path.clone(),
         inherited_is_client,
         inherited_is_route_handler,
-    )) {
+    );
+    if let Some(cached_fetches) = cache.files.get(&cache_key) {
         fetches.extend(cached_fetches.fetches.clone());
         return Ok(cached_fetches.is_client);
     }
@@ -810,11 +816,7 @@ fn analyze_file(
     })??;
 
     cache.files.insert(
-        (
-            abs_path.clone(),
-            inherited_is_client,
-            inherited_is_route_handler,
-        ),
+        cache_key,
         CachedFile {
             is_client,
             fetches: file_fetches.clone(),
@@ -1067,13 +1069,22 @@ fn is_client_route_file(path: &Path) -> Result<bool> {
 }
 
 fn resolve_import(current_file: &Path, specifier: &str) -> Option<PathBuf> {
+    const RUNTIME_EXTENSIONS: [&str; 4] = ["tsx", "ts", "jsx", "js"];
+
     if specifier.starts_with('.') {
         let parent = current_file.parent()?;
         let joined = parent.join(specifier);
         if joined.exists() && joined.is_file() {
+            if !joined
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| RUNTIME_EXTENSIONS.contains(&ext))
+            {
+                return None;
+            }
             return Some(joined);
         }
-        for ext in ["tsx", "ts", "jsx", "js"] {
+        for ext in RUNTIME_EXTENSIONS {
             let path = joined.with_extension(ext);
             if path.exists() {
                 return Some(path);
@@ -1209,6 +1220,40 @@ mod tests {
     }
 
     #[test]
+    #[should_panic]
+    fn test_extract_url_from_argument_panics_when_not_expression_statement() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "if (true) {}";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let stmt = &parsed.program.body[0];
+        let Statement::ExpressionStatement(expr_stmt) = stmt else {
+            panic!("expected expression statement");
+        };
+        let Expression::CallExpression(call) = &expr_stmt.expression else {
+            panic!("expected call expression");
+        };
+        extract_url_from_argument(&call.arguments[0], source);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_extract_url_from_argument_panics_when_not_call_expression() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "123";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let stmt = &parsed.program.body[0];
+        let Statement::ExpressionStatement(expr_stmt) = stmt else {
+            panic!("expected expression statement");
+        };
+        let Expression::CallExpression(call) = &expr_stmt.expression else {
+            panic!("expected call expression");
+        };
+        extract_url_from_argument(&call.arguments[0], source);
+    }
+
+    #[test]
     fn test_infer_cached_wrapper_name_parses_cached_identifiers() {
         let allocator = oxc_allocator::Allocator::default();
         let source = "cachedFn = cache(() => {});";
@@ -1228,6 +1273,66 @@ mod tests {
             infer_cached_wrapper_name(source, call),
             Some("cachedFn".to_string())
         );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_infer_cached_wrapper_name_panics_when_not_expression_statement() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "if (true) {}";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let stmt = &parsed.program.body[0];
+        let Statement::ExpressionStatement(expr_stmt) = stmt else {
+            panic!("expected expression statement");
+        };
+        let Expression::AssignmentExpression(assignment) = &expr_stmt.expression else {
+            panic!("expected assignment expression");
+        };
+        let Expression::CallExpression(call) = &assignment.right else {
+            panic!("expected cache call expression");
+        };
+        infer_cached_wrapper_name(source, call);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_infer_cached_wrapper_name_panics_when_not_assignment_expression() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "cache(() => {});";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let stmt = &parsed.program.body[0];
+        let Statement::ExpressionStatement(expr_stmt) = stmt else {
+            panic!("expected expression statement");
+        };
+        let Expression::AssignmentExpression(assignment) = &expr_stmt.expression else {
+            panic!("expected assignment expression");
+        };
+        let Expression::CallExpression(call) = &assignment.right else {
+            panic!("expected cache call expression");
+        };
+        infer_cached_wrapper_name(source, call);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_infer_cached_wrapper_name_panics_when_right_not_call() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "cachedFn = helper;";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let stmt = &parsed.program.body[0];
+        let Statement::ExpressionStatement(expr_stmt) = stmt else {
+            panic!("expected expression statement");
+        };
+        let Expression::AssignmentExpression(assignment) = &expr_stmt.expression else {
+            panic!("expected assignment expression");
+        };
+        let Expression::CallExpression(call) = &assignment.right else {
+            panic!("expected cache call expression");
+        };
+        infer_cached_wrapper_name(source, call);
     }
 
     #[test]
@@ -1255,6 +1360,66 @@ mod tests {
     }
 
     #[test]
+    #[should_panic]
+    fn test_infer_cached_wrapper_name_non_identifier_non_expression_statement() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "if (true) {}";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let stmt = &parsed.program.body[0];
+        let Statement::ExpressionStatement(expr_stmt) = stmt else {
+            panic!("expected expression statement");
+        };
+        let Expression::AssignmentExpression(assignment) = &expr_stmt.expression else {
+            panic!("expected assignment expression");
+        };
+        let Expression::CallExpression(call) = &assignment.right else {
+            panic!("expected cache call expression");
+        };
+        infer_cached_wrapper_name(source, call);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_infer_cached_wrapper_name_non_identifier_not_assignment() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "obj.cached_fn = 1;";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let stmt = &parsed.program.body[0];
+        let Statement::ExpressionStatement(expr_stmt) = stmt else {
+            panic!("expected expression statement");
+        };
+        let Expression::AssignmentExpression(assignment) = &expr_stmt.expression else {
+            panic!("expected assignment expression");
+        };
+        let Expression::CallExpression(call) = &assignment.right else {
+            panic!("expected cache call expression");
+        };
+        infer_cached_wrapper_name(source, call);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_infer_cached_wrapper_name_non_identifier_not_call_expression() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "obj.cached_fn = some_value;";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let stmt = &parsed.program.body[0];
+        let Statement::ExpressionStatement(expr_stmt) = stmt else {
+            panic!("expected expression statement");
+        };
+        let Expression::AssignmentExpression(assignment) = &expr_stmt.expression else {
+            panic!("expected assignment expression");
+        };
+        let Expression::CallExpression(call) = &assignment.right else {
+            panic!("expected cache call expression");
+        };
+        infer_cached_wrapper_name(source, call);
+    }
+
+    #[test]
     fn test_infer_cached_wrapper_name_returns_none_for_non_ascii_identifier_start() {
         let allocator = oxc_allocator::Allocator::default();
         let source = "µcached = cache(() => {});";
@@ -1274,11 +1439,83 @@ mod tests {
     }
 
     #[test]
+    #[should_panic]
+    fn test_infer_cached_wrapper_name_non_ascii_non_expression_statement() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "if (true) {}";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let stmt = &parsed.program.body[0];
+        let Statement::ExpressionStatement(expr_stmt) = stmt else {
+            panic!("expected expression statement");
+        };
+        let Expression::AssignmentExpression(assignment) = &expr_stmt.expression else {
+            panic!("expected assignment expression");
+        };
+        let Expression::CallExpression(call) = &assignment.right else {
+            panic!("expected cache call expression");
+        };
+        infer_cached_wrapper_name(source, call);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_infer_cached_wrapper_name_non_ascii_not_assignment() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "µcached = 1;";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let stmt = &parsed.program.body[0];
+        let Statement::ExpressionStatement(expr_stmt) = stmt else {
+            panic!("expected expression statement");
+        };
+        let Expression::AssignmentExpression(assignment) = &expr_stmt.expression else {
+            panic!("expected assignment expression");
+        };
+        let Expression::CallExpression(call) = &assignment.right else {
+            panic!("expected cache call expression");
+        };
+        infer_cached_wrapper_name(source, call);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_infer_cached_wrapper_name_non_ascii_not_call_expression() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "µcached = some_value;";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let stmt = &parsed.program.body[0];
+        let Statement::ExpressionStatement(expr_stmt) = stmt else {
+            panic!("expected expression statement");
+        };
+        let Expression::AssignmentExpression(assignment) = &expr_stmt.expression else {
+            panic!("expected assignment expression");
+        };
+        let Expression::CallExpression(call) = &assignment.right else {
+            panic!("expected cache call expression");
+        };
+        infer_cached_wrapper_name(source, call);
+    }
+
+    #[test]
     fn test_source_text_handles_invalid_slices() {
         assert!(source_text(1, 0, "abc").is_none());
         assert!(source_text(0, 4, "abc").is_none());
         assert!(source_text(1, 2, "é").is_none());
         assert_eq!(source_text(0, 2, "é"), Some("é".to_string()));
+    }
+
+    #[test]
+    fn test_source_text_out_of_bounds_returns_empty_string_for_declaration_text() {
+        assert_eq!(declaration_text(10, 5, "abc"), "");
+        assert_eq!(declaration_text(0, 5, "abc"), "");
+        assert_eq!(declaration_text(0, 2, "abc"), "ab");
+    }
+
+    #[test]
+    fn test_parse_named_specifiers_returns_empty_when_invalid_order() {
+        assert_eq!(parse_named_specifiers("}{"), Some(Vec::new()));
     }
 
     #[test]
@@ -1309,6 +1546,72 @@ mod tests {
         assert_eq!(visitor.fetches[0].cache_kind, CacheKind::None);
         assert_eq!(visitor.fetches[1].cache_kind, CacheKind::None);
         assert_eq!(visitor.fetches[2].cache_kind, CacheKind::None);
+    }
+
+    #[test]
+    fn test_extract_fetch_cache_options_force_cache() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "fetch('/api/cache', { cache: 'force-cache' });";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let stmt = &parsed.program.body[0];
+        let Statement::ExpressionStatement(expr_stmt) = stmt else {
+            panic!("expected expression statement");
+        };
+        let Expression::CallExpression(call) = &expr_stmt.expression else {
+            panic!("expected call expression");
+        };
+        let Argument::ObjectExpression(obj) = &call.arguments[1] else {
+            panic!("expected object argument");
+        };
+
+        let (cached, kind) = extract_fetch_cache_options(obj);
+        assert!(cached);
+        assert_eq!(kind, CacheKind::FetchCache);
+    }
+
+    #[test]
+    fn test_extract_fetch_cache_options_next_revalidate() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "fetch('/api/next', { next: { revalidate: 60 } });";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let stmt = &parsed.program.body[0];
+        let Statement::ExpressionStatement(expr_stmt) = stmt else {
+            panic!("expected expression statement");
+        };
+        let Expression::CallExpression(call) = &expr_stmt.expression else {
+            panic!("expected call expression");
+        };
+        let Argument::ObjectExpression(obj) = &call.arguments[1] else {
+            panic!("expected object argument");
+        };
+
+        let (cached, kind) = extract_fetch_cache_options(obj);
+        assert!(cached);
+        assert_eq!(kind, CacheKind::FetchNextRevalidate);
+    }
+
+    #[test]
+    fn test_extract_fetch_cache_options_tags() {
+        let allocator = oxc_allocator::Allocator::default();
+        let source = "fetch('/api/tags', { next: { tags: ['alpha'] } });";
+        let source_type = oxc_span::SourceType::default();
+        let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+        let stmt = &parsed.program.body[0];
+        let Statement::ExpressionStatement(expr_stmt) = stmt else {
+            panic!("expected expression statement");
+        };
+        let Expression::CallExpression(call) = &expr_stmt.expression else {
+            panic!("expected call expression");
+        };
+        let Argument::ObjectExpression(obj) = &call.arguments[1] else {
+            panic!("expected object argument");
+        };
+
+        let (cached, kind) = extract_fetch_cache_options(obj);
+        assert!(cached);
+        assert_eq!(kind, CacheKind::FetchNextTags);
     }
 
     #[test]
@@ -1426,6 +1729,14 @@ mod tests {
         assert!(route_matches_target("/users", "/users"));
         assert!(!route_matches_target("/users/team", "/users"));
         assert!(route_matches_target("/users/team", "/users/"));
+        assert!(route_matches_target("/", "/"));
+        assert!(!route_matches_target("/users", "/"));
+    }
+
+    #[test]
+    fn test_route_matches_target_rejects_empty_input() {
+        assert!(!route_matches_target("/users", ""));
+        assert!(!route_matches_target("/users", "   "));
     }
 
     #[test]
@@ -1593,6 +1904,16 @@ mod tests {
             resolved.canonicalize().unwrap(),
             file.canonicalize().unwrap()
         );
+    }
+
+    #[test]
+    fn test_resolve_import_skips_non_javascript_file() {
+        let dir = tempdir().unwrap();
+        let stylesheet = dir.path().join("styles.css");
+        fs::write(&stylesheet, "body { }").unwrap();
+
+        let current = dir.path().join("main.ts");
+        assert_eq!(resolve_import(&current, "./styles"), None);
     }
 
     #[test]
@@ -1773,6 +2094,29 @@ mod tests {
         let mut cache = HashMap::new();
         let mut visited = HashSet::new();
         assert!(route_reaches_target(
+            &route,
+            &target.canonicalize().unwrap(),
+            &mut visited,
+            &mut cache
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn test_route_reaches_target_with_unmatched_import_chain() {
+        let dir = tempdir().unwrap();
+        let route = dir.path().join("route.ts");
+        let middle = dir.path().join("middle.ts");
+        let target = dir.path().join("target.ts");
+        let leaf = dir.path().join("leaf.ts");
+        fs::write(&route, "import { helper } from './middle';").unwrap();
+        fs::write(&middle, "import { helper2 } from './leaf';").unwrap();
+        fs::write(&leaf, "").unwrap();
+        fs::write(&target, "").unwrap();
+
+        let mut cache = HashMap::new();
+        let mut visited = HashSet::new();
+        assert!(!route_reaches_target(
             &route,
             &target.canonicalize().unwrap(),
             &mut visited,
@@ -2103,6 +2447,43 @@ mod tests {
         cmd.assert()
             .success()
             .stdout(predicates::str::contains("/api/layout"));
+    }
+
+    #[test]
+    fn test_cli_includes_client_side_fetches() {
+        use assert_cmd::Command;
+
+        let root = tempdir().unwrap();
+        fs::create_dir(root.path().join("app")).unwrap();
+        fs::write(root.path().join("app/page.tsx"), "'use client';\nfetch('/api/client');").unwrap();
+
+        let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
+        cmd.arg("--root").arg(root.path());
+        cmd.assert()
+            .success()
+            .stdout(predicates::str::contains("| GET | `/api/client` | client |"));
+    }
+
+    #[test]
+    fn test_cli_sorts_multiple_unsupported_fetches() {
+        use assert_cmd::Command;
+
+        let root = tempdir().unwrap();
+        fs::create_dir_all(root.path().join("app/about")).unwrap();
+        fs::write(root.path().join("app/page.tsx"), "fetch(url);").unwrap();
+        fs::write(
+            root.path().join("app/about/page.tsx"),
+            "fetch(dynamic);",
+        )
+        .unwrap();
+
+        let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
+        cmd.arg("--root").arg(root.path());
+        cmd.assert()
+            .success()
+            .stdout(predicates::str::contains("## Unsupported (Dynamic)"))
+            .stdout(predicates::str::contains("### / (app/page.tsx)"))
+            .stdout(predicates::str::contains("### /about (app/about/page.tsx)"));
     }
 
     #[test]
