@@ -10,6 +10,7 @@ use oxc_ast_visit::{walk, Visit};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
 #[derive(Parser)]
 #[command(author, version, about)]
@@ -167,6 +168,8 @@ impl<'a> Visit<'a> for FetchVisitor<'a> {
                 let mut path = url;
                 let mut method = "GET".to_string();
                 let mut is_dynamic = false;
+                let mut cached = false;
+                let mut cache_kind = CacheKind::None;
                 let line = self.source[..expr.span.start as usize].lines().count() + 1;
 
                 if let Some(arg) = expr.arguments.first() {
@@ -183,6 +186,32 @@ impl<'a> Visit<'a> for FetchVisitor<'a> {
                                 if name == "method" {
                                     if let Expression::StringLiteral(s) = &p.value {
                                         method = s.value.to_string();
+                                    }
+                                } else if name == "cache" {
+                                    if let Expression::StringLiteral(s) = &p.value {
+                                        if s.value == "force-cache" {
+                                            cached = true;
+                                            cache_kind = CacheKind::FetchCache;
+                                        }
+                                    }
+                                } else if name == "next" {
+                                    if let Expression::ObjectExpression(next_obj) = &p.value {
+                                        for next_prop in &next_obj.properties {
+                                            if let oxc_ast::ast::ObjectPropertyKind::ObjectProperty(
+                                                np,
+                                            ) = next_prop
+                                            {
+                                                if let Some(next_name) = np.key.static_name() {
+                                                    if next_name == "revalidate" {
+                                                        cached = true;
+                                                        cache_kind = CacheKind::FetchNextRevalidate;
+                                                    } else if next_name == "tags" {
+                                                        cached = true;
+                                                        cache_kind = CacheKind::FetchNextTags;
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -203,8 +232,8 @@ impl<'a> Visit<'a> for FetchVisitor<'a> {
                     line,
                     side,
                     rsc: !self.is_client && !self.is_route_handler,
-                    cached: false,
-                    cache_kind: CacheKind::None,
+                    cached,
+                    cache_kind,
                     cached_function: None,
                     dynamic: is_dynamic,
                     unsupported: is_dynamic,
@@ -226,7 +255,17 @@ fn extract_url_from_argument(arg: &Argument, source: &str) -> (String, bool) {
     }
 }
 
-fn main() -> Result<()> {
+fn main() -> ExitCode {
+    match run() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("{err}");
+            ExitCode::from(2)
+        }
+    }
+}
+
+fn run() -> Result<()> {
     let cli = Cli::parse();
     let root = std::env::current_dir()?.join(&cli.root);
     if !root.exists() {
@@ -534,8 +573,13 @@ fn analyze_file(
         };
         visitor.visit_program(program);
         file_fetches.extend(visitor.fetches);
-
-        for import in collect_imports(&abs_path, &mut cache.imports)? {
+        let imports = collect_imports_from_program(
+            &abs_path,
+            program,
+            source,
+            &mut cache.imports,
+        )?;
+        for import in imports {
             analyze_file(
                 &import,
                 root,
@@ -570,40 +614,53 @@ fn collect_imports(
     let source = std::fs::read_to_string(&abs_path)?;
     let mut imports = Vec::new();
     ast::with_program(path, &source, |program, source| -> Result<()> {
-        for stmt in &program.body {
-            match stmt {
-                Statement::ImportDeclaration(import) if is_runtime_import(import, source) => {
-                    if let Some(resolved) = resolve_import(&abs_path, import.source.value.as_str())
-                    {
-                        imports.push(resolved);
-                    }
-                }
-                Statement::ExportNamedDeclaration(export) => {
-                    if !is_runtime_export(export, source) {
-                        continue;
-                    }
-                    if let Some(source) = &export.source {
-                        if let Some(resolved) = resolve_import(&abs_path, source.value.as_str()) {
-                            imports.push(resolved);
-                        }
-                    }
-                }
-                Statement::ExportAllDeclaration(export) => {
-                    if export.export_kind == ImportOrExportKind::Type {
-                        continue;
-                    }
-                    if let Some(resolved) = resolve_import(&abs_path, export.source.value.as_str())
-                    {
-                        imports.push(resolved);
-                    }
-                }
-                _ => {}
-            }
-        }
+        imports = collect_imports_from_program(&abs_path, program, source, import_cache)?;
         Ok(())
     })??;
+    Ok(imports)
+}
 
-    import_cache.insert(abs_path.clone(), imports.clone());
+fn collect_imports_from_program<'a>(
+    abs_path: &Path,
+    program: &oxc_ast::ast::Program<'a>,
+    source: &str,
+    import_cache: &mut HashMap<PathBuf, Vec<PathBuf>>,
+) -> Result<Vec<PathBuf>> {
+    if let Some(cached_imports) = import_cache.get(abs_path) {
+        return Ok(cached_imports.clone());
+    }
+
+    let mut imports = Vec::new();
+    for stmt in &program.body {
+        match stmt {
+            Statement::ImportDeclaration(import) if is_runtime_import(import, source) => {
+                if let Some(resolved) = resolve_import(abs_path, import.source.value.as_str()) {
+                    imports.push(resolved);
+                }
+            }
+            Statement::ExportNamedDeclaration(export) => {
+                if !is_runtime_export(export, source) {
+                    continue;
+                }
+                if let Some(source) = &export.source {
+                    if let Some(resolved) = resolve_import(abs_path, source.value.as_str()) {
+                        imports.push(resolved);
+                    }
+                }
+            }
+            Statement::ExportAllDeclaration(export) => {
+                if export.export_kind == ImportOrExportKind::Type {
+                    continue;
+                }
+                if let Some(resolved) = resolve_import(abs_path, export.source.value.as_str()) {
+                    imports.push(resolved);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    import_cache.insert(abs_path.to_path_buf(), imports.clone());
     Ok(imports)
 }
 
@@ -613,17 +670,24 @@ fn is_runtime_import(import: &oxc_ast::ast::ImportDeclaration, source: &str) -> 
     if raw.starts_with("import type ") {
         return false;
     }
-
-    match parse_named_specifiers(raw) {
-        Some(named_specifiers) => {
-            if named_specifiers.is_empty() {
-                return true;
+    let after_import = raw.trim_start().strip_prefix("import").unwrap_or(raw).trim_start();
+    if after_import.starts_with("*") {
+        return true;
+    }
+    if after_import.starts_with("{") {
+        match parse_named_specifiers(raw) {
+            Some(named_specifiers) => {
+                if named_specifiers.is_empty() {
+                    return true;
+                }
+                named_specifiers
+                    .iter()
+                    .any(|specifier| !specifier.trim_start().starts_with("type "))
             }
-            named_specifiers
-                .iter()
-                .any(|specifier| !specifier.trim_start().starts_with("type "))
+            None => true,
         }
-        None => true,
+    } else {
+        true
     }
 }
 
@@ -784,7 +848,7 @@ fn print_markdown_report(report: &FinalReport) {
             println!("(no fetches found)");
         } else {
             println!("| Method | Path | Side | File | Line | RSC | Dynamic |");
-            println!("| --- | --- | --- | --- | --- | --- |");
+            println!("| --- | --- | --- | --- | --- | --- | --- |");
             let mut unique_fetches = route.api_calls.clone();
             unique_fetches.sort();
             unique_fetches.dedup();
@@ -793,13 +857,13 @@ fn print_markdown_report(report: &FinalReport) {
                     "| {} | `{}` | {} | {} | {} | {} | {} |",
                     fetch.method,
                     fetch.path,
-                    fetch.file,
-                    fetch.line,
                     if matches!(fetch.side, FetchSide::Client) {
                         "client"
                     } else {
                         "server"
                     },
+                    fetch.file,
+                    fetch.line,
                     if fetch.rsc { "yes" } else { "no" },
                     if fetch.dynamic { "✅" } else { "❌" }
                 );

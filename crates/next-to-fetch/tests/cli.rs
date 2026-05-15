@@ -217,7 +217,7 @@ fn test_cli_route_handler_is_client_directive_ignored() {
         ))
         .stdout(predicate::str::contains("| GET | `/api/hello` |"))
         .stdout(predicate::str::contains(
-            "| GET | `/api/hello` | app/api/hello/route.ts | 7 | server |",
+            "| GET | `/api/hello` | server | app/api/hello/route.ts | 7 |",
         ))
         .stdout(predicate::str::contains("| no | ❌ |"));
 
