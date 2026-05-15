@@ -2891,7 +2891,7 @@ mod tests {
         {
             let _run_args = with_run_args_env(Some(previous.to_string()), None);
             assert_eq!(std::env::var(ENV_VAR).unwrap(), previous);
-            run().unwrap_or_else(|_| ());
+            let _ = run();
         }
     }
 
@@ -2913,7 +2913,7 @@ mod tests {
     fn test_run_without_test_argv_uses_real_cli_args_from_absence() {
         {
             let _run_args = with_run_args_env(None, None);
-            run().unwrap_or_else(|_| ());
+            let _ = run();
         }
     }
 
