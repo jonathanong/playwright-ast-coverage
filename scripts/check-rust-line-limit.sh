@@ -12,8 +12,8 @@ while IFS=$'\t' read -r lines file; do
         echo "::error file=$file::$file has $lines code lines (max $SRC_MAX)"
         fail=1
     fi
-done < <(echo "$json" | jq -r '.Rust.reports[]
-  | select(.name | test("/crates/[^/]+/src/"))
+done < <(echo "$json" | jq -r '.Rust?.reports[]?
+  | select(.name | test("(^|/)crates/[^/]+/src/"))
   | [.stats.code, .name] | @tsv')
 
 while IFS=$'\t' read -r lines file; do
@@ -21,8 +21,8 @@ while IFS=$'\t' read -r lines file; do
         echo "::error file=$file::$file has $lines code lines (max $TEST_MAX)"
         fail=1
     fi
-done < <(echo "$json" | jq -r '.Rust.reports[]
-  | select(.name | test("/crates/[^/]+/tests/"))
+done < <(echo "$json" | jq -r '.Rust?.reports[]?
+  | select(.name | test("(^|/)crates/[^/]+/tests/"))
   | [.stats.code, .name] | @tsv')
 
 if [ "$fail" -eq 0 ]; then

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if rg -n -U --pcre2 \
-    '#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\]\s*(?:\n\s*)*(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{' \
+    '#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\](?:\s*|//.*|/\*[\s\S]*?\*/|#\s*\[.*\d*\])*(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{' \
     crates/*/src
 then
     echo
