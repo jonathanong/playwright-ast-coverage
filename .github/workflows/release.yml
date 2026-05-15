@@ -139,10 +139,10 @@ jobs:
       - name: Install npm dependencies
         run: SKIP_BINARY_DOWNLOAD=1 npm ci
 
-      - name: Install tokei
+      - name: Install tokei and ripgrep
         uses: taiki-e/install-action@v2
         with:
-          tool: tokei
+          tool: tokei,ripgrep
 
       - name: Verify versions
         shell: bash
