@@ -96,7 +96,13 @@ fn collect_app_selectors_reads_source_files_and_skips_build_dirs() {
     assert!(collect_app_selectors(&root.join("missing"), &attrs())
         .unwrap()
         .is_empty());
-    let invalid = fixture_path(&["ast-snippets", "main", "invalid-selector-source", "web", "app"]);
+    let invalid = fixture_path(&[
+        "ast-snippets",
+        "main",
+        "invalid-selector-source",
+        "web",
+        "app",
+    ]);
     assert!(collect_app_selectors(&invalid, &attrs()).is_err());
 }
 

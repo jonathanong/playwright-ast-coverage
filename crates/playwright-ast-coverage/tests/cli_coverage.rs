@@ -228,7 +228,10 @@ fn route_specificity_keeps_static_routes_from_covering_dynamic_siblings() {
     let output = Command::cargo_bin("playwright-ast-coverage")
         .unwrap()
         .arg("--root")
-        .arg(fixture("nextjs-routes", "realistic-route-selector-edge-cases"))
+        .arg(fixture(
+            "nextjs-routes",
+            "realistic-route-selector-edge-cases",
+        ))
         .arg("--allow-skipped-tests")
         .arg("edges")
         .arg("--json")
@@ -299,7 +302,10 @@ fn skipped_navigation_helper_catalog_requires_allow_skipped_tests() {
     Command::cargo_bin("playwright-ast-coverage")
         .unwrap()
         .arg("--root")
-        .arg(fixture("nextjs-routes", "realistic-route-selector-edge-cases"))
+        .arg(fixture(
+            "nextjs-routes",
+            "realistic-route-selector-edge-cases",
+        ))
         .arg("--allow-skipped-tests")
         .arg("--json")
         .arg("check")

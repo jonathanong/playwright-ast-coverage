@@ -141,7 +141,10 @@ fn nonliteral_playwright_config_values_are_ignored_when_optional() {
     Command::cargo_bin("playwright-ast-coverage")
         .unwrap()
         .arg("--root")
-        .arg(fixture("playwright-configs", "nonliteral-playwright-config"))
+        .arg(fixture(
+            "playwright-configs",
+            "nonliteral-playwright-config",
+        ))
         .arg("check")
         .assert()
         .success()

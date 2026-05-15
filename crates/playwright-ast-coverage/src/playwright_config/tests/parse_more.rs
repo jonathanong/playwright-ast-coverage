@@ -31,7 +31,11 @@ fn template_literals_use_cooked_text() {
 
 #[test]
 fn parser_handles_advanced_export_shapes() {
-    let source = fixture_source(&["ast-snippets", "playwright_config", "advanced-export-shapes.ts"]);
+    let source = fixture_source(&[
+        "ast-snippets",
+        "playwright_config",
+        "advanced-export-shapes.ts",
+    ]);
     let parsed = parse(&source, Path::new("/repo")).unwrap();
     assert_eq!(parsed.projects[0].test_dir, "./advanced-export-tests");
     assert_eq!(
@@ -46,7 +50,11 @@ fn parser_handles_advanced_export_shapes() {
 
 #[test]
 fn ignores_non_literal_optional_playwright_values() {
-    let source = fixture_source(&["ast-snippets", "playwright_config", "nonliteral-optional-values.ts"]);
+    let source = fixture_source(&[
+        "ast-snippets",
+        "playwright_config",
+        "nonliteral-optional-values.ts",
+    ]);
     let parsed = parse(&source, Path::new("/repo")).unwrap();
     assert_eq!(parsed.projects[0].test_dir, "./tests");
     assert_eq!(parsed.projects[0].base_url, None);
@@ -89,7 +97,11 @@ fn malformed_projects_value_falls_back_to_single_project() {
 
 #[test]
 fn root_options_ignore_project_values() {
-    let source = fixture_source(&["ast-snippets", "playwright_config", "project-values-only.ts"]);
+    let source = fixture_source(&[
+        "ast-snippets",
+        "playwright_config",
+        "project-values-only.ts",
+    ]);
     let parsed = parse(&source, Path::new("/repo")).unwrap();
     assert_eq!(parsed.projects[0].test_dir, "./project-tests");
     assert_eq!(parsed.projects[0].test_match, vec!["**/*.project.ts"]);
