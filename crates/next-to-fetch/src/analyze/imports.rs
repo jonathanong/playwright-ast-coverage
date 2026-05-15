@@ -18,8 +18,8 @@ pub(crate) fn collect_imports(
 
     let source = std::fs::read_to_string(&abs_path)?;
     let mut imports = Vec::new();
-    ast::with_program(path, &source, |program, source| -> Result<()> {
-        imports = collect_imports_from_program(&abs_path, program, source, import_cache)?;
+    ast::with_program(path, &source, |program, _source| -> Result<()> {
+        imports = collect_imports_from_program(&abs_path, program, import_cache)?;
         Ok(())
     })??;
     Ok(imports)
@@ -98,7 +98,6 @@ pub(crate) fn is_import_used(
 pub(crate) fn collect_imports_from_program<'a>(
     abs_path: &Path,
     program: &oxc_ast::ast::Program<'a>,
-    source: &str,
     import_cache: &mut HashMap<PathBuf, Vec<PathBuf>>,
 ) -> Result<Vec<PathBuf>> {
     if let Some(cached_imports) = import_cache.get(abs_path) {
@@ -114,7 +113,7 @@ pub(crate) fn collect_imports_from_program<'a>(
                 }
             }
             Statement::ExportNamedDeclaration(export) => {
-                if !is_runtime_export(export, source) {
+                if !is_runtime_export(export) {
                     continue;
                 }
                 if let Some(source) = &export.source {

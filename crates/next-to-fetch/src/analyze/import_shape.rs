@@ -1,5 +1,6 @@
-use oxc_ast::ast::{ExportNamedDeclaration, ImportDeclarationSpecifier, ImportOrExportKind};
-use oxc_span::GetSpan;
+use oxc_ast::ast::{
+    Declaration, ExportNamedDeclaration, ImportDeclarationSpecifier, ImportOrExportKind,
+};
 
 pub(crate) fn is_runtime_import(import: &oxc_ast::ast::ImportDeclaration) -> bool {
     if import.import_kind == ImportOrExportKind::Type {
@@ -28,47 +29,30 @@ pub(crate) fn is_runtime_import(import: &oxc_ast::ast::ImportDeclaration) -> boo
     false
 }
 
-pub(crate) fn is_runtime_export(export: &ExportNamedDeclaration, source: &str) -> bool {
+pub(crate) fn is_runtime_export(export: &ExportNamedDeclaration) -> bool {
     if export.export_kind == ImportOrExportKind::Type {
         return false;
     }
 
-    let raw = declaration_text(
-        export.span().start as usize,
-        export.span().end as usize,
-        source,
-    );
-
-    match parse_named_specifiers(raw) {
-        Some(named_specifiers) => {
-            if named_specifiers.is_empty() {
-                return true;
-            }
-            named_specifiers
-                .iter()
-                .any(|specifier| !specifier.trim_start().starts_with("type "))
+    // oxc sets export_kind=Type for TSTypeAliasDeclaration, TSInterfaceDeclaration,
+    // and TSGlobalDeclaration, so those variants are caught above and never reach here.
+    match &export.declaration {
+        Some(Declaration::VariableDeclaration(d)) => return !d.declare,
+        Some(Declaration::FunctionDeclaration(d)) => return !d.declare,
+        Some(Declaration::ClassDeclaration(d)) => return !d.declare,
+        Some(Declaration::TSEnumDeclaration(d)) => return !d.declare,
+        Some(Declaration::TSModuleDeclaration(d)) => return !d.declare,
+        Some(Declaration::TSImportEqualsDeclaration(d)) => {
+            return d.import_kind == ImportOrExportKind::Value
         }
-        None => true,
+        Some(_) | None => {}
     }
-}
 
-pub(crate) fn declaration_text(start: usize, end: usize, source: &str) -> &str {
-    if start > end || end > source.len() {
-        return "";
+    if export.specifiers.is_empty() {
+        return true;
     }
-    &source[start..end]
-}
-
-pub(crate) fn parse_named_specifiers(statement: &str) -> Option<Vec<&str>> {
-    let start = statement.find('{')?;
-    let end = statement.rfind('}')?;
-    if end <= start {
-        return Some(Vec::new());
-    }
-    let names = statement[start + 1..end]
-        .split(',')
-        .map(|segment| segment.trim())
-        .filter(|segment| !segment.is_empty())
-        .collect();
-    Some(names)
+    export
+        .specifiers
+        .iter()
+        .any(|spec| spec.export_kind == ImportOrExportKind::Value)
 }

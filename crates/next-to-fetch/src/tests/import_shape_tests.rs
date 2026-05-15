@@ -30,10 +30,10 @@ fn test_is_runtime_export_variants() {
         })
         .collect::<Vec<_>>();
     assert_eq!(exports.len(), 4);
-    assert!(!is_runtime_export(exports[0], source));
-    assert!(is_runtime_export(exports[1], source));
-    assert!(!is_runtime_export(exports[2], source));
-    assert!(is_runtime_export(exports[3], source));
+    assert!(!is_runtime_export(exports[0]));
+    assert!(is_runtime_export(exports[1]));
+    assert!(!is_runtime_export(exports[2]));
+    assert!(is_runtime_export(exports[3]));
 }
 
 #[test]
@@ -54,7 +54,75 @@ fn test_is_runtime_export_declaration_without_named_specifiers_is_runtime() {
             }
         })
         .expect("expected export declaration");
-    assert!(is_runtime_export(export, source));
+    assert!(is_runtime_export(export));
+}
+
+#[test]
+fn test_is_runtime_export_declaration_variants() {
+    let allocator = oxc_allocator::Allocator::default();
+    let source = "
+        export interface Foo { bar: string }
+        export type Alias = string;
+        export class Bar { method() {} }
+        export function baz() {}
+        export const qux = 1;
+    ";
+    let source_type = oxc_span::SourceType::from_path(std::path::Path::new("test.ts")).unwrap();
+    let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+    assert!(
+        parsed.errors.is_empty(),
+        "parse errors: {:?}",
+        parsed.errors
+    );
+    let exports: Vec<_> = parsed
+        .program
+        .body
+        .iter()
+        .filter_map(|stmt| match stmt {
+            Statement::ExportNamedDeclaration(e) => Some(e),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(exports.len(), 5);
+    assert!(!is_runtime_export(exports[0])); // export interface
+    assert!(!is_runtime_export(exports[1])); // export type alias
+    assert!(is_runtime_export(exports[2])); // export class
+    assert!(is_runtime_export(exports[3])); // export function
+    assert!(is_runtime_export(exports[4])); // export const
+}
+
+#[test]
+fn test_is_runtime_export_enum_and_namespace_variants() {
+    let allocator = oxc_allocator::Allocator::default();
+    let source = "
+        export enum Foo { A }
+        export declare enum Bar { B }
+        export namespace Ns { export const x = 1; }
+        export declare namespace Ambient {}
+        export import Value = require('./mod');
+    ";
+    let source_type = oxc_span::SourceType::from_path(std::path::Path::new("test.ts")).unwrap();
+    let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+    assert!(
+        parsed.errors.is_empty(),
+        "parse errors: {:?}",
+        parsed.errors
+    );
+    let exports: Vec<_> = parsed
+        .program
+        .body
+        .iter()
+        .filter_map(|stmt| match stmt {
+            Statement::ExportNamedDeclaration(e) => Some(e),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(exports.len(), 5);
+    assert!(is_runtime_export(exports[0])); // export enum (runtime)
+    assert!(!is_runtime_export(exports[1])); // export declare enum (ambient)
+    assert!(is_runtime_export(exports[2])); // export namespace (runtime)
+    assert!(!is_runtime_export(exports[3])); // export declare namespace (ambient)
+    assert!(is_runtime_export(exports[4])); // export import Value = require() (runtime)
 }
 
 #[test]
@@ -148,4 +216,46 @@ fn test_is_runtime_import_no_specifiers() {
         })
         .expect("expected import declaration");
     assert!(is_runtime_import(import));
+}
+
+#[test]
+fn test_is_runtime_export_type_alias_is_not_runtime() {
+    let allocator = oxc_allocator::Allocator::default();
+    let source = "export type Foo = string;";
+    let source_type = oxc_span::SourceType::from_path(std::path::Path::new("test.ts")).unwrap();
+    let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+    let export = parsed
+        .program
+        .body
+        .iter()
+        .find_map(|stmt| {
+            if let Statement::ExportNamedDeclaration(e) = stmt {
+                Some(e)
+            } else {
+                None
+            }
+        })
+        .expect("expected export declaration");
+    assert!(!is_runtime_export(export));
+}
+
+#[test]
+fn test_is_runtime_export_interface_is_not_runtime() {
+    let allocator = oxc_allocator::Allocator::default();
+    let source = "export interface Foo { bar: string }";
+    let source_type = oxc_span::SourceType::from_path(std::path::Path::new("test.ts")).unwrap();
+    let parsed = oxc_parser::Parser::new(&allocator, source, source_type).parse();
+    let export = parsed
+        .program
+        .body
+        .iter()
+        .find_map(|stmt| {
+            if let Statement::ExportNamedDeclaration(e) = stmt {
+                Some(e)
+            } else {
+                None
+            }
+        })
+        .expect("expected export declaration");
+    assert!(!is_runtime_export(export));
 }

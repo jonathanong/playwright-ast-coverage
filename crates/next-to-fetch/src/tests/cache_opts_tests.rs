@@ -2,7 +2,6 @@ use super::helpers::{
     first_call_expression, first_statement_assignment_call_expression,
     object_argument_from_call_expression,
 };
-use crate::analyze::import_shape::declaration_text;
 use crate::fetch::cache_opts::{extract_fetch_cache_options, infer_cached_wrapper_name};
 use crate::report::types::CacheKind;
 
@@ -172,11 +171,4 @@ fn test_infer_cached_wrapper_name_parses_multiline_assignment() {
         infer_cached_wrapper_name(source, call),
         Some("cachedFn".to_string())
     );
-}
-
-#[test]
-fn test_source_text_out_of_bounds_returns_empty_string_for_declaration_text() {
-    assert_eq!(declaration_text(10, 5, "abc"), "");
-    assert_eq!(declaration_text(0, 5, "abc"), "");
-    assert_eq!(declaration_text(0, 2, "abc"), "ab");
 }
