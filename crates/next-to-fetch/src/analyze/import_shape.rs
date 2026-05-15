@@ -35,10 +35,18 @@ pub(crate) fn is_runtime_export(export: &ExportNamedDeclaration) -> bool {
     }
 
     if let Some(decl) = &export.declaration {
-        return !matches!(
-            decl,
-            Declaration::TSTypeAliasDeclaration(_) | Declaration::TSInterfaceDeclaration(_)
-        );
+        return match decl {
+            Declaration::TSTypeAliasDeclaration(_) | Declaration::TSInterfaceDeclaration(_) => {
+                false
+            }
+            Declaration::VariableDeclaration(d) => !d.declare,
+            Declaration::FunctionDeclaration(d) => !d.declare,
+            Declaration::ClassDeclaration(d) => !d.declare,
+            Declaration::TSEnumDeclaration(d) => !d.declare,
+            Declaration::TSModuleDeclaration(d) => !d.declare,
+            Declaration::TSImportEqualsDeclaration(d) => d.import_kind == ImportOrExportKind::Value,
+            _ => true,
+        };
     }
 
     if export.specifiers.is_empty() {
