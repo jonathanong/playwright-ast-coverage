@@ -755,12 +755,14 @@ fn run_with_base_root(base_root: &Path, cli: &Cli) -> Result<FinalReport> {
         });
     }
 
-    if !target_specs.is_empty() && matched_targets.len() < target_specs.len() {
-        let unmatched: Vec<_> = target_specs
+    let unique_target_raws: HashSet<_> = target_specs.iter().map(|t| t.raw.as_str()).collect();
+    if !unique_target_raws.is_empty() && matched_targets.len() < unique_target_raws.len() {
+        let mut unmatched: Vec<_> = unique_target_raws
             .iter()
-            .filter(|target| !matched_targets.contains(&target.raw))
-            .map(|target| target.raw.as_str())
+            .copied()
+            .filter(|target| !matched_targets.contains(*target))
             .collect();
+        unmatched.sort();
         return Err(anyhow::anyhow!("Error: targets not found: {:?}", unmatched));
     }
 
