@@ -104,6 +104,22 @@ fn unsupported_dynamic_values_never_match() {
 }
 
 #[test]
+fn regex_flags_are_applied_to_selector_matcher() {
+    let selectors = extract_playwright_selectors(
+        "await page.getByTestId(/save/ims);",
+        &["data-testid".to_string()],
+        &["data-testid".to_string()],
+    );
+    assert_eq!(selectors[0].selector, "getByTestId(/save/ims)");
+    let app = AppSelector {
+        file: PathBuf::from("app/page.tsx"),
+        attribute: "data-testid".to_string(),
+        value: AppSelectorValue::Exact("SAVE".to_string()),
+    };
+    assert!(app.matches_playwright(&selectors[0]));
+}
+
+#[test]
 fn unsupported_regex_selector_does_not_panic_or_match() {
     let app = AppSelector {
         file: PathBuf::from("app/page.tsx"),

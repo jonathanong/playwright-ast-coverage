@@ -96,6 +96,19 @@ fn root_options_ignore_project_values() {
 }
 
 #[test]
+fn double_parenthesized_array_is_accepted() {
+    let source = "export default { testMatch: ((['**/*.spec.ts'])) };";
+    let parsed = parse(source, Path::new("/repo")).unwrap();
+    assert_eq!(parsed.projects[0].test_match, vec!["**/*.spec.ts"]);
+}
+
+#[test]
+fn unsupported_array_elements_are_rejected() {
+    assert!(parse("export default { testMatch: [foo] }", Path::new("/repo")).is_err());
+    assert!(parse("export default { testMatch: [] }", Path::new("/repo")).is_err());
+}
+
+#[test]
 fn parser_handles_ast_edge_shapes() {
     let source = fixture_source(&["playwright_config", "no-default-export.ts"]);
     let parsed = parse(&source, Path::new("/repo")).unwrap();
