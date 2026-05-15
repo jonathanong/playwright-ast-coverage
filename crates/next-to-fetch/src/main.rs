@@ -2366,6 +2366,35 @@ mod tests {
     }
 
     #[test]
+    fn test_analyze_file_imported_file_is_analyzed() {
+        let dir = tempdir().unwrap();
+        let helper = dir.path().join("helper.ts");
+        fs::write(&helper, "export const helper = () => fetch('/api/helper');").unwrap();
+        let file = dir.path().join("file.ts");
+        fs::write(&file, "import { helper } from './helper';").unwrap();
+
+        let mut cache = Cache {
+            files: HashMap::new(),
+            imports: HashMap::new(),
+        };
+        let mut visited = HashSet::new();
+        let mut fetches = Vec::new();
+        analyze_file(
+            &file,
+            dir.path(),
+            &mut visited,
+            &mut fetches,
+            &mut cache,
+            false,
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(fetches.len(), 1);
+        assert_eq!(fetches[0].path, "/api/helper");
+    }
+
+    #[test]
     fn test_analyze_file_not_exists() {
         let mut visited = HashSet::new();
         let mut fetches = Vec::new();
@@ -2459,6 +2488,52 @@ mod tests {
         cmd.arg("--root").arg(root.path()).arg(&page);
         cmd.assert()
             .success()
+            .stdout(predicates::str::contains("/api/layout"));
+    }
+
+    #[test]
+    fn test_cli_target_file_match_uses_layout_import_chain() {
+        use assert_cmd::Command;
+
+        let root = tempdir().unwrap();
+        let app = root.path().join("app");
+        fs::create_dir_all(app.join("dashboard")).unwrap();
+
+        let layout = app.join("dashboard/layout.tsx");
+        fs::write(
+            &layout,
+            "
+            import { helper } from './target';
+            ",
+        )
+        .unwrap();
+        let page = app.join("dashboard/page.tsx");
+        fs::write(&page, "fetch('/api/page');").unwrap();
+        let target = app.join("dashboard/target.ts");
+        fs::write(&target, "export const helper = () => fetch('/api/target');").unwrap();
+
+        let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
+        cmd.arg("--root").arg(root.path()).arg(&target);
+        cmd.assert()
+            .success()
+            .stdout(predicates::str::contains("/api/page"));
+    }
+
+    #[test]
+    fn test_cli_includes_page_and_layout_routes_by_default() {
+        use assert_cmd::Command;
+
+        let root = tempdir().unwrap();
+        fs::create_dir(root.path().join("app")).unwrap();
+        fs::write(root.path().join("app/layout.tsx"), "fetch('/api/layout');").unwrap();
+        fs::write(root.path().join("app/page.tsx"), "fetch('/api/page');").unwrap();
+
+        let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
+        cmd.arg("--root")
+            .arg(root.path())
+            .assert()
+            .success()
+            .stdout(predicates::str::contains("/api/page"))
             .stdout(predicates::str::contains("/api/layout"));
     }
 
