@@ -9,7 +9,7 @@ export const __dirname = dirname(fileURLToPath(import.meta.url));
 export const plugin = require("../src");
 
 export function fixture(name) {
-  return readFileSync(resolve(__dirname, "fixtures", name), "utf8");
+  return readFileSync(resolve(__dirname, "../../../fixtures/eslint-snippets", name), "utf8");
 }
 
 export function lint(code, rules, filename = "fixture.jsx") {

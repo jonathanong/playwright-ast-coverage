@@ -13,8 +13,11 @@ fn attrs() -> Vec<String> {
 
 #[test]
 fn extracts_playwright_css_and_test_id_selectors() {
-    let source =
-        crate::test_support::fixture_source(&["selectors", "playwright-css-and-testid.ts"]);
+    let source = crate::test_support::fixture_source(&[
+        "ast-snippets",
+        "selectors",
+        "playwright-css-and-testid.ts",
+    ]);
     let selectors = extract_playwright_selectors(&source, &attrs(), &["data-testid".to_string()]);
     assert!(selectors.iter().any(|s| s.selector == "getByTestId(save)"));
     assert!(selectors

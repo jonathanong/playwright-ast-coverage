@@ -3,10 +3,11 @@
 use serde_json::Value;
 use std::path::PathBuf;
 
-pub fn fixture(name: &str) -> PathBuf {
+pub fn fixture(category: &str, name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
+        .join("../..")
         .join("fixtures")
+        .join(category)
         .join(name)
 }
 

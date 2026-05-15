@@ -12,49 +12,49 @@ fn callee_checks_handle_non_member_expressions() {
 
 #[test]
 fn extracts_page_goto_url() {
-    let src = fixture_source(&["playwright_urls", "page-goto.ts"]);
+    let src = fixture_source(&["ast-snippets", "playwright-urls", "page-goto.ts"]);
     let urls = extract_playwright_urls(&src);
     assert_eq!(urls, vec!["/users/42"]);
 }
 
 #[test]
 fn extracts_click_href_selector() {
-    let src = fixture_source(&["playwright_urls", "click-href.ts"]);
+    let src = fixture_source(&["ast-snippets", "playwright-urls", "click-href.ts"]);
     let urls = extract_playwright_urls(&src);
     assert_eq!(urls, vec!["/dashboard"]);
 }
 
 #[test]
 fn extracts_double_quoted_goto_and_backtick_single_quoted_href() {
-    let src = fixture_source(&["playwright_urls", "quoted-goto-click.ts"]);
+    let src = fixture_source(&["ast-snippets", "playwright-urls", "quoted-goto-click.ts"]);
     let urls = extract_playwright_urls(&src);
     assert_eq!(urls, vec!["/double", "/single"]);
 }
 
 #[test]
 fn deduplicates_urls() {
-    let src = fixture_source(&["playwright_urls", "duplicate-goto.ts"]);
+    let src = fixture_source(&["ast-snippets", "playwright-urls", "duplicate-goto.ts"]);
     let urls = extract_playwright_urls(&src);
     assert_eq!(urls, vec!["/users/1"]);
 }
 
 #[test]
 fn ignores_external_urls() {
-    let src = fixture_source(&["playwright_urls", "external-urls.ts"]);
+    let src = fixture_source(&["ast-snippets", "playwright-urls", "external-urls.ts"]);
     let urls = extract_playwright_urls(&src);
     assert!(urls.is_empty());
 }
 
 #[test]
 fn ignores_non_href_selectors() {
-    let src = fixture_source(&["playwright_urls", "non-href-click.ts"]);
+    let src = fixture_source(&["ast-snippets", "playwright-urls", "non-href-click.ts"]);
     let urls = extract_playwright_urls(&src);
     assert!(urls.is_empty());
 }
 
 #[test]
 fn ignores_non_url_href_selector() {
-    let src = fixture_source(&["playwright_urls", "non-url-href-click.ts"]);
+    let src = fixture_source(&["ast-snippets", "playwright-urls", "non-url-href-click.ts"]);
     let urls = extract_playwright_urls(&src);
     assert!(urls.is_empty());
 }
@@ -67,7 +67,7 @@ fn empty_file_returns_empty() {
 
 #[test]
 fn extracts_configured_navigation_helper_urls() {
-    let src = fixture_source(&["playwright_urls", "navigation-helpers.ts"]);
+    let src = fixture_source(&["ast-snippets", "playwright-urls", "navigation-helpers.ts"]);
     let urls = extract_playwright_url_literals_with_helpers(
         &src,
         &["navigateTo".to_string(), "testHelpers.openPath".to_string()],
@@ -77,7 +77,7 @@ fn extracts_configured_navigation_helper_urls() {
 
 #[test]
 fn helper_url_extraction_skips_non_url_literals() {
-    let src = fixture_source(&["playwright_urls", "helper-nested-url.ts"]);
+    let src = fixture_source(&["ast-snippets", "playwright-urls", "helper-nested-url.ts"]);
     let urls = extract_playwright_url_literals_with_helpers(&src, &["navigateTo".to_string()]);
     assert_eq!(urls, vec!["/dynamic"]);
 }
@@ -93,7 +93,7 @@ fn navigation_helpers_use_only_the_target_argument() {
 
 #[test]
 fn extracts_to_have_url_assertion_paths() {
-    let src = fixture_source(&["playwright_urls", "to-have-url.ts"]);
+    let src = fixture_source(&["ast-snippets", "playwright-urls", "to-have-url.ts"]);
     let urls = extract_playwright_urls(&src);
     assert_eq!(
         urls,
@@ -150,21 +150,21 @@ fn extracts_wait_for_url_page_url_match_and_static_route_helpers() {
 
 #[test]
 fn to_have_url_uses_first_url_literal_argument() {
-    let src = fixture_source(&["playwright_urls", "to-have-url-label.ts"]);
+    let src = fixture_source(&["ast-snippets", "playwright-urls", "to-have-url-label.ts"]);
     let urls = extract_playwright_url_literals_with_helpers(&src, &[]);
     assert_eq!(urls, vec!["/settings"]);
 }
 
 #[test]
 fn parenthesized_callee_is_supported() {
-    let src = fixture_source(&["playwright_urls", "parenthesized-callee.ts"]);
+    let src = fixture_source(&["ast-snippets", "playwright-urls", "parenthesized-callee.ts"]);
     let urls = extract_playwright_urls(&src);
     assert_eq!(urls, vec!["/settings"]);
 }
 
 #[test]
 fn bare_builtin_callees_are_ignored() {
-    let src = fixture_source(&["playwright_urls", "bare-callees.ts"]);
+    let src = fixture_source(&["ast-snippets", "playwright-urls", "bare-callees.ts"]);
     let urls = extract_playwright_urls(&src);
     assert!(urls.is_empty());
 }

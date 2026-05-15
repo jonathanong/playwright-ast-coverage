@@ -30,7 +30,7 @@ fn load_missing_config_errors() {
 
 #[test]
 fn load_many_errors_when_project_filter_matches_no_config() {
-    let dir = fixture_path(&["config", "multi-playwright-config"]);
+    let dir = fixture_path(&["scan-config", "multi-playwright-config"]);
     let config = dir.join("playwright.config.mts");
     let err = load_many(&dir, &[config], Some("missing"))
         .err()
@@ -40,7 +40,7 @@ fn load_many_errors_when_project_filter_matches_no_config() {
 
 #[test]
 fn load_many_errors_when_config_is_missing_name_for_filter() {
-    let dir = fixture_path(&["playwright_config", "load-existing"]);
+    let dir = fixture_path(&["ast-snippets", "playwright_config", "load-existing"]);
     let config = dir.join("playwright.config.ts");
     let err = load_many(&dir, &[config], Some("project"))
         .err()
@@ -50,7 +50,7 @@ fn load_many_errors_when_config_is_missing_name_for_filter() {
 
 #[test]
 fn validate_config_names_errors_on_duplicate_names() {
-    let dir = fixture_path(&["config", "multi-playwright-config"]);
+    let dir = fixture_path(&["scan-config", "multi-playwright-config"]);
     let config = dir.join("playwright.config.mts");
     // Loading the same config twice should error with "duplicated" since both have same name
     let err = load_many(&dir, &[config.clone(), config], None)
@@ -61,7 +61,7 @@ fn validate_config_names_errors_on_duplicate_names() {
 
 #[test]
 fn load_existing_config_reads_and_parses() {
-    let dir = fixture_path(&["playwright_config", "load-existing"]);
+    let dir = fixture_path(&["ast-snippets", "playwright_config", "load-existing"]);
     let config = dir.join("playwright.config.ts");
     let parsed = load(&dir, &config).unwrap();
     assert_eq!(parsed.projects[0].test_dir, "./tests");
@@ -69,7 +69,7 @@ fn load_existing_config_reads_and_parses() {
 
 #[test]
 fn load_directory_config_path_returns_read_error() {
-    let dir = fixture_path(&["playwright_config", "load-existing"]);
+    let dir = fixture_path(&["ast-snippets", "playwright_config", "load-existing"]);
     let err = load(&dir, &dir)
         .err()
         .expect("expected directory config path to fail");

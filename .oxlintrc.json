@@ -12,7 +12,7 @@
   },
   "overrides": [
     {
-      "files": ["packages/eslint-plugin-playwright-ast-coverage/test/fixtures/**"],
+      "files": ["fixtures/eslint-snippets/**"],
       "rules": {
         "no-unused-vars": "off"
       }

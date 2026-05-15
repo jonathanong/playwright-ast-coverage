@@ -1,0 +1,1 @@
+fetch('/api/sub-layout'); fetch('/api/dup')
