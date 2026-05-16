@@ -37,19 +37,9 @@ fn expands_empty_patterns_returns_empty() {
 
 #[test]
 fn skips_node_modules_directory() {
-    use std::fs;
-    use tempfile::tempdir;
-    let tmp = tempdir().unwrap();
-    let nm = tmp.path().join("node_modules");
-    fs::create_dir(&nm).unwrap();
-    fs::write(nm.join("index.tsx"), "export default function Foo() {}").unwrap();
-    fs::write(
-        tmp.path().join("App.tsx"),
-        "export default function App() {}",
-    )
-    .unwrap();
+    let root = fixture("react-traits-glob", "skip-node-modules");
     let patterns = vec!["**/*.tsx".to_string()];
-    let files = expand_globs(tmp.path(), &patterns).expect("should expand");
+    let files = expand_globs(&root, &patterns).expect("should expand");
     assert_eq!(files.len(), 1);
     assert!(files[0].ends_with("App.tsx"));
 }
@@ -66,19 +56,9 @@ fn invalid_glob_pattern_returns_error() {
 
 #[test]
 fn skips_target_directory() {
-    use std::fs;
-    use tempfile::tempdir;
-    let tmp = tempdir().unwrap();
-    let target = tmp.path().join("target");
-    fs::create_dir(&target).unwrap();
-    fs::write(target.join("index.tsx"), "export default function Foo() {}").unwrap();
-    fs::write(
-        tmp.path().join("App.tsx"),
-        "export default function App() {}",
-    )
-    .unwrap();
+    let root = fixture("react-traits-glob", "skip-target");
     let patterns = vec!["**/*.tsx".to_string()];
-    let files = expand_globs(tmp.path(), &patterns).expect("should expand");
+    let files = expand_globs(&root, &patterns).expect("should expand");
     assert_eq!(files.len(), 1);
     assert!(files[0].ends_with("App.tsx"));
 }

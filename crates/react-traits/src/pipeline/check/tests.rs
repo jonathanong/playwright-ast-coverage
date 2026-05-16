@@ -141,9 +141,13 @@ fn check_inherited_fetch_from_child_produces_violation() {
     ];
     let violations = run_check(&fixture_root, &cli, &targets, true).expect("should check");
     // Child directly has fetch, Parent inherits it — both should be reported.
-    let names: Vec<&str> = violations.iter().map(|v| v.component.as_str()).collect();
+    let files: Vec<&str> = violations.iter().map(|v| v.file.as_str()).collect();
     assert!(
-        names.contains(&"default"),
-        "expected at least one violation; got: {names:?}"
+        files.iter().any(|f| f.ends_with("Parent.tsx")),
+        "expected parent violation; got: {files:?}"
+    );
+    assert!(
+        files.iter().any(|f| f.ends_with("Child.tsx")),
+        "expected child violation; got: {files:?}"
     );
 }

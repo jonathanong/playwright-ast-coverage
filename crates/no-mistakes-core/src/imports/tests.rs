@@ -35,7 +35,8 @@ fn collect_imports_unreadable_file_returns_error() {
     // Create a file then remove read permissions so read_to_string fails (line 55).
     let dir = tempdir().unwrap();
     let file = dir.path().join("unreadable.ts");
-    std::fs::write(&file, "export {};").unwrap();
+    let fixture_file = fixture("no-mistakes-core-imports", "unreadable-file", "main.ts");
+    std::fs::copy(&fixture_file, &file).unwrap();
     let mut perms = file.metadata().unwrap().permissions();
     perms.set_mode(0o000);
     std::fs::set_permissions(&file, perms).unwrap();
