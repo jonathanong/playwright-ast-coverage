@@ -1,0 +1,34 @@
+{
+  "name": "eslint-plugin-next-to-fetch",
+  "version": "0.1.0",
+  "description": "ESLint and Oxlint rules to keep fetch() calls statically analyzable",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jonathanong/playwright-ast-coverage.git",
+    "directory": "packages/eslint-plugin-next-to-fetch"
+  },
+  "files": [
+    "src/",
+    "LICENSE"
+  ],
+  "main": "src/index.js",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.6",
+    "eslint": "^10.3.0",
+    "oxlint": "^1.64.0",
+    "vitest": "^4.1.6"
+  },
+  "peerDependencies": {
+    "eslint": ">=9"
+  },
+  "engines": {
+    "node": "^20.19.0 || ^22.13.0 || >=24"
+  }
+}
