@@ -30,6 +30,7 @@ pub(crate) struct MountSite {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) struct ImportBinding {
     pub local: String,
+    pub imported: String,
     pub source: String,
 }
 

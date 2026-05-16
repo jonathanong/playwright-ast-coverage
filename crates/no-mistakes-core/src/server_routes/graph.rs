@@ -1,10 +1,11 @@
 use crate::server_routes::extract::extract_file;
 use crate::server_routes::model::{FileFacts, ProjectReport, RouteSite};
+use crate::server_routes::mounts::{prefixes_for, resolve_mounts};
 use crate::server_routes::normalize::{join_paths, normalize_route};
 use crate::server_routes::source::{discover_source_files, relative_string};
 use crate::server_routes::types::{Diagnostic, Edge, EdgeKind, ServerRoute, Severity, Summary};
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -40,6 +41,7 @@ fn build_report(root: &Path, facts: &HashMap<PathBuf, FileFacts>) -> ProjectRepo
     let mut routes = Vec::new();
     let mut edges = Vec::new();
     let mut diagnostics = Vec::new();
+    let mounts = resolve_mounts(facts);
     for (path, file_facts) in facts {
         diagnostics.extend(
             file_facts
@@ -53,7 +55,7 @@ fn build_report(root: &Path, facts: &HashMap<PathBuf, FileFacts>) -> ProjectRepo
                 }),
         );
         for site in &file_facts.routes {
-            for route in expand_site(root, site, file_facts) {
+            for route in expand_site(root, site, facts, &mounts) {
                 edges.push(Edge {
                     from: route.file.clone(),
                     to: route.route.clone(),
@@ -81,16 +83,13 @@ fn build_report(root: &Path, facts: &HashMap<PathBuf, FileFacts>) -> ProjectRepo
     }
 }
 
-fn expand_site(root: &Path, site: &RouteSite, facts: &FileFacts) -> Vec<ServerRoute> {
-    let mut prefixes = Vec::new();
-    if let Some(binding) = facts.bindings.get(&site.binding) {
-        prefixes.extend(binding.prefixes.clone());
-    }
-    prefixes.extend(mount_prefixes(&site.binding, facts));
-    if prefixes.is_empty() {
-        prefixes.push(String::new());
-    }
-    prefixes
+fn expand_site(
+    root: &Path,
+    site: &RouteSite,
+    facts: &HashMap<PathBuf, FileFacts>,
+    mounts: &[crate::server_routes::mounts::ResolvedMount],
+) -> Vec<ServerRoute> {
+    prefixes_for(site, facts, mounts)
         .into_iter()
         .map(|prefix| {
             let raw_path = join_paths(&prefix, &site.raw_path);
@@ -104,38 +103,6 @@ fn expand_site(root: &Path, site: &RouteSite, facts: &FileFacts) -> Vec<ServerRo
             }
         })
         .collect()
-}
-
-fn mount_prefixes(binding: &str, facts: &FileFacts) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut seen = HashSet::new();
-    collect_mount_prefixes(binding, facts, "", &mut seen, &mut out);
-    out
-}
-
-fn collect_mount_prefixes(
-    binding: &str,
-    facts: &FileFacts,
-    suffix: &str,
-    seen: &mut HashSet<String>,
-    out: &mut Vec<String>,
-) {
-    if !seen.insert(binding.to_string()) {
-        return;
-    }
-    for mount in facts.mounts.iter().filter(|mount| mount.child == binding) {
-        let prefix = join_paths(&mount.prefix, suffix);
-        out.push(prefix.clone());
-        if let Some(parent) = facts.bindings.get(&mount.parent) {
-            out.extend(
-                parent
-                    .prefixes
-                    .iter()
-                    .map(|parent_prefix| join_paths(parent_prefix, &prefix)),
-            );
-        }
-        collect_mount_prefixes(&mount.parent, facts, &prefix, seen, out);
-    }
 }
 
 fn build_filter(filters: &[String]) -> anyhow::Result<Option<GlobSet>> {

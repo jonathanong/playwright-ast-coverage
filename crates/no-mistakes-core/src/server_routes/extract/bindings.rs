@@ -30,6 +30,7 @@ impl ServerRouteVisitor<'_> {
         }
         self.facts.imports.push(ImportBinding {
             local,
+            imported,
             source: source.to_string(),
         });
     }
@@ -78,9 +79,9 @@ impl ServerRouteVisitor<'_> {
                 Some(Binding::new(Framework::Express, None))
             }
             Expression::StaticMemberExpression(member)
-                if member.property.name.as_str() == "basePath" =>
+                if matches!(member.property.name.as_str(), "basePath" | "route") =>
             {
-                let mut binding = self.binding_from_expr(&member.object)?;
+                let mut binding = self.object_binding(&member.object)?;
                 if let Some(prefix) = call.arguments.first().and_then(|arg| self.literal_arg(arg)) {
                     binding.prefixes.push(prefix);
                 }
@@ -88,5 +89,14 @@ impl ServerRouteVisitor<'_> {
             }
             _ => None,
         }
+    }
+
+    fn object_binding(&self, object: &Expression<'_>) -> Option<Binding> {
+        if let Expression::Identifier(id) = object {
+            if let Some(binding) = self.facts.bindings.get(id.name.as_str()) {
+                return Some(binding.clone());
+            }
+        }
+        self.binding_from_expr(object)
     }
 }

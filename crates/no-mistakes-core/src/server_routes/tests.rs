@@ -79,10 +79,13 @@ fn mixed_framework_shapes_are_supported() {
         "/array/*",
         "/array/*/edit",
         "/api-server/*",
+        "/books/*",
         "/matched/*",
         "/v1/koa/*",
         "/child/hono-child/*",
         "/paren/*",
+        "/v1/shared/status",
+        "/v2/shared/status",
     ] {
         assert!(
             report.routes.iter().any(|route| route.route == expected),
@@ -93,6 +96,19 @@ fn mixed_framework_shapes_are_supported() {
         .routes
         .iter()
         .any(|route| route.route == "not-a-route"));
+}
+
+#[test]
+fn modular_mounts_apply_prefixes_across_files() {
+    let report = analyze_project(&fixture("modular"), None, &[]).unwrap();
+    assert!(report
+        .routes
+        .iter()
+        .any(|route| route.route == "/api/*" && route.file == "backend/api/users.ts"));
+    assert!(report
+        .routes
+        .iter()
+        .any(|route| route.route == "/admin" && route.file == "backend/api/admin.ts"));
 }
 
 #[test]

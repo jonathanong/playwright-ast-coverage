@@ -32,7 +32,17 @@ impl ServerRouteVisitor<'_> {
         let Some(binding) = object_identifier(object) else {
             return;
         };
-        for path in self.route_args(&call.arguments, self.is_koa_router(&binding)) {
+        let mut paths = self.route_args(&call.arguments, self.is_koa_router(&binding));
+        if paths.is_empty()
+            && self
+                .facts
+                .bindings
+                .get(&binding)
+                .is_some_and(|binding| !binding.prefixes.is_empty())
+        {
+            paths.push("/".to_string());
+        }
+        for path in paths {
             self.push_route(call, &binding, method, &path);
         }
     }
@@ -65,20 +75,24 @@ impl ServerRouteVisitor<'_> {
         let Some(parent) = object_identifier(object) else {
             return;
         };
-        if method == "route" && call.arguments.get(1).and_then(mounted_binding).is_none() {
-            return;
+        let (prefix, child_args) = if method == "use" {
+            match call.arguments.first().and_then(|arg| self.literal_arg(arg)) {
+                Some(prefix) => (prefix, &call.arguments[1..]),
+                None => ("/".to_string(), call.arguments.as_slice()),
+            }
+        } else {
+            let Some(prefix) = call.arguments.first().and_then(|arg| self.literal_arg(arg)) else {
+                return;
+            };
+            (prefix, &call.arguments[1..])
+        };
+        for child in child_args.iter().filter_map(mounted_binding) {
+            self.facts.mounts.push(MountSite {
+                parent: parent.clone(),
+                child,
+                prefix: prefix.clone(),
+            });
         }
-        let Some(prefix) = call.arguments.first().and_then(|arg| self.literal_arg(arg)) else {
-            return;
-        };
-        let Some(child) = call.arguments.get(1).and_then(mounted_binding) else {
-            return;
-        };
-        self.facts.mounts.push(MountSite {
-            parent,
-            child,
-            prefix,
-        });
     }
 
     fn record_prefix(&mut self, call: &CallExpression<'_>, object: &Expression<'_>) {
