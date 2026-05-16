@@ -31,11 +31,13 @@ cargo install playwright-ast-coverage
 - Find `data-testid` and `data-pw` hooks that tests never assert.
 - Ask for related tests when a page or component changes.
 - Give AI agents a deterministic pre-finish coverage check.
+- Map BullMQ/glide-mq producers to queue workers with `queue-ast-hop`.
 
 ```sh
 playwright-ast-coverage check --json
 playwright-ast-coverage related 'web/app/users/[id]/page.tsx'
 playwright-ast-coverage edges --json
+queue-ast-hop related 'backend/jobs/email.ts' --json
 ```
 
 ## Configure

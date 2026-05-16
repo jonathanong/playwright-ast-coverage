@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@queues": ["src/queues/index"],
+      "@queue-dir": ["src/queues"],
+      "@fallback/*": ["src/missing/*", "src/processors/*"],
+      "@worker/*": ["src/processors/*"]
+    }
+  }
+}

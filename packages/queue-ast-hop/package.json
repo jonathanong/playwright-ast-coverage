@@ -1,0 +1,29 @@
+{
+  "name": "queue-ast-hop",
+  "version": "0.1.0",
+  "description": "Static queue dependency graph for BullMQ and glide-mq",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jonathanong/playwright-ast-coverage.git",
+    "directory": "packages/queue-ast-hop"
+  },
+  "bin": {
+    "queue-ast-hop": "bin/queue-ast-hop.js"
+  },
+  "files": [
+    "bin/",
+    "scripts/install.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install.js"
+  },
+  "dependencies": {
+    "no-mistakes-core": "^0.1.0"
+  }
+}
