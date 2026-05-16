@@ -37,8 +37,7 @@ pub fn run_cli() -> Result<ExitCode> {
     if cli.json {
         println!(
             "{}",
-            serde_json::to_string_pretty(&report)
-                .context("failed to serialize report as JSON")?
+            serde_json::to_string_pretty(&report).context("failed to serialize report as JSON")?
         );
     } else {
         print_markdown_report(&report);

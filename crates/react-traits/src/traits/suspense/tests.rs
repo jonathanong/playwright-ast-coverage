@@ -209,5 +209,8 @@ fn outer_dynamic_shadowed_by_inner_non_dynamic_not_suspense() {
         super::detect_uses_suspense(program, span)
     })
     .unwrap();
-    assert!(!result, "inner non-dynamic shadow should suppress outer dynamic");
+    assert!(
+        !result,
+        "inner non-dynamic shadow should suppress outer dynamic"
+    );
 }
