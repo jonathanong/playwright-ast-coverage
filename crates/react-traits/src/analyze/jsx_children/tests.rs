@@ -68,3 +68,14 @@ fn nested_member_expression_tag_resolved() {
     let names = collect_children_names(source, &file);
     assert_eq!(names, vec!["default"]);
 }
+
+#[test]
+fn this_expression_member_tag_ignored() {
+    // <this.Foo /> — jsx_member_root returns "" for ThisExpression.
+    // "" is not in the import table, so the child is silently ignored.
+    let dir = fixture_dir();
+    let file = dir.join("Consumer.tsx");
+    let source = "export default class App { render() { return <this.Foo />; } }";
+    let names = collect_children_names(source, &file);
+    assert!(names.is_empty());
+}

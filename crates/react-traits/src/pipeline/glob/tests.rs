@@ -55,6 +55,16 @@ fn skips_node_modules_directory() {
 }
 
 #[test]
+fn invalid_glob_pattern_returns_error() {
+    // A glob pattern with unmatched '[' is invalid and causes build() to return Err,
+    // which exercises the `?` error branch at line 9.
+    let root = fixture("react-traits-components", "basic").join("app");
+    let patterns = vec!["[invalid".to_string()];
+    let result = expand_globs(&root, &patterns);
+    assert!(result.is_err(), "invalid glob should return error");
+}
+
+#[test]
 fn skips_target_directory() {
     use std::fs;
     use tempfile::tempdir;

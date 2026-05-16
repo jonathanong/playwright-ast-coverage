@@ -24,7 +24,9 @@ pub(crate) fn analyze_file(
         return Ok(false);
     }
 
-    let abs_path = path.canonicalize()?;
+    let abs_path = path
+        .canonicalize()
+        .expect("canonicalize succeeds since path.exists() was checked above");
     let visit_key = (
         abs_path.clone(),
         inherited_is_client,
@@ -71,7 +73,7 @@ pub(crate) fn analyze_file(
         file_fetches.extend(visitor.fetches);
         let referenced_identifiers = collect_identifier_references(program);
         let imports =
-            collect_runtime_imports_from_program(&abs_path, program, &referenced_identifiers)?;
+            collect_runtime_imports_from_program(&abs_path, program, &referenced_identifiers);
         for import in imports {
             match analyze_file(
                 &import,

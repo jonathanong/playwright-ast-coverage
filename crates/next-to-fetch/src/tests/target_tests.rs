@@ -157,6 +157,77 @@ fn test_route_reaches_target_via_import() {
 }
 
 #[test]
+fn test_route_reaches_target_nonexistent_source_returns_error() {
+    // When path doesn't exist, canonicalize() fails — exercises the `?` error branch (line 16).
+    let dir = tempdir().unwrap();
+    let nonexistent = dir.path().join("ghost.ts");
+    let target = dir.path().join("target.ts");
+    fs::write(&target, "").unwrap();
+
+    let mut cache = HashMap::new();
+    let mut visited = std::collections::HashSet::new();
+    let result = route_reaches_target(&nonexistent, &target, &mut visited, &mut cache);
+    assert!(
+        result.is_err(),
+        "non-existent source should return an error"
+    );
+}
+
+#[test]
+fn test_route_reaches_target_nonexistent_target_uses_fallback() {
+    // When target doesn't exist, canonicalize() fails and unwrap_or_else fallback is used
+    // (exercises line 19 col 36 in routes.rs).
+    let dir = tempdir().unwrap();
+    let route = dir.path().join("route.ts");
+    fs::write(&route, "").unwrap();
+
+    let nonexistent_target = dir.path().join("does-not-exist.ts");
+    let mut cache = HashMap::new();
+    let mut visited = std::collections::HashSet::new();
+    // route != nonexistent_target, so returns false.
+    let result =
+        route_reaches_target(&route, &nonexistent_target, &mut visited, &mut cache).unwrap();
+    assert!(!result);
+}
+
+#[test]
+#[cfg(unix)]
+fn test_is_client_route_file_unreadable_returns_error() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("unreadable.ts");
+    fs::write(&file, "export {};").unwrap();
+    let mut perms = file.metadata().unwrap().permissions();
+    perms.set_mode(0o000);
+    fs::set_permissions(&file, perms).unwrap();
+
+    let result = is_client_route_file(&file);
+    assert!(result.is_err(), "unreadable file should return an error");
+}
+
+#[test]
+fn test_route_reaches_target_collect_imports_parse_error() {
+    // A file with a parse error causes collect_imports to fail,
+    // exercising the `?` error branch at line 29 of routes.rs.
+    let dir = tempdir().unwrap();
+    let route = dir.path().join("route.ts");
+    let target = dir.path().join("target.ts");
+    // Write an unparseable file as the route (unclosed call fails oxc parser).
+    fs::write(&route, "await page.goto(").unwrap();
+    fs::write(&target, "").unwrap();
+
+    let mut cache = HashMap::new();
+    let mut visited = std::collections::HashSet::new();
+    let result = route_reaches_target(
+        &route,
+        &target.canonicalize().unwrap(),
+        &mut visited,
+        &mut cache,
+    );
+    assert!(result.is_err(), "parse error in route should propagate");
+}
+
+#[test]
 fn test_route_reaches_target_with_unmatched_import_chain() {
     let dir = tempdir().unwrap();
     let route = dir.path().join("route.ts");

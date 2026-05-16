@@ -96,3 +96,66 @@ fn cli_error_exit_bad_root() {
     let result = crate::run_cli();
     assert!(result.is_err() || result.is_ok());
 }
+
+#[test]
+fn cli_analyze_text_output() {
+    let root = fixture("react-traits-components", "basic");
+    let args = format!(
+        "react-traits\x1f--root\x1f{}\x1fanalyze\x1fapp/components/Greeting.tsx",
+        root.display()
+    );
+    let _guard = with_run_args_env(Some(args), None);
+    let result = crate::run_cli();
+    assert!(result.is_ok());
+}
+
+#[test]
+fn cli_check_text_output_no_violation() {
+    let root = fixture("react-traits-components", "basic");
+    let args = format!(
+        "react-traits\x1f--root\x1f{}\x1fcheck\x1fapp/components/Greeting.tsx",
+        root.display()
+    );
+    let _guard = with_run_args_env(Some(args), None);
+    let result = crate::run_cli();
+    assert!(result.is_ok());
+}
+
+#[test]
+fn cli_check_text_output_with_violation() {
+    let root = fixture("react-traits-config", "assert-no-fetch");
+    let args = format!(
+        "react-traits\x1f--root\x1f{}\x1fcheck\x1f--assert-no-fetch\x1fapp/components/Fetcher.tsx",
+        root.display()
+    );
+    let _guard = with_run_args_env(Some(args), None);
+    // Should succeed (returns ExitCode::from(1) but not Err)
+    let result = crate::run_cli();
+    assert!(result.is_ok());
+}
+
+#[test]
+fn cli_analyze_bad_file_returns_error() {
+    // Exercises the `run_analyze(...)?` error branch (line 54 in cli.rs).
+    let root = fixture("react-traits-components", "bad-file");
+    let args = format!(
+        "react-traits\x1f--root\x1f{}\x1fanalyze\x1fapp/components/Broken.tsx",
+        root.display()
+    );
+    let _guard = with_run_args_env(Some(args), None);
+    let result = crate::run_cli();
+    assert!(result.is_err(), "bad file should produce an error");
+}
+
+#[test]
+fn cli_check_bad_file_returns_error() {
+    // Exercises the `run_check(...)?` error branch (line 70 in cli.rs).
+    let root = fixture("react-traits-components", "bad-file");
+    let args = format!(
+        "react-traits\x1f--root\x1f{}\x1fcheck\x1fapp/components/Broken.tsx",
+        root.display()
+    );
+    let _guard = with_run_args_env(Some(args), None);
+    let result = crate::run_cli();
+    assert!(result.is_err(), "bad file should produce an error");
+}

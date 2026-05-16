@@ -1,4 +1,3 @@
-use anyhow::Result;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
@@ -9,9 +8,9 @@ pub struct Route {
     pub pattern: String,
 }
 
-pub fn collect_routes(frontend_root: &Path, stems: &[&str]) -> Result<Vec<Route>> {
+pub fn collect_routes(frontend_root: &Path, stems: &[&str]) -> Vec<Route> {
     if !frontend_root.exists() {
-        return Ok(Vec::new());
+        return Vec::new();
     }
 
     let mut routes = Vec::new();
@@ -30,16 +29,15 @@ pub fn collect_routes(frontend_root: &Path, stems: &[&str]) -> Result<Vec<Route>
             continue;
         }
 
-        if let Ok(relative) = path.strip_prefix(frontend_root) {
-            routes.push(Route {
-                file: path.to_path_buf(),
-                pattern: path_to_route_pattern(relative),
-            });
-        }
+        let relative = path.strip_prefix(frontend_root).unwrap_or(path);
+        routes.push(Route {
+            file: path.to_path_buf(),
+            pattern: path_to_route_pattern(relative),
+        });
     }
 
     routes.sort_by(|a, b| a.pattern.cmp(&b.pattern).then_with(|| a.file.cmp(&b.file)));
-    Ok(routes)
+    routes
 }
 
 pub fn path_to_route_pattern(relative: &Path) -> String {

@@ -3,6 +3,7 @@ use crate::fetch::types::{CacheKind, FetchOccurrence};
 use crate::fetch::visit_helpers::{enter_cache_wrapper, leave_cache_wrapper, try_extract_fetch};
 use oxc_ast::ast::{CallExpression, ImportDeclarationSpecifier};
 use oxc_ast_visit::{walk, Visit};
+use oxc_span::Span;
 use std::collections::HashSet;
 
 pub struct FetchVisitor<'a> {
@@ -15,6 +16,7 @@ pub struct FetchVisitor<'a> {
     pub cached_kind: Option<CacheKind>,
     pub fetch_scope_stack: Vec<FetchScope>,
     pub in_var_declaration: bool,
+    pub component_span: Option<Span>,
 }
 
 #[derive(Default)]
@@ -38,6 +40,7 @@ impl<'a> FetchVisitor<'a> {
                 tracks_var_bindings: true,
             }],
             in_var_declaration: false,
+            component_span: None,
         }
     }
 
@@ -53,9 +56,11 @@ impl<'a> FetchVisitor<'a> {
     }
 
     pub fn mark_fetch_shadowed(&mut self) {
-        if let Some(scope) = self.fetch_scope_stack.last_mut() {
-            scope.shadowed_identifiers.insert("fetch".to_string());
-        }
+        let scope = self
+            .fetch_scope_stack
+            .last_mut()
+            .expect("fetch_scope_stack is never empty");
+        scope.shadowed_identifiers.insert("fetch".to_string());
     }
 
     pub fn mark_identifier_shadowed_in_var_scope(&mut self, name: &str) {
@@ -66,15 +71,19 @@ impl<'a> FetchVisitor<'a> {
             }
         }
 
-        if let Some(scope) = self.fetch_scope_stack.last_mut() {
-            scope.shadowed_identifiers.insert(name.to_string());
-        }
+        let scope = self
+            .fetch_scope_stack
+            .last_mut()
+            .expect("fetch_scope_stack is never empty");
+        scope.shadowed_identifiers.insert(name.to_string());
     }
 
     pub fn mark_identifier_shadowed(&mut self, name: &str) {
-        if let Some(scope) = self.fetch_scope_stack.last_mut() {
-            scope.shadowed_identifiers.insert(name.to_string());
-        }
+        let scope = self
+            .fetch_scope_stack
+            .last_mut()
+            .expect("fetch_scope_stack is never empty");
+        scope.shadowed_identifiers.insert(name.to_string());
     }
 
     pub fn is_fetch_shadowed(&self) -> bool {
@@ -171,8 +180,15 @@ impl<'a> Visit<'a> for FetchVisitor<'a> {
             return;
         }
 
-        if let Some(occurrence) = try_extract_fetch(expr, self) {
-            self.fetches.push(occurrence);
+        let in_scope = self
+            .component_span
+            .map(|s| expr.span.start >= s.start && expr.span.end <= s.end)
+            .unwrap_or(true);
+
+        if in_scope {
+            if let Some(occurrence) = try_extract_fetch(expr, self) {
+                self.fetches.push(occurrence);
+            }
         }
         walk::walk_call_expression(self, expr);
     }

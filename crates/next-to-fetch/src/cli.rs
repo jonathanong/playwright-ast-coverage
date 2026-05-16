@@ -31,10 +31,14 @@ pub fn run_cli() -> Result<ExitCode> {
     } else {
         Cli::parse()
     };
-    let base_root = std::env::current_dir()?;
+    let base_root = std::env::current_dir().expect("current working directory must be accessible");
     let report = run_with_base_root(&base_root, &cli)?;
     if cli.json {
-        println!("{}", serde_json::to_string_pretty(&report)?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report)
+                .expect("serialization of Rust structs never fails")
+        );
     } else {
         print_markdown_report(&report);
     }

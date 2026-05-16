@@ -32,14 +32,14 @@ pub(crate) fn run_with_base_root(base_root: &Path, cli: &Cli) -> Result<FinalRep
         );
     }
     let stems = ["page", "route"];
-    let all_routes = routes::collect_routes(&frontend_root, &stems)?;
+    let all_routes = routes::collect_routes(&frontend_root, &stems);
 
     let mut cache = Cache {
         files: HashMap::new(),
         imports: HashMap::new(),
     };
 
-    let target_specs = resolve_targets(base_root, &root, &cli.targets)?;
+    let target_specs = resolve_targets(base_root, &root, &cli.targets);
     let (reports, matched_targets) =
         analyze_routes(all_routes, &target_specs, &frontend_root, &root, &mut cache)?;
 
@@ -48,7 +48,7 @@ pub(crate) fn run_with_base_root(base_root: &Path, cli: &Cli) -> Result<FinalRep
     Ok(build_final_report(reports))
 }
 
-fn resolve_targets(base_root: &Path, root: &Path, targets: &[String]) -> Result<Vec<TargetSpec>> {
+fn resolve_targets(base_root: &Path, root: &Path, targets: &[String]) -> Vec<TargetSpec> {
     let mut target_specs = Vec::new();
     let mut unique_targets = HashSet::new();
     for target in targets {
@@ -62,7 +62,7 @@ fn resolve_targets(base_root: &Path, root: &Path, targets: &[String]) -> Result<
             });
         }
     }
-    Ok(target_specs)
+    target_specs
 }
 
 fn analyze_routes(

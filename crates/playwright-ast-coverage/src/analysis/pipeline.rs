@@ -109,7 +109,7 @@ pub(crate) fn analyze_with_policy(
 ) -> Result<Analysis> {
     unique_selector_policy.configured_html_id_selector = has_configured_html_id_selector(settings);
     let route_root = root.join(&settings.frontend_root);
-    let routes = routes::collect_routes(&route_root)?;
+    let routes = routes::collect_routes(&route_root);
     if routes.is_empty() {
         anyhow::bail!(
             "no Next.js page routes found under {}",

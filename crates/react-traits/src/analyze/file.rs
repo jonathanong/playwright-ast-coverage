@@ -31,7 +31,7 @@ pub(crate) fn analyze_file(abs_path: &Path, root: &Path) -> Result<FileAnalysis>
         let all_jsx_children = collect_jsx_children(program, &import_table);
 
         let referenced = collect_identifier_references(program);
-        let deps = collect_runtime_imports_from_program(abs_path, program, &referenced)?;
+        let deps = collect_runtime_imports_from_program(abs_path, program, &referenced);
 
         let environment = match env {
             FileEnvironment::Server => Environment::Server,
@@ -51,12 +51,13 @@ pub(crate) fn analyze_file(abs_path: &Path, root: &Path) -> Result<FileAnalysis>
 
         let mut components = Vec::new();
         for def in component_defs {
-            let has_state = traits::state::detect_has_state(program, &source);
-            let (has_props, passes_props) = traits::props::detect_props(program, &source);
-            let uses_memo = traits::memo::detect_uses_memo(program, &source, &def);
-            let uses_context_provider = traits::context::detect_context_provider(program, &source);
-            let uses_suspense = traits::suspense::detect_uses_suspense(program, &source);
-            let fetch_calls = traits::fetch::collect_fetch_calls(program, &source, &rel_path);
+            let span = def.span;
+            let has_state = traits::state::detect_has_state(program, span);
+            let (has_props, passes_props) = traits::props::detect_props(program, span);
+            let uses_memo = traits::memo::detect_uses_memo(program, span, &def);
+            let uses_context_provider = traits::context::detect_context_provider(program, span);
+            let uses_suspense = traits::suspense::detect_uses_suspense(program, span);
+            let fetch_calls = traits::fetch::collect_fetch_calls(program, &source, &rel_path, span);
 
             let fetches = fetch_calls
                 .into_iter()
@@ -84,8 +85,8 @@ pub(crate) fn analyze_file(abs_path: &Path, root: &Path) -> Result<FileAnalysis>
             });
         }
 
-        Ok::<_, anyhow::Error>((components, deps))
-    })??;
+        (components, deps)
+    })?;
 
     Ok(FileAnalysis {
         components,

@@ -56,3 +56,32 @@ fn analyze_client_component_environment() {
     let result = analyze_file(&file, &root).expect("should succeed");
     assert_eq!(result.components[0].environment, Environment::Client);
 }
+
+#[test]
+fn multi_component_scopes_fetch_to_component_span() {
+    // Two components in one file: FetchingComponent has fetch, PureComponent does not.
+    // The FetchVisitor's in_scope = false path is exercised for calls outside each span.
+    let root = fixture("react-traits-analyze", "multi-component");
+    let file = root.join("app/components/Mixed.tsx");
+    let analysis = analyze_file(&file, &root).expect("should analyze");
+
+    let fetching = analysis
+        .components
+        .iter()
+        .find(|c| c.name == "FetchingComponent")
+        .expect("FetchingComponent not found");
+    let pure = analysis
+        .components
+        .iter()
+        .find(|c| c.name == "PureComponent")
+        .expect("PureComponent not found");
+
+    assert!(
+        !fetching.fetches.is_empty(),
+        "FetchingComponent should detect fetch"
+    );
+    assert!(
+        pure.fetches.is_empty(),
+        "PureComponent should not inherit FetchingComponent's fetch"
+    );
+}

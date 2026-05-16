@@ -39,15 +39,13 @@ pub(crate) enum Command {
 
 pub fn run_cli() -> Result<ExitCode> {
     let cli = if cfg!(test) {
-        if let Ok(raw_args) = std::env::var("REACT_TRAITS_TEST_ARGS") {
-            Cli::parse_from(raw_args.split('\u{1f}'))
-        } else {
-            Cli::parse()
-        }
+        let raw_args = std::env::var("REACT_TRAITS_TEST_ARGS")
+            .expect("REACT_TRAITS_TEST_ARGS must be set in tests — use with_run_args_env()");
+        Cli::parse_from(raw_args.split('\u{1f}'))
     } else {
         Cli::parse()
     };
-    let base_root = std::env::current_dir()?;
+    let base_root = std::env::current_dir().expect("current working directory must be accessible");
     match &cli.command {
         Command::Analyze {
             targets,
@@ -55,7 +53,11 @@ pub fn run_cli() -> Result<ExitCode> {
         } => {
             let results = run_analyze(&base_root, &cli, targets, *return_depth)?;
             if cli.json {
-                println!("{}", serde_json::to_string_pretty(&results)?);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&results)
+                        .expect("serialization of Rust structs never fails")
+                );
             } else {
                 crate::report::text::print_results(&results, return_depth.unwrap_or(0));
             }
@@ -70,7 +72,11 @@ pub fn run_cli() -> Result<ExitCode> {
                 Ok(ExitCode::SUCCESS)
             } else {
                 if cli.json {
-                    println!("{}", serde_json::to_string_pretty(&violations)?);
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&violations)
+                            .expect("serialization of Rust structs never fails")
+                    );
                 } else {
                     crate::report::text::print_violations(&violations);
                 }

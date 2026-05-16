@@ -68,15 +68,14 @@ pub(crate) fn extract_components(program: &Program<'_>) -> Vec<ComponentDef> {
             Statement::ExportNamedDeclaration(export) => {
                 if let Some(decl) = &export.declaration {
                     match decl {
-                        Declaration::FunctionDeclaration(f) => {
-                            if let Some(id) = &f.id {
-                                let name = id.name.as_ref();
-                                if is_component_name(name) {
-                                    components.push(ComponentDef {
-                                        name: name.to_string(),
-                                        span: f.span,
-                                    });
-                                }
+                        Declaration::FunctionDeclaration(f) if f.id.is_some() => {
+                            let id = f.id.as_ref().unwrap();
+                            let name = id.name.as_ref();
+                            if is_component_name(name) {
+                                components.push(ComponentDef {
+                                    name: name.to_string(),
+                                    span: f.span,
+                                });
                             }
                         }
                         Declaration::VariableDeclaration(v) => {

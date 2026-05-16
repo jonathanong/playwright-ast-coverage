@@ -4,6 +4,7 @@ use no_mistakes_core::ast;
 
 fn check(source: &str) -> bool {
     let path = std::path::Path::new("test.tsx");
+    let span = oxc_span::Span::new(0, source.len() as u32);
     ast::with_program(path, source, |program, _| {
         let defs = extract_components(program);
         let def =
@@ -13,7 +14,7 @@ fn check(source: &str) -> bool {
                     name: "default".to_string(),
                     span: oxc_span::Span::default(),
                 });
-        detect_uses_memo(program, source, &def)
+        detect_uses_memo(program, span, &def)
     })
     .unwrap()
 }
@@ -98,4 +99,24 @@ fn no_memo_wrapped_computed_callee() {
     assert!(!check(
         "export default obj[key](function App() { return <div/>; });"
     ));
+}
+
+#[test]
+fn use_memo_outside_span_not_detected() {
+    // Span that covers nothing — visit_call_expression returns early (line 18).
+    let source = "export default function App() { const x = useMemo(() => 1, []); return null; }";
+    let path = std::path::Path::new("test.tsx");
+    let result = no_mistakes_core::ast::with_program(path, source, |program, _| {
+        let defs = crate::analyze::components::extract_components(program);
+        let def =
+            defs.first()
+                .cloned()
+                .unwrap_or_else(|| crate::analyze::components::ComponentDef {
+                    name: "default".to_string(),
+                    span: oxc_span::Span::default(),
+                });
+        super::detect_uses_memo(program, oxc_span::Span::new(0, 0), &def)
+    })
+    .unwrap();
+    assert!(!result);
 }

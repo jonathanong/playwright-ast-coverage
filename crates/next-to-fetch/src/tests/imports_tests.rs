@@ -3,7 +3,6 @@ use crate::analyze::imports::{
     collect_identifier_references, collect_imports, collect_imports_from_program,
     collect_runtime_imports_from_program,
 };
-use anyhow::Result;
 use no_mistakes_core::ast;
 use oxc_ast::ast::Statement;
 use std::collections::HashMap;
@@ -49,13 +48,12 @@ fn test_collect_imports_from_program_reuses_cached_value() {
     let source = std::fs::read_to_string(&abs_path).unwrap();
     let mut import_cache = HashMap::new();
     let mut from_source = false;
-    let _ = ast::with_program(&abs_path, &source, |program, _source| -> Result<()> {
-        let first = collect_imports_from_program(&abs_path, program, &mut import_cache).unwrap();
-        let second = collect_imports_from_program(&abs_path, program, &mut import_cache).unwrap();
+    ast::with_program(&abs_path, &source, |program, _source| {
+        let first = collect_imports_from_program(&abs_path, program, &mut import_cache);
+        let second = collect_imports_from_program(&abs_path, program, &mut import_cache);
         assert_eq!(first, second);
         assert_eq!(first.len(), 1);
         from_source = !first.is_empty();
-        Ok(())
     })
     .unwrap();
     assert!(from_source);
@@ -123,8 +121,7 @@ fn test_collect_runtime_imports_from_program_follows_used_runtime_imports_only()
     fs::write(&main_file, source).unwrap();
     let referenced_identifiers = collect_identifier_references(&parsed.program);
     let imports =
-        collect_runtime_imports_from_program(&main_file, &parsed.program, &referenced_identifiers)
-            .unwrap();
+        collect_runtime_imports_from_program(&main_file, &parsed.program, &referenced_identifiers);
 
     assert_eq!(imports.len(), 4);
     assert!(imports.iter().any(|path| path.ends_with("side-effect.ts")));

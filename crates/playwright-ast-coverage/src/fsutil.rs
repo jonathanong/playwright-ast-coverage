@@ -9,7 +9,9 @@ pub(crate) fn build_globset(patterns: &[String]) -> Result<GlobSet> {
         let glob = GlobBuilder::new(pattern).literal_separator(false).build()?;
         builder.add(glob);
     }
-    Ok(builder.build()?)
+    Ok(builder
+        .build()
+        .expect("GlobSet::build is infallible after valid globs are added"))
 }
 
 pub(crate) fn walk_files(root: &Path) -> Vec<PathBuf> {
@@ -47,6 +49,8 @@ pub(crate) fn absolutize(path: &Path) -> Result<PathBuf> {
     if path.is_absolute() {
         Ok(path.to_path_buf())
     } else {
-        Ok(std::env::current_dir()?.join(path))
+        Ok(std::env::current_dir()
+            .expect("current working directory must be accessible")
+            .join(path))
     }
 }

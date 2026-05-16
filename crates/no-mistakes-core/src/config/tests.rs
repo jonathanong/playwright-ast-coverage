@@ -137,3 +137,21 @@ fn test_parse_config_no_extension() {
         .to_string()
         .contains("unsupported config file without extension"));
 }
+
+#[test]
+fn test_parse_config_yaml_parse_error() {
+    // Invalid YAML exercises the error branch of `serde_yaml::from_str(source)?` (line 64).
+    let err = parse_config::<TestConfig>("name: [unclosed", Path::new("test.yaml"))
+        .err()
+        .unwrap();
+    assert!(!err.to_string().is_empty());
+}
+
+#[test]
+fn test_parse_config_json_parse_error() {
+    // Invalid JSON exercises the error branch of `serde_json::from_str(source)?` (line 65).
+    let err = parse_config::<TestConfig>("{\"name\": }", Path::new("test.json"))
+        .err()
+        .unwrap();
+    assert!(!err.to_string().is_empty());
+}

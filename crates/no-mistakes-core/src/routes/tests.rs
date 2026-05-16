@@ -44,26 +44,26 @@ fn test_collect_routes() {
     fs::write(app.join("users/page.tsx"), "").unwrap();
     fs::write(app.join("not-a-page.ts"), "").unwrap();
 
-    let routes = collect_routes(&app, &["page"]).unwrap();
+    let routes = collect_routes(&app, &["page"]);
     assert_eq!(routes.len(), 2);
     assert_eq!(routes[0].pattern, "/");
     assert_eq!(routes[1].pattern, "/users");
 
     // Test sorting tiebreaker
     fs::write(app.join("users/layout.tsx"), "").unwrap();
-    let routes = collect_routes(&app, &["page", "layout"]).unwrap();
+    let routes = collect_routes(&app, &["page", "layout"]);
     assert_eq!(routes.len(), 3);
 }
 
 #[test]
 fn test_collect_routes_missing_root() {
-    let routes = collect_routes(Path::new("missing"), &["page"]).unwrap();
+    let routes = collect_routes(Path::new("missing"), &["page"]);
     assert!(routes.is_empty());
 }
 
 #[test]
 fn test_collect_routes_empty() {
     let dir = tempfile::tempdir().unwrap();
-    let routes = collect_routes(dir.path(), &["page"]).unwrap();
+    let routes = collect_routes(dir.path(), &["page"]);
     assert!(routes.is_empty());
 }

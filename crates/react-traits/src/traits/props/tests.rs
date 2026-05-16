@@ -3,7 +3,8 @@ use no_mistakes_core::ast;
 
 fn check(source: &str) -> (bool, bool) {
     let path = std::path::Path::new("test.tsx");
-    ast::with_program(path, source, |program, _| detect_props(program, source)).unwrap()
+    let span = oxc_span::Span::new(0, source.len() as u32);
+    ast::with_program(path, source, |program, _| detect_props(program, span)).unwrap()
 }
 
 #[test]
@@ -91,4 +92,19 @@ fn passes_props_to_member_expression_component() {
     let (_, passes_props) =
         check("export default function App() { return <Foo.Bar prop=\"x\" />; }");
     assert!(passes_props);
+}
+
+#[test]
+fn jsx_props_outside_span_not_detected() {
+    // Span that covers nothing — visit_jsx_opening_element returns early (line 22-24).
+    let source = "export default function App() { return <Child name=\"x\" />; }";
+    let path = std::path::Path::new("test.tsx");
+    let (_, passes_props) = no_mistakes_core::ast::with_program(path, source, |program, _| {
+        super::detect_props(program, oxc_span::Span::new(0, 0))
+    })
+    .unwrap();
+    assert!(
+        !passes_props,
+        "passes_props should be false when span is empty"
+    );
 }

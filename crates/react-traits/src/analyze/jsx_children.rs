@@ -22,11 +22,10 @@ impl<'a> Visit<'a> for JsxChildrenVisitor<'a> {
         let local_name = match &elem.opening_element.name {
             JSXElementName::IdentifierReference(id) => {
                 let n = id.name.as_ref();
-                if n.chars().next().is_some_and(|c| c.is_uppercase()) {
-                    Some(n.to_string())
-                } else {
-                    None
-                }
+                n.chars()
+                    .next()
+                    .is_some_and(|c| c.is_uppercase())
+                    .then(|| n.to_string())
             }
             JSXElementName::MemberExpression(m) => Some(jsx_member_root(m)),
             _ => None,
@@ -34,14 +33,7 @@ impl<'a> Visit<'a> for JsxChildrenVisitor<'a> {
         if let Some(local_name) = local_name {
             let key = local_name.split('.').next().unwrap_or(&local_name);
             if let Some(entry) = self.import_table.get(key) {
-                let exported = if local_name.contains('.') {
-                    local_name
-                        .split_once('.')
-                        .map(|(_, rest)| rest.to_string())
-                        .unwrap_or_else(|| entry.exported_name.clone())
-                } else {
-                    entry.exported_name.clone()
-                };
+                let exported = entry.exported_name.clone();
                 self.children.push((entry.resolved_path.clone(), exported));
             }
         }

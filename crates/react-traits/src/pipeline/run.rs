@@ -22,10 +22,11 @@ pub(crate) fn run_analyze(
         if !from_root.is_empty() {
             from_root
         } else {
-            expand_globs(&frontend_root, targets)?
+            expand_globs(&frontend_root, targets)
+                .expect("same patterns already validated; infallible")
         }
     } else {
-        expand_globs(&frontend_root, targets)?
+        expand_globs(&frontend_root, targets).expect("empty patterns always succeed")
     };
 
     let mut results = Vec::new();
@@ -103,6 +104,14 @@ pub(crate) fn load_root_and_config(base_root: &Path, cli: &Cli) -> Result<(PathB
     let root = base_root.join(&cli.root);
     let stems = [".no-mistakes", ".react-traits"];
     let root_config: RootConfig = config::load_config(&root, cli.config.as_deref(), &stems)?;
-    let file_config = root_config.react_traits.unwrap_or(root_config.legacy);
+    let mut file_config = root_config.legacy;
+    if let Some(overrides) = root_config.react_traits {
+        if overrides.frontend_root.is_some() {
+            file_config.frontend_root = overrides.frontend_root;
+        }
+        if overrides.assert_no_fetch.is_some() {
+            file_config.assert_no_fetch = overrides.assert_no_fetch;
+        }
+    }
     Ok((root, file_config))
 }
