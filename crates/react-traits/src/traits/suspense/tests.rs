@@ -179,3 +179,19 @@ fn exported_const_dynamic_detected_via_named_branch() {
         "exported dynamic rendered inside span should be suspense"
     );
 }
+
+#[test]
+fn dynamic_inside_function_body_detected() {
+    // `const Lazy = dynamic(...)` inside a function body; DynamicNameCollector visits it
+    assert!(check(
+        "export default function App() { const Lazy = dynamic(() => import('./Foo')); return <Lazy/>; }"
+    ));
+}
+
+#[test]
+fn lazy_inside_arrow_body_detected() {
+    // `const Lazy = React.lazy(...)` inside an arrow function body
+    assert!(check(
+        "export default () => { const Lazy = React.lazy(() => import('./Foo')); return <Lazy/>; };"
+    ));
+}

@@ -1,6 +1,6 @@
 mod helpers;
 
-use helpers::is_class_component;
+pub(crate) use helpers::is_class_component;
 pub(crate) use helpers::is_component_expr;
 use oxc_ast::ast::{
     BindingPattern, Declaration, ExportDefaultDeclarationKind, Expression, Program, Statement,
@@ -85,7 +85,9 @@ pub(crate) fn extract_components(program: &Program<'_>) -> Vec<ComponentDef> {
                     ExportDefaultDeclarationKind::CallExpression(call) => {
                         let callee_name = match &call.callee {
                             Expression::Identifier(id) => id.name.as_ref(),
-                            Expression::StaticMemberExpression(m) => m.property.name.as_ref(),
+                            Expression::StaticMemberExpression(m) if matches!(&m.object, Expression::Identifier(obj) if obj.name == "React") => {
+                                m.property.name.as_ref()
+                            }
                             _ => "",
                         };
                         if matches!(callee_name, "memo" | "forwardRef" | "lazy" | "dynamic") {

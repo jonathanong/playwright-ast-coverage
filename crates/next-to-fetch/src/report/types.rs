@@ -1,9 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[allow(unused_imports)]
-pub(crate) use no_mistakes_core::fetch::types::{
-    CacheKind, FetchOccurrence, FetchSide, UrlExtraction,
-};
+pub(crate) use no_mistakes_core::fetch::types::{CacheKind, FetchOccurrence, FetchSide};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -386,3 +386,22 @@ fn export_class_extends_call_not_component() {
     let names = check_names("export default class Foo extends getBase() {}");
     assert!(names.is_empty());
 }
+
+#[test]
+fn is_component_expr_non_react_static_member_not_component() {
+    // Foo.memo(...) — StaticMemberExpression but object is not React; hits `_ => return false`
+    assert!(!check_is_expr("Foo.memo(() => <div/>)"));
+}
+
+#[test]
+fn is_component_expr_react_memo_is_component() {
+    // React.memo(...) — StaticMemberExpression with React object; is a component
+    assert!(check_is_expr("React.memo(() => <div/>)"));
+}
+
+#[test]
+fn export_default_non_react_member_call_not_component() {
+    // `export default Foo.memo(...)` — non-React static member callee; not a component
+    let names = check_names("export default Foo.memo(() => <div/>);");
+    assert!(names.is_empty());
+}

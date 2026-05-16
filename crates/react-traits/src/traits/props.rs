@@ -43,6 +43,29 @@ impl<'a> Visit<'a> for PropsVisitor {
     }
 }
 
+fn fn_has_params(expr: &Expression<'_>) -> bool {
+    match expr {
+        Expression::ArrowFunctionExpression(a) => !a.params.items.is_empty(),
+        Expression::FunctionExpression(f) => !f.params.items.is_empty(),
+        _ => false,
+    }
+}
+
+fn expr_or_wrapped_has_params(init: &Option<Expression<'_>>) -> bool {
+    let Some(expr) = init else { return false };
+    if fn_has_params(expr) {
+        return true;
+    }
+    if let Expression::CallExpression(call) = expr {
+        if let Some(first_arg) = call.arguments.first() {
+            if let Some(inner) = first_arg.as_expression() {
+                return fn_has_params(inner);
+            }
+        }
+    }
+    false
+}
+
 fn has_function_params(program: &Program<'_>, span: Span) -> bool {
     for stmt in &program.body {
         match stmt {
@@ -89,18 +112,8 @@ fn has_function_params(program: &Program<'_>, span: Span) -> bool {
                                 if !overlaps(d.span, span) {
                                     continue;
                                 }
-                                match &d.init {
-                                    Some(Expression::ArrowFunctionExpression(a))
-                                        if !a.params.items.is_empty() =>
-                                    {
-                                        return true;
-                                    }
-                                    Some(Expression::FunctionExpression(f))
-                                        if !f.params.items.is_empty() =>
-                                    {
-                                        return true;
-                                    }
-                                    _ => {}
+                                if expr_or_wrapped_has_params(&d.init) {
+                                    return true;
                                 }
                             }
                         }
@@ -115,16 +128,8 @@ fn has_function_params(program: &Program<'_>, span: Span) -> bool {
                     if !overlaps(d.span, span) {
                         continue;
                     }
-                    match &d.init {
-                        Some(Expression::ArrowFunctionExpression(a))
-                            if !a.params.items.is_empty() =>
-                        {
-                            return true;
-                        }
-                        Some(Expression::FunctionExpression(f)) if !f.params.items.is_empty() => {
-                            return true;
-                        }
-                        _ => {}
+                    if expr_or_wrapped_has_params(&d.init) {
+                        return true;
                     }
                 }
             }

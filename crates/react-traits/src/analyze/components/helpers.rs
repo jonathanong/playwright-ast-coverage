@@ -1,6 +1,6 @@
 use oxc_ast::ast::{Class, Expression};
 
-pub(super) fn is_class_component(c: &Class<'_>) -> bool {
+pub(crate) fn is_class_component(c: &Class<'_>) -> bool {
     let Some(super_class) = &c.super_class else {
         return false;
     };
@@ -20,7 +20,9 @@ pub(crate) fn is_component_expr(expr: &Expression<'_>) -> bool {
         Expression::CallExpression(call) => {
             let name = match &call.callee {
                 Expression::Identifier(id) => id.name.as_ref(),
-                Expression::StaticMemberExpression(m) => m.property.name.as_ref(),
+                Expression::StaticMemberExpression(m) if matches!(&m.object, Expression::Identifier(obj) if obj.name == "React") => {
+                    m.property.name.as_ref()
+                }
                 _ => return false,
             };
             matches!(name, "memo" | "forwardRef" | "lazy" | "dynamic")

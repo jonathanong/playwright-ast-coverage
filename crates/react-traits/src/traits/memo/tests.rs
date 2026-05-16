@@ -225,3 +225,58 @@ fn use_memo_outside_span_not_detected() {
     .unwrap();
     assert!(!result);
 }
+
+#[test]
+fn local_memo_then_default_export_is_memo() {
+    // `const Page = memo(...); export default Page;` — span of Page's declarator is used;
+    // Statement::VariableDeclaration branch matches by span
+    let source = "const Page = memo(() => <div/>);\nexport default Page;";
+    let path = std::path::Path::new("test.tsx");
+    let span = oxc_span::Span::new(0, source.len() as u32);
+    let result = no_mistakes_core::ast::with_program(path, source, |program, _| {
+        let defs = crate::analyze::components::extract_components(program);
+        let def = defs.first().cloned().unwrap();
+        super::detect_uses_memo(program, span, &def)
+    })
+    .unwrap();
+    assert!(
+        result,
+        "const Page = memo(...); export default Page; should be usesMemo"
+    );
+}
+
+#[test]
+fn alias_export_memo_detected_by_span() {
+    // `const Foo = memo(...); export { Foo as Bar };` — def.name is "Bar" but span covers
+    // Foo's declarator; Statement::VariableDeclaration branch matches by span
+    let source = "const Foo = memo(() => <div/>);\nexport { Foo as Bar };";
+    let path = std::path::Path::new("test.tsx");
+    let span = oxc_span::Span::new(0, source.len() as u32);
+    let result = no_mistakes_core::ast::with_program(path, source, |program, _| {
+        let defs = crate::analyze::components::extract_components(program);
+        let bar_def = defs.iter().find(|d| d.name == "Bar").cloned().unwrap();
+        super::detect_uses_memo(program, span, &bar_def)
+    })
+    .unwrap();
+    assert!(
+        result,
+        "re-exported alias of memo-wrapped component should be usesMemo"
+    );
+}
+
+#[test]
+fn local_var_span_mismatch_not_detected() {
+    // Two local vars; only the one whose span matches def.span should trigger usesMemo.
+    // The other var exercises the span-mismatch path (d.span != def.span).
+    let source =
+        "const Other = () => <div/>;\nconst Page = memo(() => <span/>);\nexport default Page;";
+    let path = std::path::Path::new("test.tsx");
+    let span = oxc_span::Span::new(0, source.len() as u32);
+    let result = no_mistakes_core::ast::with_program(path, source, |program, _| {
+        let defs = crate::analyze::components::extract_components(program);
+        let def = defs.first().cloned().unwrap();
+        super::detect_uses_memo(program, span, &def)
+    })
+    .unwrap();
+    assert!(result, "Page should be detected as memo-wrapped");
+}

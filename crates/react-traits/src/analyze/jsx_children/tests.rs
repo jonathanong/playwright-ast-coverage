@@ -188,11 +188,41 @@ fn destructured_export_var_not_in_local_components() {
 
 #[test]
 fn class_export_not_in_local_components() {
-    // `export class Foo {}` — ClassDeclaration hits `_ => {}` arm (line 127) in
-    // collect_local_components; Foo is not mapped so <Foo/> is not resolved
+    // `export class Foo {}` without superclass — guard fails, not mapped
     let dir = fixture_dir();
     let file = dir.join("Consumer.tsx");
     let source = "export class Foo {};\nexport default function App() { return <Foo/>; }";
+    let names = collect_children_names(source, &file);
+    assert!(names.is_empty());
+}
+
+#[test]
+fn class_export_extends_component_in_local_components() {
+    // `export class Foo extends Component {}` — is_class_component passes; Foo is mapped
+    let dir = fixture_dir();
+    let file = dir.join("Consumer.tsx");
+    let source =
+        "export class Foo extends Component {};\nexport default function App() { return <Foo/>; }";
+    let names = collect_children_names(source, &file);
+    assert_eq!(names, vec!["Foo"]);
+}
+
+#[test]
+fn default_export_memo_wrapping_maps_identifier() {
+    // `export default memo(Page)` — Page is mapped to "default"
+    let dir = fixture_dir();
+    let file = dir.join("Consumer.tsx");
+    let source = "const Page = () => <div/>;\nexport default memo(Page);\nexport function Parent() { return <Page/>; }";
+    let names = collect_children_names(source, &file);
+    assert_eq!(names, vec!["default"]);
+}
+
+#[test]
+fn default_export_call_no_args_no_mapping() {
+    // `export default memo()` — no first arg; CallExpression branch with no identifier
+    let dir = fixture_dir();
+    let file = dir.join("Consumer.tsx");
+    let source = "export default memo();\nexport function App() { return <div/>; }";
     let names = collect_children_names(source, &file);
     assert!(names.is_empty());
 }

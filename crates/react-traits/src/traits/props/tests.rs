@@ -217,3 +217,45 @@ fn non_overlapping_local_decl_declarator_skipped() {
     .unwrap();
     assert!(result.0, "B has props");
 }
+
+#[test]
+fn has_props_named_export_memo_wrapped_arrow() {
+    // `export const Foo = memo((props) => ...)` — CallExpression in named export var decl
+    let (has_props, _) = check("export const Foo = memo((props) => <div/>);");
+    assert!(has_props);
+}
+
+#[test]
+fn has_props_named_export_memo_wrapped_function() {
+    // `export const Foo = memo(function(props) {...})` — function inside wrapper
+    let (has_props, _) = check("export const Foo = memo(function(props) { return <div/>; });");
+    assert!(has_props);
+}
+
+#[test]
+fn has_props_local_memo_wrapped_then_default_export() {
+    // `const Page = memo((props) => ...); export default Page;` — local var decl wrapper
+    let (has_props, _) = check("const Page = memo((props) => <div/>);\nexport default Page;");
+    assert!(has_props);
+}
+
+#[test]
+fn no_props_named_export_memo_no_args() {
+    // `export const Foo = memo()` — no args; expr_or_wrapped_has_params returns false
+    let (has_props, _) = check("export const Foo = memo();");
+    assert!(!has_props);
+}
+
+#[test]
+fn no_props_named_export_memo_spread_arg() {
+    // `export const Foo = memo(...fn)` — spread arg; as_expression() is None
+    let (has_props, _) = check("export const Foo = memo(...fn);");
+    assert!(!has_props);
+}
+
+#[test]
+fn no_props_named_export_memo_wrapped_no_params() {
+    // `export const Foo = memo(() => ...)` — arrow with no params inside wrapper
+    let (has_props, _) = check("export const Foo = memo(() => <div/>);");
+    assert!(!has_props);
+}

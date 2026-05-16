@@ -6,6 +6,17 @@ use oxc_ast_visit::{walk, Visit};
 use oxc_span::Span;
 use std::collections::HashSet;
 
+struct DynamicNameCollector {
+    names: HashSet<String>,
+}
+
+impl<'a> Visit<'a> for DynamicNameCollector {
+    fn visit_variable_declaration(&mut self, v: &VariableDeclaration<'a>) {
+        collect_from_var_decl(v, &mut self.names);
+        walk::walk_variable_declaration(self, v);
+    }
+}
+
 struct SuspenseVisitor<'a> {
     has_suspense: bool,
     span: Span,
@@ -41,19 +52,11 @@ fn overlaps(a: Span, b: Span) -> bool {
 }
 
 fn collect_dynamic_names(program: &Program<'_>) -> HashSet<String> {
-    let mut names = HashSet::new();
-    for stmt in &program.body {
-        match stmt {
-            Statement::VariableDeclaration(v) => collect_from_var_decl(v, &mut names),
-            Statement::ExportNamedDeclaration(e) => {
-                if let Some(Declaration::VariableDeclaration(v)) = &e.declaration {
-                    collect_from_var_decl(v, &mut names);
-                }
-            }
-            _ => {}
-        }
-    }
-    names
+    let mut collector = DynamicNameCollector {
+        names: HashSet::new(),
+    };
+    collector.visit_program(program);
+    collector.names
 }
 
 fn is_component_direct_lazy(program: &Program<'_>, span: Span) -> bool {

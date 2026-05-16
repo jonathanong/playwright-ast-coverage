@@ -1,8 +1,8 @@
-use crate::analyze::components::is_component_name;
+use crate::analyze::components::{is_class_component, is_component_name};
 use crate::analyze::import_table::ImportTable;
 use oxc_ast::ast::{
-    BindingPattern, Declaration, ExportDefaultDeclarationKind, JSXElementName, JSXMemberExpression,
-    JSXMemberExpressionObject, Program, Statement,
+    BindingPattern, Declaration, ExportDefaultDeclarationKind, Expression, JSXElementName,
+    JSXMemberExpression, JSXMemberExpressionObject, Program, Statement,
 };
 use oxc_ast_visit::{walk, Visit};
 use oxc_span::Span;
@@ -98,9 +98,20 @@ fn collect_local_components(program: &Program<'_>) -> HashMap<String, String> {
     for stmt in &program.body {
         match stmt {
             Statement::ExportDefaultDeclaration(e) => {
-                // `export default Page` — map local symbol "Page" -> "default"
-                if let ExportDefaultDeclarationKind::Identifier(id) = &e.declaration {
-                    map.insert(id.name.as_ref().to_string(), "default".to_string());
+                match &e.declaration {
+                    ExportDefaultDeclarationKind::Identifier(id) => {
+                        // `export default Page` — map local symbol "Page" -> "default"
+                        map.insert(id.name.as_ref().to_string(), "default".to_string());
+                    }
+                    ExportDefaultDeclarationKind::CallExpression(call) => {
+                        // `export default memo(Page)` — map wrapped identifier -> "default"
+                        if let Some(first_arg) = call.arguments.first() {
+                            if let Some(Expression::Identifier(id)) = first_arg.as_expression() {
+                                map.insert(id.name.as_ref().to_string(), "default".to_string());
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
             Statement::ExportNamedDeclaration(e) => {
@@ -122,6 +133,15 @@ fn collect_local_components(program: &Program<'_>) -> HashMap<String, String> {
                                         map.insert(n.clone(), n);
                                     }
                                 }
+                            }
+                        }
+                        Declaration::ClassDeclaration(c)
+                            if c.id.is_some() && is_class_component(c) =>
+                        {
+                            let id = c.id.as_ref().unwrap();
+                            if is_component_name(id.name.as_ref()) {
+                                let n = id.name.as_ref().to_string();
+                                map.insert(n.clone(), n);
                             }
                         }
                         _ => {}

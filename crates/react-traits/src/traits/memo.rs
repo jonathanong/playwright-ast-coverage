@@ -74,6 +74,21 @@ fn is_wrapped_in_memo(program: &Program<'_>, def: &ComponentDef) -> bool {
                     }
                 }
             }
+            // Handles `const Page = memo(...); export default Page;` (def.name == "default",
+            // def.span covers the local declarator) and re-export alias cases like
+            // `const Foo = memo(...); export { Foo as Bar };` (def.name == "Bar",
+            // def.span covers Foo's declarator).
+            Statement::VariableDeclaration(v) => {
+                for d in &v.declarations {
+                    if d.span == def.span {
+                        if let Some(Expression::CallExpression(call)) = &d.init {
+                            if memo_callee_name(&call.callee) == "memo" {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
             _ => {}
         }
     }
