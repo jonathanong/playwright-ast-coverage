@@ -184,7 +184,7 @@ jobs:
 
       - name: Check Cargo packages
         run: |
-          for pkg in no-mistakes-core no-mistakes playwright-ast-coverage next-to-fetch queue-ast-hop react-traits server-ast-routes; do
+          for pkg in no-mistakes-core playwright-ast-coverage next-to-fetch queue-ast-hop react-traits server-ast-routes; do
             cargo publish --dry-run --locked -p "$pkg"
           done
 

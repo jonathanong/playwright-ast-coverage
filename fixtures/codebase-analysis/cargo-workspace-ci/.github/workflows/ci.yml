@@ -1,0 +1,6 @@
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - run: cargo run -p tool-one -- --help
+      - run: cargo run --bin pg-schema -- --help

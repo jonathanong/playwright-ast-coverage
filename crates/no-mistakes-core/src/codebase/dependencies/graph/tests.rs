@@ -266,6 +266,48 @@ fn build_graph_aliased_fixture() {
 }
 
 #[test]
+fn ci_edges_include_workspace_member_bins() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/codebase-analysis")
+        .join("cargo-workspace-ci");
+    let root = crate::codebase::ts_resolver::normalize_path(&root);
+    let tsconfig = TsConfig {
+        dir: root.clone(),
+        paths: vec![],
+        paths_dir: root.clone(),
+    };
+    let graph = DepGraph::build(&root, &tsconfig).unwrap();
+
+    let workflow = root.join(".github").join("workflows").join("ci.yml");
+    let implicit_main = root
+        .join("crates")
+        .join("tool-one")
+        .join("src")
+        .join("main.rs");
+    let hyphenated_bin = root
+        .join("crates")
+        .join("pg-schema")
+        .join("src")
+        .join("bin")
+        .join("pg-schema.rs");
+    let deps = graph.deps_of(
+        &[NodeId::File(workflow)],
+        None,
+        Some(&[EdgeKind::CiInvocation].into()),
+    );
+    assert!(
+        deps.iter()
+            .any(|e| e.node.as_file() == Some(implicit_main.as_path())),
+        "cargo run -p should link to the member's implicit src/main.rs"
+    );
+    assert!(
+        deps.iter()
+            .any(|e| e.node.as_file() == Some(hyphenated_bin.as_path())),
+        "cargo run --bin should link to a hyphenated default bin path"
+    );
+}
+
+#[test]
 fn build_graph_excludes_gitignored_files() {
     let dir = TempDir::new().unwrap();
     git_init(dir.path());

@@ -94,13 +94,33 @@ pub fn extract_binary_names(run: &str) -> Vec<String> {
     names
 }
 
-/// Parse the `[[bin]]` entries from a `Cargo.toml` string.
+/// Parse workspace member entries from a root `Cargo.toml` string.
+pub fn parse_cargo_workspace_members(cargo_toml: &str) -> Result<Vec<String>> {
+    #[derive(Deserialize, Default)]
+    struct CargoToml {
+        workspace: Option<Workspace>,
+    }
+    #[derive(Deserialize, Default)]
+    struct Workspace {
+        members: Option<Vec<String>>,
+    }
+
+    let ct: CargoToml = toml::from_str(cargo_toml)?;
+    Ok(ct.workspace.and_then(|ws| ws.members).unwrap_or_default())
+}
+
+/// Parse the binary entries from a `Cargo.toml` string.
 ///
 /// Returns a map of `bin_name → src/bin/<name>.rs` path (relative).
 pub fn parse_cargo_bins(cargo_toml: &str) -> Result<HashMap<String, String>> {
     #[derive(Deserialize, Default)]
     struct CargoToml {
+        package: Option<Package>,
         bin: Option<Vec<BinEntry>>,
+    }
+    #[derive(Deserialize)]
+    struct Package {
+        name: String,
     }
     #[derive(Deserialize)]
     struct BinEntry {
@@ -110,10 +130,18 @@ pub fn parse_cargo_bins(cargo_toml: &str) -> Result<HashMap<String, String>> {
 
     let ct: CargoToml = toml::from_str(cargo_toml)?;
     let mut map = HashMap::new();
-    for entry in ct.bin.unwrap_or_default() {
+    let explicit_bins = ct.bin.unwrap_or_default();
+    if explicit_bins.is_empty() {
+        if let Some(package) = ct.package {
+            map.insert(package.name, "src/main.rs".to_string());
+        }
+        return Ok(map);
+    }
+
+    for entry in explicit_bins {
         let path = entry
             .path
-            .unwrap_or_else(|| format!("src/bin/{}.rs", entry.name.replace('-', "_")));
+            .unwrap_or_else(|| format!("src/bin/{}.rs", entry.name));
         map.insert(entry.name, path);
     }
     Ok(map)

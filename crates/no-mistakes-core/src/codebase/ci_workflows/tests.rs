@@ -142,11 +142,37 @@ path = "src/bin/pg_schema.rs"
 }
 
 #[test]
-fn no_bin_entries_returns_empty() {
+fn no_bin_entries_use_implicit_package_main() {
     let toml_str = r#"[package]
 name = "exec"
 version = "0.1.0"
 "#;
     let bins = parse_cargo_bins(toml_str).unwrap();
-    assert!(bins.is_empty());
+    assert_eq!(bins.get("exec").map(String::as_str), Some("src/main.rs"));
+}
+
+#[test]
+fn default_bin_path_keeps_hyphenated_name() {
+    let toml_str = r#"
+[package]
+name = "exec"
+
+[[bin]]
+name = "pg-schema"
+"#;
+    let bins = parse_cargo_bins(toml_str).unwrap();
+    assert_eq!(
+        bins.get("pg-schema").map(String::as_str),
+        Some("src/bin/pg-schema.rs")
+    );
+}
+
+#[test]
+fn parses_workspace_members() {
+    let toml_str = r#"
+[workspace]
+members = ["crates/*", "tools/checker"]
+"#;
+    let members = parse_cargo_workspace_members(toml_str).unwrap();
+    assert_eq!(members, vec!["crates/*", "tools/checker"]);
 }

@@ -938,17 +938,7 @@ fn collect_md_edges(all_files: &[PathBuf], graph_files: &GraphFiles) -> Vec<Edge
 
 /// Add `CiInvocation` edges from workflow YAML files to Rust binary source files.
 fn add_ci_edges(root: &Path, all_files: &[PathBuf], forward: &mut EdgeMap, reverse: &mut EdgeMap) {
-    // Parse Cargo.toml for binary entries.
-    let cargo_toml_path = root.join("Cargo.toml");
-    let cargo_toml = match std::fs::read_to_string(&cargo_toml_path) {
-        Ok(s) => s,
-        Err(_) => return,
-    };
-    let bins = match crate::codebase::ci_workflows::parse_cargo_bins(&cargo_toml) {
-        Ok(b) => b,
-        Err(_) => return,
-    };
-
+    let bins = collect_cargo_bins(root, all_files);
     if bins.is_empty() {
         return;
     }
@@ -980,21 +970,112 @@ fn add_ci_edges(root: &Path, all_files: &[PathBuf], forward: &mut EdgeMap, rever
 
         for inv in invocations {
             for binary_name in &inv.binaries {
-                if let Some(bin_path) = bins.get(binary_name) {
-                    let source_file = root.join(bin_path);
-                    if source_file.exists() {
-                        add_file_edge(
-                            forward,
-                            path.clone(),
-                            source_file.clone(),
-                            EdgeKind::CiInvocation,
-                        );
-                        add_file_edge(reverse, source_file, path.clone(), EdgeKind::CiInvocation);
-                    }
+                if let Some(source_file) = bins.get(binary_name) {
+                    add_file_edge(
+                        forward,
+                        path.clone(),
+                        source_file.clone(),
+                        EdgeKind::CiInvocation,
+                    );
+                    add_file_edge(
+                        reverse,
+                        source_file.clone(),
+                        path.clone(),
+                        EdgeKind::CiInvocation,
+                    );
                 }
             }
         }
     }
+}
+
+fn collect_cargo_bins(root: &Path, all_files: &[PathBuf]) -> HashMap<String, PathBuf> {
+    let root_manifest = root.join("Cargo.toml");
+    let root_toml = match std::fs::read_to_string(&root_manifest) {
+        Ok(s) => s,
+        Err(_) => return HashMap::new(),
+    };
+
+    let mut bins = HashMap::new();
+    add_manifest_bins(&root_manifest, &root_toml, &mut bins);
+
+    let members = match crate::codebase::ci_workflows::parse_cargo_workspace_members(&root_toml) {
+        Ok(members) => members,
+        Err(_) => return bins,
+    };
+    if members.is_empty() {
+        return bins;
+    }
+
+    let member_set = match cargo_member_globset(&members) {
+        Some(set) => set,
+        None => return bins,
+    };
+
+    for manifest in all_files.iter().filter(|path| {
+        path.file_name().and_then(|name| name.to_str()) == Some("Cargo.toml")
+            && path != &&root_manifest
+    }) {
+        let Some(parent) = manifest.parent() else {
+            continue;
+        };
+        let Ok(rel_dir) = parent.strip_prefix(root) else {
+            continue;
+        };
+        if !member_set.is_match(rel_dir) {
+            continue;
+        }
+        let Ok(cargo_toml) = std::fs::read_to_string(manifest) else {
+            continue;
+        };
+        add_manifest_bins(manifest, &cargo_toml, &mut bins);
+    }
+
+    bins
+}
+
+fn cargo_member_globset(members: &[String]) -> Option<globset::GlobSet> {
+    let mut builder = globset::GlobSetBuilder::new();
+    for member in members {
+        let glob = globset::GlobBuilder::new(member)
+            .literal_separator(true)
+            .build()
+            .ok()?;
+        builder.add(glob);
+    }
+    builder.build().ok()
+}
+
+fn add_manifest_bins(manifest: &Path, cargo_toml: &str, bins: &mut HashMap<String, PathBuf>) {
+    let Ok(parsed_bins) = crate::codebase::ci_workflows::parse_cargo_bins(cargo_toml) else {
+        return;
+    };
+    let Some(manifest_dir) = manifest.parent() else {
+        return;
+    };
+    for (name, rel_path) in parsed_bins {
+        if let Some(source_file) = resolve_cargo_bin_source(manifest_dir, &name, &rel_path) {
+            bins.insert(name, source_file);
+        }
+    }
+}
+
+fn resolve_cargo_bin_source(manifest_dir: &Path, name: &str, rel_path: &str) -> Option<PathBuf> {
+    let declared = manifest_dir.join(rel_path);
+    if declared.exists() {
+        return Some(declared);
+    }
+
+    let nested = manifest_dir
+        .join("src")
+        .join("bin")
+        .join(name)
+        .join("main.rs");
+    if nested.exists() {
+        return Some(nested);
+    }
+
+    None
 }
 
 /// Collect `RouteRef` edges from route-referencing files to route-definition files.
