@@ -24,6 +24,7 @@
     "packages/**/coverage/**",
     "packages/**/node_modules/**",
     "target/**",
-    "vendor/**"
+    "vendor/**",
+    "packages/**/vendor/**"
   ]
 }

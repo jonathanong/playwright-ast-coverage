@@ -94,7 +94,8 @@ fn cli_error_exit_bad_root() {
         .to_string();
     let _guard = with_run_args_env(Some(args), None);
     let result = crate::run_cli();
-    assert!(result.is_err() || result.is_ok());
+    // expand_globs silently returns empty for nonexistent roots, so cli exits Ok
+    assert!(result.is_ok());
 }
 
 #[test]

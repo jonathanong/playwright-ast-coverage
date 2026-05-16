@@ -28,10 +28,7 @@ pub(crate) fn run_check(
                     component: facts.name.clone(),
                     file: facts.file.clone(),
                     rule: "assert-no-fetch".to_string(),
-                    detail: facts
-                        .fetches
-                        .first()
-                        .map(|f| f.shape.clone().unwrap_or_default()),
+                    detail: facts.fetches.first().and_then(|f| f.shape.clone()),
                 });
             }
         }

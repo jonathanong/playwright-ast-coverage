@@ -2,6 +2,7 @@ use oxc_ast::ast::{
     BindingPattern, Declaration, ExportDefaultDeclarationKind, Expression, Program, Statement,
 };
 use oxc_span::Span;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ComponentDef {
@@ -15,6 +16,26 @@ fn is_component_name(name: &str) -> bool {
 }
 
 pub(crate) fn extract_components(program: &Program<'_>) -> Vec<ComponentDef> {
+    // Collect top-level `const X = <component expr>` declarations for resolving
+    // `export default X` re-exports (common pattern: const Page = () => ...; export default Page).
+    let mut local_vars: HashMap<&str, Span> = HashMap::new();
+    for stmt in &program.body {
+        if let Statement::VariableDeclaration(v) = stmt {
+            for declarator in &v.declarations {
+                if let BindingPattern::BindingIdentifier(id) = &declarator.id {
+                    let name = id.name.as_ref();
+                    if is_component_name(name) {
+                        if let Some(init) = &declarator.init {
+                            if is_component_expr(init) {
+                                local_vars.insert(name, declarator.span);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let mut components = Vec::new();
 
     for stmt in &program.body {
@@ -61,6 +82,15 @@ pub(crate) fn extract_components(program: &Program<'_>) -> Vec<ComponentDef> {
                             name: "default".to_string(),
                             span,
                         });
+                    }
+                    ExportDefaultDeclarationKind::Identifier(id) => {
+                        let name = id.name.as_ref();
+                        if let Some(&var_span) = local_vars.get(name) {
+                            components.push(ComponentDef {
+                                name: "default".to_string(),
+                                span: var_span,
+                            });
+                        }
                     }
                     _ => {}
                 }

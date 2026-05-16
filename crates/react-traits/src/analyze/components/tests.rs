@@ -210,6 +210,22 @@ fn export_named_let_no_init() {
 }
 
 #[test]
+fn export_default_identifier_resolves_local_component() {
+    // Common Next.js pattern: const Page = () => ...; export default Page
+    let names = check_names(
+        "const Page = () => <div/>;\nexport default Page;",
+    );
+    assert_eq!(names, vec!["default"]);
+}
+
+#[test]
+fn export_default_identifier_unknown_name_ignored() {
+    // `export default Foo` where Foo was not seen as a component const — ignored
+    let names = check_names("export default Foo;");
+    assert!(names.is_empty());
+}
+
+#[test]
 fn is_component_expr_parenthesized_wraps_arrow() {
     // ((() => <div/>)) — double-parenthesized arrow triggers ParenthesizedExpression (line 124).
     let path = std::path::Path::new("test.tsx");

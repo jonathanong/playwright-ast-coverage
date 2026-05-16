@@ -11,7 +11,8 @@ fn fixture_dir() -> PathBuf {
 fn collect_children_names(source: &str, file: &std::path::Path) -> Vec<String> {
     ast::with_program(file, source, |program, _| {
         let table = build_import_table(file, program);
-        collect_jsx_children(program, &table)
+        let span = oxc_span::Span::new(0, source.len() as u32);
+        collect_jsx_children(program, &table, span)
             .into_iter()
             .map(|(_, name)| name)
             .collect::<Vec<_>>()
@@ -78,4 +79,21 @@ fn this_expression_member_tag_ignored() {
     let source = "export default class App { render() { return <this.Foo />; } }";
     let names = collect_children_names(source, &file);
     assert!(names.is_empty());
+}
+
+#[test]
+fn children_outside_span_excluded() {
+    let dir = fixture_dir();
+    let file = dir.join("Consumer.tsx");
+    // Span(0,0) covers nothing — all JSX elements are outside it.
+    let source = "import Foo from './Foo';\nexport default function App() { return <Foo />; }";
+    let names = ast::with_program(&file, source, |program, _| {
+        let table = build_import_table(&file, program);
+        collect_jsx_children(program, &table, oxc_span::Span::new(0, 0))
+            .into_iter()
+            .map(|(_, name)| name)
+            .collect::<Vec<_>>()
+    })
+    .unwrap();
+    assert!(names.is_empty(), "elements outside span should be excluded");
 }

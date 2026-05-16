@@ -28,7 +28,6 @@ pub(crate) fn analyze_file(abs_path: &Path, root: &Path) -> Result<FileAnalysis>
         let env = detect_file_environment(program);
         let import_table = build_import_table(abs_path, program);
         let component_defs = extract_components(program);
-        let all_jsx_children = collect_jsx_children(program, &import_table);
 
         let referenced = collect_identifier_references(program);
         let deps = collect_runtime_imports_from_program(abs_path, program, &referenced);
@@ -38,14 +37,6 @@ pub(crate) fn analyze_file(abs_path: &Path, root: &Path) -> Result<FileAnalysis>
             FileEnvironment::Client => Environment::Client,
             FileEnvironment::Unknown => Environment::Unknown,
         };
-
-        let children: Vec<ComponentRef> = all_jsx_children
-            .iter()
-            .map(|(path, name)| ComponentRef {
-                name: name.clone(),
-                file: relative_string(root, path),
-            })
-            .collect();
 
         let dep_strings: Vec<String> = deps.iter().map(|p| relative_string(root, p)).collect();
 
@@ -68,6 +59,15 @@ pub(crate) fn analyze_file(abs_path: &Path, root: &Path) -> Result<FileAnalysis>
                 })
                 .collect();
 
+            let children: Vec<ComponentRef> =
+                collect_jsx_children(program, &import_table, span)
+                    .into_iter()
+                    .map(|(path, name)| ComponentRef {
+                        name,
+                        file: relative_string(root, &path),
+                    })
+                    .collect();
+
             components.push(ComponentFacts {
                 name: def.name.clone(),
                 file: rel_path.clone(),
@@ -80,7 +80,7 @@ pub(crate) fn analyze_file(abs_path: &Path, root: &Path) -> Result<FileAnalysis>
                 uses_suspense,
                 fetches,
                 dependencies: dep_strings.clone(),
-                children: children.clone(),
+                children,
                 inherited_from_children: None,
             });
         }
