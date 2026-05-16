@@ -23,11 +23,6 @@ pub(crate) enum Command {
     Analyze {
         #[arg(help = "Glob patterns for component files")]
         targets: Vec<String>,
-        #[arg(
-            long,
-            help = "Max depth of child detail to print (0 = aggregated only)"
-        )]
-        return_depth: Option<usize>,
     },
     Check {
         #[arg(help = "Glob patterns for component files")]
@@ -47,11 +42,8 @@ pub fn run_cli() -> Result<ExitCode> {
     };
     let base_root = std::env::current_dir().expect("current working directory must be accessible");
     match &cli.command {
-        Command::Analyze {
-            targets,
-            return_depth,
-        } => {
-            let results = run_analyze(&base_root, &cli, targets, *return_depth)?;
+        Command::Analyze { targets } => {
+            let results = run_analyze(&base_root, &cli, targets, None)?;
             if cli.json {
                 println!(
                     "{}",
@@ -59,7 +51,7 @@ pub fn run_cli() -> Result<ExitCode> {
                         .expect("serialization of Rust structs never fails")
                 );
             } else {
-                crate::report::text::print_results(&results, return_depth.unwrap_or(0));
+                crate::report::text::print_results(&results, 0);
             }
             Ok(ExitCode::SUCCESS)
         }

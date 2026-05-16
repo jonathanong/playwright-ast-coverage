@@ -95,6 +95,13 @@ fn passes_props_to_member_expression_component() {
 }
 
 #[test]
+fn has_props_named_export_function_expression() {
+    // export const Foo = function(props) {} — function expression in var decl (ChwMP)
+    let (has_props, _) = check("export const Foo = function(props) { return <div/>; };");
+    assert!(has_props);
+}
+
+#[test]
 fn has_props_memo_wrapped_function() {
     // export default memo(function App(props) {}) — props inside wrapper (Chpev)
     let (has_props, _) = check("export default memo(function App(props) { return <div/>; });");

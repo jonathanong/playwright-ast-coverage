@@ -64,7 +64,7 @@ fn analyze_json_output() {
 }
 
 #[test]
-fn analyze_nested_with_depth() {
+fn analyze_nested() {
     let root = common::fixture("react-traits-components", "nested");
     cmd()
         .arg("analyze")
@@ -72,8 +72,6 @@ fn analyze_nested_with_depth() {
         .arg("app/components/Child.tsx")
         .arg("--root")
         .arg(&root)
-        .arg("--return-depth")
-        .arg("1")
         .assert()
         .success();
 }

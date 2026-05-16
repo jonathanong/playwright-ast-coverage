@@ -41,23 +41,37 @@ impl<'a> Visit<'a> for JsxChildrenVisitor<'a> {
             walk::walk_jsx_element(self, elem);
             return;
         }
-        let local_name = match &elem.opening_element.name {
+        let (root_name, member_suffix) = match &elem.opening_element.name {
             JSXElementName::IdentifierReference(id) => {
                 let n = id.name.as_ref();
-                n.chars()
-                    .next()
-                    .is_some_and(|c| c.is_uppercase())
-                    .then(|| n.to_string())
+                if n.chars().next().is_some_and(|c| c.is_uppercase()) {
+                    (Some(n.to_string()), None)
+                } else {
+                    (None, None)
+                }
             }
-            JSXElementName::MemberExpression(m) => Some(jsx_member_root(m)),
-            _ => None,
+            JSXElementName::MemberExpression(m) => {
+                let root = jsx_member_root(m);
+                let suffix = jsx_member_suffix(m);
+                (Some(root), Some(suffix))
+            }
+            _ => (None, None),
         };
-        if let Some(local_name) = local_name {
-            let key = local_name.split('.').next().unwrap_or(&local_name);
-            if let Some(entry) = self.import_table.get(key) {
-                let exported = entry.exported_name.clone();
+        if let Some(root) = root_name {
+            if let Some(entry) = self.import_table.get(root.as_str()) {
+                // If there's a member suffix and the root is a namespace import ("*"),
+                // use the suffix as the exported name; otherwise use the import's exported name.
+                let exported = if let Some(ref suffix) = member_suffix {
+                    if entry.exported_name == "*" {
+                        suffix.clone()
+                    } else {
+                        entry.exported_name.clone()
+                    }
+                } else {
+                    entry.exported_name.clone()
+                };
                 self.children.push((entry.resolved_path.clone(), exported));
-            } else if let Some(exported_name) = self.local_components.get(key) {
+            } else if let Some(exported_name) = self.local_components.get(root.as_str()) {
                 self.children
                     .push((self.file_path.clone(), exported_name.clone()));
             }
@@ -72,6 +86,10 @@ fn jsx_member_root(m: &JSXMemberExpression<'_>) -> String {
         JSXMemberExpressionObject::MemberExpression(m2) => jsx_member_root(m2),
         JSXMemberExpressionObject::ThisExpression(_) => String::new(),
     }
+}
+
+fn jsx_member_suffix(m: &JSXMemberExpression<'_>) -> String {
+    m.property.name.to_string()
 }
 
 fn collect_local_components(program: &Program<'_>) -> HashMap<String, String> {

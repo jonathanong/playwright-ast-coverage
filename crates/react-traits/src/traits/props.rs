@@ -86,10 +86,21 @@ fn has_function_params(program: &Program<'_>, span: Span) -> bool {
                         }
                         Declaration::VariableDeclaration(v) => {
                             for d in &v.declarations {
-                                if let Some(Expression::ArrowFunctionExpression(a)) = &d.init {
-                                    if !a.params.items.is_empty() && overlaps(d.span, span) {
+                                if !overlaps(d.span, span) {
+                                    continue;
+                                }
+                                match &d.init {
+                                    Some(Expression::ArrowFunctionExpression(a))
+                                        if !a.params.items.is_empty() =>
+                                    {
                                         return true;
                                     }
+                                    Some(Expression::FunctionExpression(f))
+                                        if !f.params.items.is_empty() =>
+                                    {
+                                        return true;
+                                    }
+                                    _ => {}
                                 }
                             }
                         }

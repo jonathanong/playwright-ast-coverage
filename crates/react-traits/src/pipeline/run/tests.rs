@@ -14,10 +14,7 @@ fn make_cli(root: PathBuf) -> Cli {
         root,
         config: None,
         json: false,
-        command: Command::Analyze {
-            targets: vec![],
-            return_depth: None,
-        },
+        command: Command::Analyze { targets: vec![] },
     }
 }
 

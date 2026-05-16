@@ -881,7 +881,6 @@ dependencies = [
  "oxc_span",
  "oxc_syntax",
  "predicates",
- "rayon",
  "serde",
  "serde_json",
  "tempfile",
