@@ -58,4 +58,8 @@ pub enum Command {
         #[arg(required = true, num_args = 1..)]
         files: Vec<PathBuf>,
     },
+    Tests {
+        #[arg(num_args = 0..)]
+        files: Vec<PathBuf>,
+    },
 }

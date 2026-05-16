@@ -14,12 +14,16 @@ fn text_printers_cover_routes_and_selectors() {
             covered_selectors: 0,
             uncovered_selectors: 1,
             duplicate_selectors: 1,
+            total_fetch_apis: 0,
+            covered_fetch_apis: 0,
+            uncovered_fetch_apis: 0,
         },
         routes: vec![CoverageRoute {
             route: "/missing".to_string(),
             file: "web/app/missing/page.tsx".to_string(),
             covered: false,
             tests: vec![],
+            tests_detail: vec![],
             urls: vec![],
         }],
         selectors: vec![CoverageSelector {
@@ -29,6 +33,7 @@ fn text_printers_cover_routes_and_selectors() {
             covered: false,
             unsupported_dynamic: false,
             tests: vec![],
+            tests_detail: vec![],
             selectors: vec![],
         }],
         duplicate_selectors: vec![DuplicateSelector {
@@ -36,6 +41,7 @@ fn text_printers_cover_routes_and_selectors() {
             value: "missing".to_string(),
             file: "web/app/other.tsx".to_string(),
         }],
+        fetch_apis: vec![],
     };
     print_coverage_text(&coverage);
 
@@ -43,12 +49,16 @@ fn text_printers_cover_routes_and_selectors() {
         edges: vec![
             Edge::Route {
                 test_file: "tests/e2e/app.spec.ts".to_string(),
+                test_name: None,
+                describe_path: vec![],
                 route_file: "web/app/page.tsx".to_string(),
                 route: "/".to_string(),
                 url: "/".to_string(),
             },
             Edge::Selector {
                 test_file: "tests/e2e/app.spec.ts".to_string(),
+                test_name: None,
+                describe_path: vec![],
                 app_file: "web/app/page.tsx".to_string(),
                 attribute: "data-testid".to_string(),
                 value: "save".to_string(),

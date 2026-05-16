@@ -66,6 +66,7 @@ pub(crate) fn print_edges_text(report: &EdgeReport) {
                 route_file,
                 route,
                 url,
+                ..
             } => println!("{test_file} -> {route_file} ({route}, {url})"),
             Edge::Selector {
                 test_file,
@@ -73,7 +74,15 @@ pub(crate) fn print_edges_text(report: &EdgeReport) {
                 attribute,
                 value,
                 selector,
+                ..
             } => println!("{test_file} -> {app_file} ([{attribute}=\"{value}\"], {selector})"),
+            Edge::Fetch {
+                test_file,
+                route,
+                method,
+                path,
+                ..
+            } => println!("{test_file} -> {method} {path} (via {route})"),
         }
     }
 }
@@ -88,6 +97,7 @@ pub(crate) fn build_related_report(
         .map(|file| related_input_file(root, file))
         .collect();
     let mut tests = BTreeSet::new();
+    let mut fetch_apis = BTreeSet::new();
 
     for edge in edges {
         match edge {
@@ -105,12 +115,29 @@ pub(crate) fn build_related_report(
             } if related_files.contains(app_file) => {
                 tests.insert(test_file.clone());
             }
+            Edge::Fetch {
+                test_file,
+                route_file,
+                method,
+                path,
+                ..
+            } if related_files.contains(route_file) => {
+                tests.insert(test_file.clone());
+                fetch_apis.insert(format!("{method} {path}"));
+            }
             _ => {}
         }
     }
 
     RelatedReport {
         tests: tests.into_iter().collect(),
+        fetch_apis: fetch_apis.into_iter().collect(),
+    }
+}
+
+pub(crate) fn print_related_text(report: &RelatedReport) {
+    for test in &report.tests {
+        println!("{test}");
     }
 }
 
@@ -118,13 +145,5 @@ fn related_input_file(root: &Path, file: &Path) -> String {
     if file.is_absolute() {
         return relative_string(root, file);
     }
-
-    let rooted = root.join(file);
-    relative_string(root, &rooted)
-}
-
-pub(crate) fn print_related_text(report: &RelatedReport) {
-    for test in &report.tests {
-        println!("{test}");
-    }
+    relative_string(root, &root.join(file))
 }

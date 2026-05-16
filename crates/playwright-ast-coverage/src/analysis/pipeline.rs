@@ -2,9 +2,11 @@ use crate::analysis::app_collect::collect_app_selector_occurrences;
 use crate::analysis::context::TestAnalysisContext;
 use crate::analysis::coverage::{build_coverage, has_configured_html_id_selector};
 use crate::analysis::discover::discover_test_files;
+use crate::analysis::fetch::{collect_fetches_for_routes, expand_fetch_edges};
 use crate::analysis::output::{
     build_related_report, print_coverage_text, print_edges_text, print_related_text,
 };
+use crate::analysis::tests_report::{build_tests_report, print_tests_text};
 use crate::analysis::routes_index::route_index;
 use crate::analysis::selectors_index::{app_selector_targets, selector_index};
 use crate::analysis::test_file::analyze_test_file;
@@ -16,7 +18,9 @@ use crate::playwright_tests;
 use crate::routes;
 use crate::selectors;
 use anyhow::{Context, Result};
+use no_mistakes_core::fetch::cache::Cache;
 use rayon::prelude::*;
+use std::collections::HashMap;
 use std::path::Path;
 use std::process::ExitCode;
 
@@ -73,6 +77,15 @@ pub fn run(cli: Cli) -> Result<ExitCode> {
                 println!("{}", serde_json::to_string_pretty(&related)?);
             } else {
                 print_related_text(&related);
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Tests { files } => {
+            let report = build_tests_report(&analysis.edges.edges, &files, &root);
+            if cli.json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                print_tests_text(&report);
             }
             Ok(ExitCode::SUCCESS)
         }
@@ -168,6 +181,10 @@ pub(crate) fn analyze_with_policy(
             left.append(&mut right);
             Ok(left)
         })?;
+
+    let mut fetch_cache = Cache { files: HashMap::new(), imports: HashMap::new() };
+    let fetch_idx = collect_fetches_for_routes(&routes, &route_root, root, &mut fetch_cache)?;
+    edges.extend(expand_fetch_edges(&edges, &fetch_idx));
     edges.sort();
     edges.dedup();
 

@@ -1,6 +1,6 @@
 use super::helpers::first_call_expression;
 use crate::fetch::url_extract::{extract_url_from_argument, source_text};
-use crate::report::types::UrlExtraction;
+use no_mistakes_core::fetch::types::UrlExtraction;
 
 #[test]
 fn test_extract_string_literal_from_argument_none() {

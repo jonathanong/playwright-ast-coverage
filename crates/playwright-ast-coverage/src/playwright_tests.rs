@@ -186,3 +186,37 @@ fn argument_is_function(argument: &Argument<'_>) -> bool {
         Argument::ArrowFunctionExpression(_) | Argument::FunctionExpression(_)
     )
 }
+
+pub fn test_callback_identity(call: &CallExpression<'_>) -> Option<String> {
+    let path = ast::expression_path(&call.callee)?;
+    if !is_playwright_test_path(&path) {
+        return None;
+    }
+    call.arguments.first().and_then(first_string_arg)
+}
+
+fn first_string_arg(arg: &Argument<'_>) -> Option<String> {
+    match arg {
+        Argument::StringLiteral(s) => Some(s.value.to_string()),
+        Argument::TemplateLiteral(t) if t.expressions.is_empty() => {
+            t.quasis.first().map(|q| {
+                q.value
+                    .cooked
+                    .as_ref()
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| q.value.raw.to_string())
+            })
+        }
+        _ => None,
+    }
+}
+
+pub fn describe_name(call: &CallExpression<'_>) -> Option<String> {
+    let path = ast::expression_path(&call.callee)?;
+    let is_describe = matches!(path.first().map(String::as_str), Some("test"))
+        && path.iter().any(|part| part == "describe");
+    if !is_describe {
+        return None;
+    }
+    call.arguments.first().and_then(first_string_arg)
+}

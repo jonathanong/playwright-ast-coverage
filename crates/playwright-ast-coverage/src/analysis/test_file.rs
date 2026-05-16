@@ -65,6 +65,8 @@ pub(crate) fn analyze_test_file(
         {
             edges.push(Edge::Route {
                 test_file: rel_test_file.clone(),
+                test_name: None,
+                describe_path: vec![],
                 route_file: route.route_file.clone(),
                 route: route.pattern.clone(),
                 url: url.clone(),
@@ -80,6 +82,8 @@ pub(crate) fn analyze_test_file(
             for app_selector in context.selector_index.matches(&playwright_selector.value) {
                 edges.push(Edge::Selector {
                     test_file: rel_test_file.clone(),
+                    test_name: None,
+                    describe_path: vec![],
                     app_file: app_selector.app_file.clone(),
                     attribute: app_selector.selector.attribute.clone(),
                     value: app_selector.value.clone(),

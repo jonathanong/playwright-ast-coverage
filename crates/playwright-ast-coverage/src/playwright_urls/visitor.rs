@@ -20,6 +20,8 @@ pub(super) struct UrlVisitor<'a, 'h> {
     pub status: playwright_tests::TestStatus,
     pub annotation_status: playwright_tests::TestStatus,
     pub urls: BTreeSet<playwright_tests::TestOccurrence<String>>,
+    pub current_test_name: Option<String>,
+    pub describe_stack: Vec<String>,
 }
 
 impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
@@ -68,6 +70,26 @@ impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
             }
         }
 
+        if let Some(describe) = playwright_tests::describe_name(call) {
+            let traversal = playwright_tests::test_callback_traversal(call, self.annotation_status);
+            if let Some((callback_index, callback_status)) = traversal {
+                self.describe_stack.push(describe);
+                for (index, argument) in call.arguments.iter().enumerate() {
+                    if index == callback_index {
+                        self.with_status(callback_status, |visitor| {
+                            visitor.with_annotation_scope(|visitor| {
+                                visitor.visit_argument(argument)
+                            });
+                        });
+                    } else {
+                        self.visit_argument(argument);
+                    }
+                }
+                self.describe_stack.pop();
+                return;
+            }
+        }
+
         let traversal = playwright_tests::test_callback_traversal(call, self.annotation_status);
         if traversal.is_none() {
             let callback_index = playwright_tests::callback_argument_index(call);
@@ -85,6 +107,11 @@ impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
         }
 
         let (callback_index, callback_status) = traversal.expect("checked traversal");
+        let test_name = playwright_tests::test_callback_identity(call);
+        let previous_test_name = self.current_test_name.clone();
+        if test_name.is_some() {
+            self.current_test_name = test_name;
+        }
         for (index, argument) in call.arguments.iter().enumerate() {
             if index == callback_index {
                 self.with_status(callback_status, |visitor| {
@@ -94,6 +121,7 @@ impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
                 self.visit_argument(argument);
             }
         }
+        self.current_test_name = previous_test_name;
     }
 
     fn visit_if_statement(&mut self, statement: &IfStatement<'a>) {
@@ -176,6 +204,8 @@ pub fn extract_playwright_url_occurrences_from_program(
         status: playwright_tests::TestStatus::Active,
         annotation_status: playwright_tests::TestStatus::Active,
         urls: BTreeSet::new(),
+        current_test_name: None,
+        describe_stack: Vec::new(),
     };
     visitor.visit_program(program);
     visitor.urls.into_iter().collect()

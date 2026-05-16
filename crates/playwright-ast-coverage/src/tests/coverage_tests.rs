@@ -119,6 +119,8 @@ fn selector_edges_mark_targets_covered() {
     }];
     let edges = vec![Edge::Selector {
         test_file: "tests/e2e/app.spec.ts".to_string(),
+        test_name: None,
+        describe_path: vec![],
         app_file: "web/app/page.tsx".to_string(),
         attribute: "data-testid".to_string(),
         value: "save".to_string(),
@@ -147,6 +149,8 @@ fn route_edges_mark_routes_covered() {
     }];
     let edges = vec![Edge::Route {
         test_file: "tests/e2e/users.spec.ts".to_string(),
+        test_name: None,
+        describe_path: vec![],
         route_file: "web/app/users/[id]/page.tsx".to_string(),
         route: "/users/:id".to_string(),
         url: "/users/42".to_string(),

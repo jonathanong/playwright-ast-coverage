@@ -1,52 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct FetchOccurrence {
-    pub(crate) path: String,
-    pub(crate) raw_path: String,
-    pub(crate) method: String,
-    pub(crate) file: String,
-    pub(crate) line: usize,
-    pub(crate) side: FetchSide,
-    #[serde(rename = "rsc")]
-    pub(crate) rsc: bool,
-    pub(crate) cached: bool,
-    pub(crate) cache_kind: CacheKind,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) cached_function: Option<String>,
-    pub(crate) dynamic: bool,
-    pub(crate) unsupported: bool,
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub(crate) struct UrlExtraction {
-    pub(crate) path: String,
-    pub(crate) raw_path: String,
-    pub(crate) is_dynamic: bool,
-    pub(crate) is_unsupported: bool,
-}
-
-#[derive(Serialize, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-#[serde(rename_all = "lowercase")]
-#[allow(dead_code)]
-pub(crate) enum FetchSide {
-    Client,
-    Server,
-}
-
-#[derive(Serialize, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-#[serde(rename_all = "kebab-case")]
-#[allow(dead_code)]
-pub(crate) enum CacheKind {
-    None,
-    FetchCache,
-    FetchNextRevalidate,
-    FetchNextTags,
-    ReactCache,
-    Cache,
-    UnstableCache,
-}
+pub(crate) use no_mistakes_core::fetch::types::{CacheKind, FetchOccurrence, FetchSide};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
