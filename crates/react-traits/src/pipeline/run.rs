@@ -78,13 +78,8 @@ fn aggregate_children(
         }
         visited.insert(key.clone());
         let child_path = root.join(&child_ref.file);
-        let child_canonical = child_path.canonicalize().ok();
-        let in_cache = file_cache.contains_key(&child_path)
-            || child_canonical
-                .as_ref()
-                .is_some_and(|p| file_cache.contains_key(p));
         // Analyze on-demand and cache so repeated child refs avoid redundant parsing (Cgv-B).
-        if !in_cache {
+        if !file_cache.contains_key(&child_path) {
             match analyze_file(&child_path, root) {
                 Ok(a) => {
                     file_cache.insert(child_path.clone(), a.components);
@@ -96,7 +91,6 @@ fn aggregate_children(
         // file_cache is dropped before the recursive mutable borrow in aggregate_children.
         let child_facts_opt = file_cache
             .get(&child_path)
-            .or_else(|| child_canonical.as_ref().and_then(|p| file_cache.get(p)))
             .and_then(|comps| comps.iter().find(|c| c.name == child_ref.name))
             .cloned();
         if let Some(child_facts) = child_facts_opt {
