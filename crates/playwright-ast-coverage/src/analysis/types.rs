@@ -166,7 +166,8 @@ pub(crate) struct UniqueSelectorPolicy {
     pub(crate) configured_html_id_selector: bool,
 }
 
-pub(crate) type FetchIndex = std::collections::HashMap<String, Vec<no_mistakes_core::fetch::types::FetchOccurrence>>;
+pub(crate) type FetchIndex =
+    std::collections::HashMap<String, Vec<no_mistakes_core::fetch::types::FetchOccurrence>>;
 pub(crate) type SelectorCoverageKey = (String, String, String);
 pub(crate) type CoverageLinks = (
     std::collections::BTreeSet<String>,

@@ -146,14 +146,16 @@ pub(crate) fn build_coverage(
 
     let mut fetch_apis: Vec<CoverageFetch> = by_fetch
         .into_iter()
-        .map(|((method, path), (tests, tests_detail, route_files))| CoverageFetch {
-            covered: !tests.is_empty(),
-            tests: tests.into_iter().collect(),
-            tests_detail,
-            route_files: route_files.into_iter().collect(),
-            method,
-            path,
-        })
+        .map(
+            |((method, path), (tests, tests_detail, route_files))| CoverageFetch {
+                covered: !tests.is_empty(),
+                tests: tests.into_iter().collect(),
+                tests_detail,
+                route_files: route_files.into_iter().collect(),
+                method,
+                path,
+            },
+        )
         .collect();
     fetch_apis.sort_by(|a, b| a.method.cmp(&b.method).then_with(|| a.path.cmp(&b.path)));
 

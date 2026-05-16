@@ -6,10 +6,10 @@ use crate::analysis::fetch::{collect_fetches_for_routes, expand_fetch_edges};
 use crate::analysis::output::{
     build_related_report, print_coverage_text, print_edges_text, print_related_text,
 };
-use crate::analysis::tests_report::{build_tests_report, print_tests_text};
 use crate::analysis::routes_index::route_index;
 use crate::analysis::selectors_index::{app_selector_targets, selector_index};
 use crate::analysis::test_file::analyze_test_file;
+use crate::analysis::tests_report::{build_tests_report, print_tests_text};
 use crate::analysis::types::{Analysis, EdgeReport, UniqueSelectorPolicy};
 use crate::cli::{Cli, Command};
 use crate::config;
@@ -182,7 +182,10 @@ pub(crate) fn analyze_with_policy(
             Ok(left)
         })?;
 
-    let mut fetch_cache = Cache { files: HashMap::new(), imports: HashMap::new() };
+    let mut fetch_cache = Cache {
+        files: HashMap::new(),
+        imports: HashMap::new(),
+    };
     let fetch_idx = collect_fetches_for_routes(&routes, &route_root, root, &mut fetch_cache)?;
     edges.extend(expand_fetch_edges(&edges, &fetch_idx));
     edges.sort();

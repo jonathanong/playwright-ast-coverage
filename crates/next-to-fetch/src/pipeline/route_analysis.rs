@@ -1,6 +1,6 @@
 pub(crate) use no_mistakes_core::fetch::route_analysis::collect_route_fetches;
 
-use crate::analyze::routes::{route_reaches_target};
+use crate::analyze::routes::route_reaches_target;
 use crate::pipeline::cache::Cache;
 use crate::pipeline::target::{route_matches_target, TargetSpec};
 use anyhow::Result;

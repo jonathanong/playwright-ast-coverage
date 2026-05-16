@@ -37,9 +37,7 @@ impl<'a> Visit<'a> for IdentifierReferenceCollector {
     }
 }
 
-pub fn collect_identifier_references(
-    program: &oxc_ast::ast::Program<'_>,
-) -> HashSet<String> {
+pub fn collect_identifier_references(program: &oxc_ast::ast::Program<'_>) -> HashSet<String> {
     let mut collector = IdentifierReferenceCollector::default();
     collector.visit_program(program);
     collector.identifiers

@@ -13,9 +13,7 @@ pub fn cache_wrapper_name(expr: &CallExpression<'_>) -> Option<(String, CacheKin
     }
 }
 
-pub fn extract_fetch_cache_options(
-    obj: &oxc_ast::ast::ObjectExpression<'_>,
-) -> (bool, CacheKind) {
+pub fn extract_fetch_cache_options(obj: &oxc_ast::ast::ObjectExpression<'_>) -> (bool, CacheKind) {
     let mut cached = false;
     let mut cache_kind = CacheKind::None;
 

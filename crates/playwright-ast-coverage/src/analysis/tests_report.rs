@@ -5,26 +5,41 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 type TestKey = (String, Option<String>, Vec<String>);
-type TestBuckets = (BTreeSet<String>, BTreeSet<String>, BTreeSet<String>, BTreeSet<String>);
+type TestBuckets = (
+    BTreeSet<String>,
+    BTreeSet<String>,
+    BTreeSet<String>,
+    BTreeSet<String>,
+);
 
 pub(crate) fn build_tests_report(edges: &[Edge], files: &[PathBuf], root: &Path) -> TestsReport {
-    let filter_files: BTreeSet<String> = files
-        .iter()
-        .map(|f| input_file(root, f))
-        .collect();
+    let filter_files: BTreeSet<String> = files.iter().map(|f| input_file(root, f)).collect();
 
     let mut by_test: BTreeMap<TestKey, TestBuckets> = BTreeMap::new();
 
     for edge in edges {
         match edge {
-            Edge::Route { test_file, test_name, describe_path, route, .. } => {
+            Edge::Route {
+                test_file,
+                test_name,
+                describe_path,
+                route,
+                ..
+            } => {
                 if !filter_files.is_empty() && !filter_files.contains(test_file) {
                     continue;
                 }
                 let key: TestKey = (test_file.clone(), test_name.clone(), describe_path.clone());
                 by_test.entry(key).or_default().2.insert(route.clone());
             }
-            Edge::Selector { test_file, test_name, describe_path, attribute, value, .. } => {
+            Edge::Selector {
+                test_file,
+                test_name,
+                describe_path,
+                attribute,
+                value,
+                ..
+            } => {
                 if !filter_files.is_empty() && !filter_files.contains(test_file) {
                     continue;
                 }
@@ -36,20 +51,31 @@ pub(crate) fn build_tests_report(edges: &[Edge], files: &[PathBuf], root: &Path)
                     entry.0.insert(value.clone());
                 }
             }
-            Edge::Fetch { test_file, test_name, describe_path, method, path, .. } => {
+            Edge::Fetch {
+                test_file,
+                test_name,
+                describe_path,
+                method,
+                path,
+                ..
+            } => {
                 if !filter_files.is_empty() && !filter_files.contains(test_file) {
                     continue;
                 }
                 let key: TestKey = (test_file.clone(), test_name.clone(), describe_path.clone());
-                by_test.entry(key).or_default().3.insert(format!("{method} {path}"));
+                by_test
+                    .entry(key)
+                    .or_default()
+                    .3
+                    .insert(format!("{method} {path}"));
             }
         }
     }
 
     let tests = by_test
         .into_iter()
-        .map(|((file, name, describe_path), (test_ids, html_ids, routes, fetch_apis))| {
-            TestEntry {
+        .map(
+            |((file, name, describe_path), (test_ids, html_ids, routes, fetch_apis))| TestEntry {
                 file,
                 name,
                 describe_path,
@@ -57,8 +83,8 @@ pub(crate) fn build_tests_report(edges: &[Edge], files: &[PathBuf], root: &Path)
                 html_ids: html_ids.into_iter().collect(),
                 routes: routes.into_iter().collect(),
                 fetch_apis: fetch_apis.into_iter().collect(),
-            }
-        })
+            },
+        )
         .collect();
 
     TestsReport { tests }

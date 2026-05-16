@@ -24,12 +24,7 @@ pub struct FetchScope {
 }
 
 impl<'a> FetchVisitor<'a> {
-    pub fn new(
-        source: &'a str,
-        file: &str,
-        is_client: bool,
-        is_route_handler: bool,
-    ) -> Self {
+    pub fn new(source: &'a str, file: &str, is_client: bool, is_route_handler: bool) -> Self {
         Self {
             source,
             file: file.to_string(),

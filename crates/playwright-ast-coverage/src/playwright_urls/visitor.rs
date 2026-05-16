@@ -77,9 +77,8 @@ impl<'a> Visit<'a> for UrlVisitor<'a, '_> {
                 for (index, argument) in call.arguments.iter().enumerate() {
                     if index == callback_index {
                         self.with_status(callback_status, |visitor| {
-                            visitor.with_annotation_scope(|visitor| {
-                                visitor.visit_argument(argument)
-                            });
+                            visitor
+                                .with_annotation_scope(|visitor| visitor.visit_argument(argument));
                         });
                     } else {
                         self.visit_argument(argument);

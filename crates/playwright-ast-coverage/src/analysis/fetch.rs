@@ -43,7 +43,12 @@ pub(crate) fn expand_fetch_edges(edges: &[Edge], fetch_index: &FetchIndex) -> Ve
                 continue;
             }
             fetch_edges.push(fetch_edge(
-                test_file, test_name, describe_path, route_file, route, fetch_occ,
+                test_file,
+                test_name,
+                describe_path,
+                route_file,
+                route,
+                fetch_occ,
             ));
         }
     }
