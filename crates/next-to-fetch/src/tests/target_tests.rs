@@ -148,7 +148,11 @@ fn test_route_reaches_target_nonexistent_source_returns_false() {
     let mut cache = HashMap::new();
     let mut visited = std::collections::HashSet::new();
     let result = route_reaches_target(&nonexistent, &target, &mut visited, &mut cache);
-    assert_eq!(result.unwrap(), false, "non-existent source should return false");
+    assert_eq!(
+        result.unwrap(),
+        false,
+        "non-existent source should return false"
+    );
 }
 
 #[test]
