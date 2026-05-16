@@ -12,6 +12,8 @@ pub enum TestStatus {
 pub struct TestOccurrence<T> {
     pub value: T,
     pub status: TestStatus,
+    pub test_name: Option<String>,
+    pub describe_path: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

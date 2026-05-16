@@ -157,6 +157,8 @@ impl UrlVisitor<'_, '_> {
         self.urls.insert(playwright_tests::TestOccurrence {
             value,
             status: self.status.merge(self.annotation_status),
+            test_name: self.current_test_name.clone(),
+            describe_path: self.describe_stack.clone(),
         });
     }
 

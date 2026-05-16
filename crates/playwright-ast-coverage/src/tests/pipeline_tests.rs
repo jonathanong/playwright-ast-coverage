@@ -75,6 +75,16 @@ fn analyze_discovers_tests_and_builds_reports() {
     );
     print_related_text(&related);
     let _ = serde_json::to_string_pretty(&analysis).unwrap();
+
+    let mut cli_tests = cli.clone();
+    cli_tests.command = Command::Tests {
+        files: vec![PathBuf::from("web/app/page.tsx")],
+    };
+    assert_eq!(run(cli_tests.clone()).unwrap(), ExitCode::SUCCESS);
+
+    let mut cli_tests_json = cli_tests;
+    cli_tests_json.json = true;
+    assert_eq!(run(cli_tests_json).unwrap(), ExitCode::SUCCESS);
 }
 
 #[test]

@@ -1,0 +1,139 @@
+use crate::analysis::fetch::expand_fetch_edges;
+use crate::analysis::types::{Edge, FetchIndex};
+use no_mistakes_core::fetch::types::{CacheKind, FetchOccurrence, FetchSide};
+
+fn server_fetch(path: &str) -> FetchOccurrence {
+    FetchOccurrence {
+        method: "GET".to_string(),
+        path: path.to_string(),
+        raw_path: path.to_string(),
+        file: "web/app/page.tsx".to_string(),
+        line: 1,
+        side: FetchSide::Server,
+        rsc: true,
+        cached: false,
+        cache_kind: CacheKind::None,
+        cached_function: None,
+        dynamic: false,
+        unsupported: false,
+    }
+}
+
+#[test]
+fn expand_skips_non_route_edges() {
+    let selector_edge = Edge::Selector {
+        test_file: "tests/app.spec.ts".to_string(),
+        test_name: None,
+        describe_path: vec![],
+        app_file: "web/app/page.tsx".to_string(),
+        attribute: "data-testid".to_string(),
+        value: "save".to_string(),
+        selector: "getByTestId(save)".to_string(),
+    };
+    let fetch_edge = Edge::Fetch {
+        test_file: "tests/app.spec.ts".to_string(),
+        test_name: None,
+        describe_path: vec![],
+        route_file: "web/app/page.tsx".to_string(),
+        route: "/".to_string(),
+        method: "GET".to_string(),
+        path: "/api/health".to_string(),
+        side: "server".to_string(),
+        cached: false,
+    };
+    let mut index = FetchIndex::new();
+    index.insert(
+        "web/app/page.tsx".to_string(),
+        vec![server_fetch("/api/health")],
+    );
+    let result = expand_fetch_edges(&[selector_edge, fetch_edge], &index);
+    // Non-Route edges are skipped — no fetch expansion from them
+    assert!(result.is_empty());
+}
+
+#[test]
+fn expand_skips_routes_not_in_fetch_index() {
+    let route_edge = Edge::Route {
+        test_file: "tests/app.spec.ts".to_string(),
+        test_name: None,
+        describe_path: vec![],
+        route_file: "web/app/missing/page.tsx".to_string(),
+        route: "/missing".to_string(),
+        url: "/missing".to_string(),
+    };
+    let index = FetchIndex::new();
+    let result = expand_fetch_edges(&[route_edge], &index);
+    assert!(result.is_empty());
+}
+
+#[test]
+fn expand_skips_dynamic_and_unsupported_fetches() {
+    let route_edge = Edge::Route {
+        test_file: "tests/app.spec.ts".to_string(),
+        test_name: None,
+        describe_path: vec![],
+        route_file: "web/app/page.tsx".to_string(),
+        route: "/".to_string(),
+        url: "/".to_string(),
+    };
+    let dynamic = FetchOccurrence {
+        dynamic: true,
+        unsupported: false,
+        ..server_fetch("/api/dynamic")
+    };
+    let unsupported = FetchOccurrence {
+        dynamic: false,
+        unsupported: true,
+        ..server_fetch("/api/unsupported")
+    };
+    let mut index = FetchIndex::new();
+    index.insert("web/app/page.tsx".to_string(), vec![dynamic, unsupported]);
+    let result = expand_fetch_edges(&[route_edge], &index);
+    assert!(result.is_empty());
+}
+
+#[test]
+fn expand_produces_client_side_fetch_edge() {
+    let route_edge = Edge::Route {
+        test_file: "tests/app.spec.ts".to_string(),
+        test_name: Some("clicks button".to_string()),
+        describe_path: vec!["Home".to_string()],
+        route_file: "web/app/page.tsx".to_string(),
+        route: "/".to_string(),
+        url: "/".to_string(),
+    };
+    let client_fetch = FetchOccurrence {
+        method: "POST".to_string(),
+        path: "/api/submit".to_string(),
+        raw_path: "/api/submit".to_string(),
+        file: "web/app/page.tsx".to_string(),
+        line: 5,
+        side: FetchSide::Client,
+        rsc: false,
+        cached: true,
+        cache_kind: CacheKind::None,
+        cached_function: None,
+        dynamic: false,
+        unsupported: false,
+    };
+    let mut index = FetchIndex::new();
+    index.insert("web/app/page.tsx".to_string(), vec![client_fetch]);
+    let result = expand_fetch_edges(&[route_edge], &index);
+    assert_eq!(result.len(), 1);
+    let Edge::Fetch {
+        side,
+        method,
+        cached,
+        test_name,
+        describe_path,
+        ..
+    } = &result[0]
+    else {
+        panic!("expected Fetch edge");
+    };
+    assert_eq!(side, "client");
+    assert_eq!(method, "POST");
+    assert!(*cached);
+    assert_eq!(test_name.as_deref(), Some("clicks button"));
+    assert_eq!(describe_path, &["Home".to_string()]);
+}
