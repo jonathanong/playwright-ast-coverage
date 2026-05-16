@@ -1,0 +1,15 @@
+rules:
+  testing-dependencies:
+    testingDependencyPatterns:
+      - vitest
+      - jsdom
+      - supertest
+      - "@vitest/"
+      - "@testing-library/"
+    webAllowedDeps:
+      - "@testing-library/react"
+      - "@testing-library/jest-dom"
+      - vitest
+    webSpecificDeps:
+      - "@testing-library/react"
+      - "@testing-library/jest-dom"

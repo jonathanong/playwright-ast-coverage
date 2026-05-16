@@ -1,0 +1,39 @@
+{
+  "tables": [
+    {
+      "name": "users",
+      "columns": [
+        {
+          "name": "id",
+          "udt_name": "uuid",
+          "nullable": false,
+          "default": "uuid_generate_v7()"
+        },
+        {
+          "name": "email",
+          "udt_name": "text",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "indexes": [
+        {
+          "name": "users_pkey",
+          "columns": ["id"],
+          "is_unique": true
+        }
+      ],
+      "foreign_keys": [],
+      "constraints": [
+        {
+          "name": "users_pkey",
+          "constraint_type": "PRIMARY KEY",
+          "columns": ["id"],
+          "check_clause": null,
+          "delete_rule": null
+        }
+      ],
+      "triggers": []
+    }
+  ]
+}

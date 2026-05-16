@@ -1,0 +1,29 @@
+{
+  "name": "no-mistakes",
+  "version": "0.2.0",
+  "description": "Static codebase analysis tools for TS/JS dependencies, dependents, and symbols",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jonathanong/playwright-ast-coverage.git",
+    "directory": "packages/no-mistakes"
+  },
+  "bin": {
+    "no-mistakes": "bin/no-mistakes.js"
+  },
+  "files": [
+    "bin/",
+    "scripts/install.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install.js"
+  },
+  "dependencies": {
+    "no-mistakes-core": "^0.1.0"
+  }
+}

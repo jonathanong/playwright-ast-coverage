@@ -1,0 +1,6 @@
+{
+  "name": "@services/api",
+  "devDependencies": {
+    "vitest": "^2.0.0"
+  }
+}

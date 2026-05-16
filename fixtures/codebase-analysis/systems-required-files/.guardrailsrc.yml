@@ -1,0 +1,6 @@
+rules:
+  systems-required-files:
+    requiredFiles:
+      - index.mts
+      - config.mts
+    forbiddenFiles: []

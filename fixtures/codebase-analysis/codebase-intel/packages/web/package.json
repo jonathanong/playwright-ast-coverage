@@ -1,0 +1,4 @@
+{
+  "name": "@x/web",
+  "main": "src/index.tsx"
+}

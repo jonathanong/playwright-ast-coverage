@@ -33,6 +33,8 @@ cargo install playwright-ast-coverage
 - Give AI agents a deterministic pre-finish coverage check.
 - Map BullMQ/glide-mq producers to queue workers with `queue-ast-hop`.
 - Map Node.js server route definitions with `server-ast-routes`.
+- Query TS/JS module graphs with `no-mistakes dependencies`, `no-mistakes dependents`,
+  and `no-mistakes symbols`.
 
 ```sh
 playwright-ast-coverage check --json
@@ -40,6 +42,7 @@ playwright-ast-coverage related 'web/app/users/[id]/page.tsx'
 playwright-ast-coverage edges --json
 queue-ast-hop related 'backend/jobs/email.ts' --json
 server-ast-routes edges 'backend/api/users.ts' --format paths
+no-mistakes dependents 'src/utils.mts' --json
 ```
 
 ## Configure

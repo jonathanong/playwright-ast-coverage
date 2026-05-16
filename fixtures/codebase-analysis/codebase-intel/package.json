@@ -1,0 +1,4 @@
+{
+  "name": "codebase-intel-fixture",
+  "workspaces": ["packages/*"]
+}

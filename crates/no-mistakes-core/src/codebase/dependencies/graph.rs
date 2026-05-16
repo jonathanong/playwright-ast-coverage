@@ -1,0 +1,1782 @@
+pub(crate) mod playwright;
+
+use super::extract::{is_indexable, is_tsx_file, ExtractedImport, ImportExtractor, ImportKind};
+use crate::codebase::ts_resolver::{ImportResolver, TsConfig};
+use anyhow::Result;
+use globset::{Glob, GlobSet, GlobSetBuilder};
+use rayon::prelude::*;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::path::{Path, PathBuf};
+
+pub use crate::codebase::ts_source::SKIP_DIRS;
+
+/// A node in the dependency graph: either a source file or a virtual queue-job node.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum NodeId {
+    /// A source file on disk.
+    File(PathBuf),
+    /// A virtual job node representing one (queue, jobName) pair.
+    QueueJob { queue_file: PathBuf, job: String },
+}
+
+impl NodeId {
+    /// Return the underlying file path, if this is a `File` node.
+    pub fn as_file(&self) -> Option<&Path> {
+        match self {
+            NodeId::File(p) => Some(p.as_path()),
+            NodeId::QueueJob { .. } => None,
+        }
+    }
+
+    /// Render this node relative to `root` for display.
+    pub fn display_name(&self, root: &Path) -> String {
+        match self {
+            NodeId::File(p) => {
+                let rel = p.strip_prefix(root).unwrap_or(p);
+                rel.display().to_string()
+            }
+            NodeId::QueueJob { queue_file, job } => {
+                let rel = queue_file
+                    .strip_prefix(root)
+                    .unwrap_or(queue_file.as_path());
+                format!("{}#{}", rel.display(), job)
+            }
+        }
+    }
+}
+
+/// The kind of dependency edge connecting two nodes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum EdgeKind {
+    /// Regular TS/JS static import.
+    Import,
+    /// Type-only import (`import type ...`).
+    TypeImport,
+    /// Runtime dynamic import (`import("...")`).
+    DynamicImport,
+    /// CommonJS `require("...")` call.
+    Require,
+    /// Test correspondence: `foo.mts` ↔ `foo.test.mts`.
+    TestOf,
+    /// Frontend/backend route reference: ref_file → route_def_file.
+    RouteRef,
+    /// Enqueue site → QueueJob virtual node.
+    QueueEnqueue,
+    /// QueueJob virtual node → worker/processor file.
+    QueueWorker,
+    /// Playwright test ↔ frontend page file.
+    RouteTest,
+    /// Markdown link: `*.md` → linked file.
+    MarkdownLink,
+    /// Cross-workspace package import (via npm workspace resolution).
+    WorkspaceImport,
+    /// CI workflow invokes a binary: `*.yml` → `src/bin/*.rs`.
+    CiInvocation,
+    /// HTTP call from a client file to a backend route-definition file.
+    HttpCall,
+    /// Process spawn: a file launches another file via `spawn`/`exec`/playwright webServer.
+    ProcessSpawn,
+}
+
+/// A single node in the traversal result.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NodeEntry {
+    /// The graph node (file or virtual queue-job).
+    pub node: NodeId,
+    /// Traversal depth (1 = direct dep/dependent, 2 = transitive, etc.).
+    pub depth: usize,
+    /// Edge kinds that led to this node (deduped, sorted).
+    pub via: Vec<EdgeKind>,
+}
+
+type EdgeMap = HashMap<NodeId, Vec<(NodeId, EdgeKind)>>;
+
+// An edge in both directions: (from, to, kind).
+type Edge = (NodeId, NodeId, EdgeKind);
+
+type ParsedImports = Vec<(PathBuf, Vec<ExtractedImport>)>;
+
+/// Selects which edge producers run while building a dependency graph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GraphBuildPlan {
+    pub imports: bool,
+    pub workspace: bool,
+    pub tests: bool,
+    pub markdown: bool,
+    pub ci: bool,
+    pub routes: bool,
+    pub queues: bool,
+    pub playwright_routes: bool,
+    pub http: bool,
+    pub process: bool,
+}
+
+impl GraphBuildPlan {
+    pub fn all() -> Self {
+        Self {
+            imports: true,
+            workspace: true,
+            tests: true,
+            markdown: true,
+            ci: true,
+            routes: true,
+            queues: true,
+            playwright_routes: true,
+            http: true,
+            process: true,
+        }
+    }
+
+    pub fn from_allowed(allowed: Option<&HashSet<EdgeKind>>) -> Self {
+        let Some(allowed) = allowed else {
+            return Self::all();
+        };
+        Self {
+            imports: allowed.contains(&EdgeKind::Import)
+                || allowed.contains(&EdgeKind::TypeImport)
+                || allowed.contains(&EdgeKind::DynamicImport)
+                || allowed.contains(&EdgeKind::Require),
+            workspace: allowed.contains(&EdgeKind::WorkspaceImport),
+            tests: allowed.contains(&EdgeKind::TestOf),
+            markdown: allowed.contains(&EdgeKind::MarkdownLink),
+            ci: allowed.contains(&EdgeKind::CiInvocation),
+            routes: allowed.contains(&EdgeKind::RouteRef),
+            queues: allowed.contains(&EdgeKind::QueueEnqueue)
+                || allowed.contains(&EdgeKind::QueueWorker),
+            playwright_routes: allowed.contains(&EdgeKind::RouteTest),
+            http: allowed.contains(&EdgeKind::HttpCall),
+            process: allowed.contains(&EdgeKind::ProcessSpawn),
+        }
+    }
+
+    pub fn import_only(&self) -> bool {
+        *self
+            == (Self {
+                imports: true,
+                workspace: false,
+                tests: false,
+                markdown: false,
+                ci: false,
+                routes: false,
+                queues: false,
+                playwright_routes: false,
+                http: false,
+                process: false,
+            })
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct GraphFiles {
+    all: Vec<PathBuf>,
+    indexable: Vec<PathBuf>,
+    visible: HashSet<PathBuf>,
+}
+
+impl GraphFiles {
+    pub(crate) fn discover(root: &Path) -> Self {
+        let all = crate::codebase::ts_source::discover_files(root, &[]);
+        let visible = all.iter().cloned().collect();
+        let indexable = all.iter().filter(|p| is_indexable(p)).cloned().collect();
+        Self {
+            all,
+            indexable,
+            visible,
+        }
+    }
+
+    fn is_visible(&self, path: &Path) -> bool {
+        self.visible.contains(path)
+    }
+
+    pub(crate) fn indexable(&self) -> &[PathBuf] {
+        &self.indexable
+    }
+
+    pub(crate) fn visible(&self) -> &HashSet<PathBuf> {
+        &self.visible
+    }
+}
+
+fn add_edge(map: &mut EdgeMap, from: NodeId, to: NodeId, kind: EdgeKind) {
+    map.entry(from).or_default().push((to, kind));
+}
+
+fn add_file_edge(map: &mut EdgeMap, from: PathBuf, to: PathBuf, kind: EdgeKind) {
+    add_edge(map, NodeId::File(from), NodeId::File(to), kind);
+}
+
+fn normalize_nodes(nodes: &[NodeId]) -> Vec<NodeId> {
+    nodes
+        .iter()
+        .map(|node| match node {
+            NodeId::File(path) => NodeId::File(crate::codebase::ts_resolver::normalize_path(path)),
+            NodeId::QueueJob { queue_file, job } => NodeId::QueueJob {
+                queue_file: crate::codebase::ts_resolver::normalize_path(queue_file),
+                job: job.clone(),
+            },
+        })
+        .collect()
+}
+
+/// Merge a flat list of edges into forward and reverse maps.
+fn merge_edges(forward: &mut EdgeMap, reverse: &mut EdgeMap, edges: Vec<Edge>) {
+    for (from, to, kind) in edges {
+        forward
+            .entry(from.clone())
+            .or_default()
+            .push((to.clone(), kind));
+        reverse.entry(to).or_default().push((from, kind));
+    }
+}
+
+/// Directed dependency graph: node → nodes it depends on, and the reverse.
+pub struct DepGraph {
+    root: PathBuf,
+    /// forward: node → nodes it imports/references (with edge kinds)
+    forward: EdgeMap,
+    /// reverse: node → nodes that import/reference it (with edge kinds)
+    reverse: EdgeMap,
+}
+
+impl DepGraph {
+    /// Build a full dependency graph by walking `root` and parsing every
+    /// indexable TS/JS file. Imports are resolved via `tsconfig`.
+    pub fn build(root: &Path, tsconfig: &TsConfig) -> Result<Self> {
+        Self::build_with_plan(root, tsconfig, GraphBuildPlan::all())
+    }
+
+    pub fn build_with_plan(root: &Path, tsconfig: &TsConfig, plan: GraphBuildPlan) -> Result<Self> {
+        let graph_files = GraphFiles::discover(root);
+        Self::build_with_plan_and_files(root, tsconfig, plan, &graph_files)
+    }
+
+    pub(crate) fn build_with_plan_and_files(
+        root: &Path,
+        tsconfig: &TsConfig,
+        plan: GraphBuildPlan,
+        graph_files: &GraphFiles,
+    ) -> Result<Self> {
+        let ts_ex = ImportExtractor::for_typescript()?;
+        let tsx_ex = ImportExtractor::for_tsx()?;
+        let resolver = ImportResolver::new(tsconfig).with_visible(graph_files.visible());
+
+        let mut forward: EdgeMap = HashMap::new();
+        let mut reverse: EdgeMap = HashMap::new();
+
+        let files = &graph_files.indexable;
+
+        // Pre-populate all known file nodes.
+        for f in files {
+            forward.entry(NodeId::File(f.clone())).or_default();
+        }
+
+        let parsed_imports = if plan.imports || plan.workspace {
+            collect_parsed_imports(files, &ts_ex, &tsx_ex)
+        } else {
+            Vec::new()
+        };
+
+        if plan.imports {
+            let import_edges = collect_import_edges(&parsed_imports, &resolver, graph_files);
+            merge_edges(&mut forward, &mut reverse, import_edges);
+        }
+
+        if plan.workspace {
+            let workspace = crate::codebase::workspaces::load_from_files(root, &graph_files.all)
+                .unwrap_or_default();
+            let workspace_edges =
+                collect_workspace_edges(&parsed_imports, &resolver, &workspace, graph_files);
+            merge_edges(&mut forward, &mut reverse, workspace_edges);
+            let workspace_manifest_edges =
+                collect_workspace_manifest_edges(&graph_files.all, &workspace, graph_files);
+            merge_edges(&mut forward, &mut reverse, workspace_manifest_edges);
+        }
+
+        if plan.tests {
+            let test_edges = collect_test_edges(files);
+            merge_edges(&mut forward, &mut reverse, test_edges);
+        }
+
+        if plan.markdown {
+            let md_edges = collect_md_edges(&graph_files.all, graph_files);
+            merge_edges(&mut forward, &mut reverse, md_edges);
+        }
+
+        if plan.ci {
+            add_ci_edges(root, &graph_files.all, &mut forward, &mut reverse);
+        }
+
+        if plan.routes {
+            let route_edges = collect_route_edges(root, tsconfig, &graph_files.all);
+            merge_edges(&mut forward, &mut reverse, route_edges);
+        }
+
+        if plan.queues {
+            add_queue_edges(root, &resolver, files, &mut forward, &mut reverse);
+        }
+
+        if plan.playwright_routes {
+            let playwright_edges = collect_playwright_route_edges(root, &graph_files.all);
+            merge_edges(&mut forward, &mut reverse, playwright_edges);
+        }
+
+        // Read file contents once and share across steps 9 and 10 to avoid
+        // redundant disk reads (files are already in OS page cache but the
+        // syscall overhead adds up across thousands of files).
+        if plan.http || plan.process {
+            let file_contents: Vec<(PathBuf, String)> = files
+                .par_iter()
+                .filter_map(|p| std::fs::read_to_string(p).ok().map(|s| (p.clone(), s)))
+                .collect();
+
+            if plan.http {
+                let http_call_edges =
+                    collect_http_call_edges(root, tsconfig, &file_contents, &graph_files.all);
+                merge_edges(&mut forward, &mut reverse, http_call_edges);
+            }
+
+            if plan.process {
+                let spawn_edges = collect_process_spawn_edges(root, &file_contents);
+                merge_edges(&mut forward, &mut reverse, spawn_edges);
+            }
+        }
+
+        // Sort adjacency lists for deterministic BFS output.
+        for adj in forward.values_mut() {
+            adj.sort_by_key(|(n, k)| (node_sort_key(n), *k as u8));
+        }
+        for adj in reverse.values_mut() {
+            adj.sort_by_key(|(n, k)| (node_sort_key(n), *k as u8));
+        }
+
+        Ok(Self {
+            root: root.to_path_buf(),
+            forward,
+            reverse,
+        })
+    }
+
+    /// Construct a graph directly from pre-built maps (for testing).
+    #[cfg(test)]
+    pub fn from_raw_maps(
+        root: PathBuf,
+        forward: HashMap<PathBuf, Vec<PathBuf>>,
+        reverse: HashMap<PathBuf, Vec<PathBuf>>,
+    ) -> Self {
+        let typed_fwd: EdgeMap = forward
+            .into_iter()
+            .map(|(k, vs)| {
+                (
+                    NodeId::File(k),
+                    vs.into_iter()
+                        .map(|v| (NodeId::File(v), EdgeKind::Import))
+                        .collect(),
+                )
+            })
+            .collect();
+        let typed_rev: EdgeMap = reverse
+            .into_iter()
+            .map(|(k, vs)| {
+                (
+                    NodeId::File(k),
+                    vs.into_iter()
+                        .map(|v| (NodeId::File(v), EdgeKind::Import))
+                        .collect(),
+                )
+            })
+            .collect();
+        Self {
+            root,
+            forward: typed_fwd,
+            reverse: typed_rev,
+        }
+    }
+
+    /// Find all nodes that `roots` transitively depend on (follow imports).
+    pub fn deps_of(
+        &self,
+        roots: &[NodeId],
+        max_depth: Option<usize>,
+        allowed: Option<&HashSet<EdgeKind>>,
+    ) -> Vec<NodeEntry> {
+        let roots = normalize_nodes(roots);
+        bfs(&roots, &self.forward, max_depth, allowed)
+    }
+
+    /// Find all nodes that transitively reference `roots` (reverse direction).
+    pub fn dependents_of(
+        &self,
+        roots: &[NodeId],
+        max_depth: Option<usize>,
+        allowed: Option<&HashSet<EdgeKind>>,
+    ) -> Vec<NodeEntry> {
+        let roots = normalize_nodes(roots);
+        bfs(&roots, &self.reverse, max_depth, allowed)
+    }
+
+    /// Find all files that import `symbol` from `file`, transitively.
+    pub fn dependents_of_symbol(
+        &self,
+        file: &Path,
+        symbol: &str,
+        max_depth: Option<usize>,
+        allowed: Option<&HashSet<EdgeKind>>,
+        symbol_index: &SymbolIndex,
+    ) -> Vec<NodeEntry> {
+        let mut visited_pairs: HashSet<(PathBuf, String)> = HashSet::new();
+        let mut queue: VecDeque<(PathBuf, String)> = VecDeque::new();
+        let mut direct_importers: HashSet<NodeId> = HashSet::new();
+
+        let start = (
+            crate::codebase::ts_resolver::normalize_path(file),
+            symbol.to_string(),
+        );
+        visited_pairs.insert(start.clone());
+        queue.push_back(start);
+
+        while let Some((src_file, sym)) = queue.pop_front() {
+            if let Some(importers) = symbol_index.importers_of(&src_file, &sym) {
+                for (importer, local_name, is_reexport) in importers {
+                    direct_importers.insert(NodeId::File(importer.clone()));
+                    if *is_reexport {
+                        let pair = (importer.clone(), local_name.clone());
+                        if visited_pairs.insert(pair) {
+                            queue.push_back((importer.clone(), local_name.clone()));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Also check if (file, symbol) corresponds to a QueueJob node.
+        let queue_job = NodeId::QueueJob {
+            queue_file: file.to_path_buf(),
+            job: symbol.to_string(),
+        };
+        if self.reverse.contains_key(&queue_job) {
+            direct_importers.insert(queue_job);
+        }
+
+        let roots: Vec<NodeId> = direct_importers.into_iter().collect();
+        bfs(&roots, &self.reverse, max_depth, allowed)
+    }
+
+    #[allow(dead_code)]
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    #[allow(dead_code)]
+    pub fn all_files(&self) -> impl Iterator<Item = &NodeId> {
+        self.forward.keys()
+    }
+}
+
+/// Demand-driven import traversal used by `dependencies --relationship import`.
+/// It parses only roots and files reached through static import edges.
+pub fn lazy_import_deps_of(
+    roots: &[NodeId],
+    root: &Path,
+    tsconfig: &TsConfig,
+    max_depth: Option<usize>,
+) -> Result<Vec<NodeEntry>> {
+    let graph_files = GraphFiles::discover(root);
+    lazy_import_deps_of_with_files(roots, root, tsconfig, max_depth, &graph_files)
+}
+
+pub(crate) fn lazy_import_deps_of_with_files(
+    roots: &[NodeId],
+    _root: &Path,
+    tsconfig: &TsConfig,
+    max_depth: Option<usize>,
+    graph_files: &GraphFiles,
+) -> Result<Vec<NodeEntry>> {
+    let ts_ex = ImportExtractor::for_typescript()?;
+    let tsx_ex = ImportExtractor::for_tsx()?;
+    let resolver = ImportResolver::new(tsconfig).with_visible(&graph_files.visible);
+
+    let mut visited: HashSet<NodeId> = HashSet::new();
+    let mut frontier: Vec<NodeId> = Vec::new();
+    let mut result: Vec<NodeEntry> = Vec::new();
+    let mut result_idx: HashMap<NodeId, usize> = HashMap::new();
+
+    for root in roots {
+        visited.insert(root.clone());
+        frontier.push(root.clone());
+    }
+
+    let mut depth = 0;
+    while !frontier.is_empty() {
+        if let Some(max) = max_depth {
+            if depth >= max {
+                break;
+            }
+        }
+
+        let mut expanded: Vec<(NodeId, Vec<(NodeId, EdgeKind)>)> = frontier
+            .par_iter()
+            .map(|node| {
+                let Some(path) = node.as_file() else {
+                    return (node.clone(), Vec::new());
+                };
+                if !graph_files.is_visible(path) || !is_indexable(path) {
+                    return (node.clone(), Vec::new());
+                }
+                (
+                    node.clone(),
+                    import_neighbors(path, &resolver, &ts_ex, &tsx_ex, graph_files),
+                )
+            })
+            .collect();
+        expanded.sort_by_key(|(node, _)| node_sort_key(node));
+
+        let next_depth = depth + 1;
+        let mut next_frontier = Vec::new();
+        for (_node, neighbors) in expanded {
+            for (neighbor, kind) in neighbors {
+                if visited.insert(neighbor.clone()) {
+                    let idx = result.len();
+                    result.push(NodeEntry {
+                        node: neighbor.clone(),
+                        depth: next_depth,
+                        via: vec![kind],
+                    });
+                    result_idx.insert(neighbor.clone(), idx);
+                    next_frontier.push(neighbor);
+                } else if let Some(&idx) = result_idx.get(&neighbor) {
+                    if !result[idx].via.contains(&kind) {
+                        result[idx].via.push(kind);
+                        result[idx].via.sort_by_key(|k| *k as u8);
+                    }
+                }
+            }
+        }
+        frontier = next_frontier;
+        depth = next_depth;
+    }
+
+    Ok(result)
+}
+
+fn import_neighbors(
+    path: &Path,
+    resolver: &ImportResolver<'_>,
+    ts_ex: &ImportExtractor,
+    tsx_ex: &ImportExtractor,
+    graph_files: &GraphFiles,
+) -> Vec<(NodeId, EdgeKind)> {
+    let source = match std::fs::read_to_string(path) {
+        Ok(source) => source,
+        Err(_) => return Vec::new(),
+    };
+    let extractor = if is_tsx_file(path) { tsx_ex } else { ts_ex };
+    let mut neighbors: Vec<(NodeId, EdgeKind)> = extractor
+        .extract(&source)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|imp| {
+            resolver.resolve(&imp.specifier, path).and_then(|target| {
+                if !graph_files.is_visible(&target) {
+                    return None;
+                }
+                let kind = edge_kind_for_import(&imp);
+                Some((NodeId::File(target), kind))
+            })
+        })
+        .collect();
+    neighbors.sort_by_key(|(node, kind)| (node_sort_key(node), *kind as u8));
+    neighbors
+}
+
+fn bfs(
+    starts: &[NodeId],
+    edges: &EdgeMap,
+    max_depth: Option<usize>,
+    allowed: Option<&HashSet<EdgeKind>>,
+) -> Vec<NodeEntry> {
+    let mut visited: HashSet<NodeId> = HashSet::new();
+    let mut queue: VecDeque<(NodeId, usize)> = VecDeque::new();
+    let mut result: Vec<NodeEntry> = Vec::new();
+    let mut result_idx: HashMap<NodeId, usize> = HashMap::new();
+
+    for s in starts {
+        visited.insert(s.clone());
+        queue.push_back((s.clone(), 0));
+    }
+
+    while let Some((node, depth)) = queue.pop_front() {
+        if let Some(max) = max_depth {
+            if depth >= max {
+                continue;
+            }
+        }
+
+        if let Some(neighbors) = edges.get(&node) {
+            for (neighbor, kind) in neighbors {
+                if let Some(allowed) = allowed {
+                    if !allowed.contains(kind) {
+                        continue;
+                    }
+                }
+
+                if visited.insert(neighbor.clone()) {
+                    let next_depth = depth + 1;
+                    let idx = result.len();
+                    result.push(NodeEntry {
+                        node: neighbor.clone(),
+                        depth: next_depth,
+                        via: vec![*kind],
+                    });
+                    result_idx.insert(neighbor.clone(), idx);
+                    queue.push_back((neighbor.clone(), next_depth));
+                } else if let Some(&idx) = result_idx.get(neighbor) {
+                    // Already found — record additional edge kind if new.
+                    if !result[idx].via.contains(kind) {
+                        result[idx].via.push(*kind);
+                        result[idx].via.sort_by_key(|k| *k as u8);
+                    }
+                }
+            }
+        }
+    }
+
+    result
+}
+
+// ── Sort key for deterministic adjacency ordering ─────────────────────────────
+
+fn node_sort_key(n: &NodeId) -> String {
+    match n {
+        NodeId::File(p) => p.to_string_lossy().into_owned(),
+        NodeId::QueueJob { queue_file, job } => {
+            format!("{}#{}", queue_file.to_string_lossy(), job)
+        }
+    }
+}
+
+// ── Edge producers ────────────────────────────────────────────────────────────
+
+fn collect_parsed_imports(
+    files: &[PathBuf],
+    ts_ex: &ImportExtractor,
+    tsx_ex: &ImportExtractor,
+) -> ParsedImports {
+    files
+        .par_iter()
+        .filter_map(|path| {
+            let source = std::fs::read_to_string(path).ok()?;
+            let extractor = if is_tsx_file(path) { tsx_ex } else { ts_ex };
+            let imports = extractor.extract(&source).unwrap_or_default();
+            Some((path.clone(), imports))
+        })
+        .collect()
+}
+
+fn collect_import_edges(
+    parsed_imports: &ParsedImports,
+    resolver: &ImportResolver<'_>,
+    graph_files: &GraphFiles,
+) -> Vec<Edge> {
+    parsed_imports
+        .par_iter()
+        .flat_map_iter(|(path, imports)| {
+            imports
+                .iter()
+                .filter_map(|imp| {
+                    resolver.resolve(&imp.specifier, path).and_then(|target| {
+                        if !graph_files.is_visible(&target) {
+                            return None;
+                        }
+                        let kind = edge_kind_for_import(imp);
+                        Some((NodeId::File(path.clone()), NodeId::File(target), kind))
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+fn collect_workspace_edges(
+    parsed_imports: &ParsedImports,
+    _resolver: &ImportResolver<'_>,
+    workspace: &crate::codebase::workspaces::WorkspaceMap,
+    graph_files: &GraphFiles,
+) -> Vec<Edge> {
+    if workspace.packages.is_empty() {
+        return vec![];
+    }
+
+    parsed_imports
+        .par_iter()
+        .flat_map_iter(|(path, imports)| {
+            imports
+                .iter()
+                .filter_map(|imp| {
+                    let spec = &imp.specifier;
+                    if spec.starts_with('.') {
+                        return None;
+                    }
+                    workspace.resolve_specifier(spec).and_then(|entry| {
+                        if !graph_files.is_visible(&entry) {
+                            return None;
+                        }
+                        Some((
+                            NodeId::File(path.clone()),
+                            NodeId::File(entry),
+                            EdgeKind::WorkspaceImport,
+                        ))
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+fn edge_kind_for_import(import: &ExtractedImport) -> EdgeKind {
+    match import.kind {
+        ImportKind::Static => EdgeKind::Import,
+        ImportKind::Type => EdgeKind::TypeImport,
+        ImportKind::Dynamic => EdgeKind::DynamicImport,
+        ImportKind::Require => EdgeKind::Require,
+    }
+}
+
+fn collect_workspace_manifest_edges(
+    all_files: &[PathBuf],
+    workspace: &crate::codebase::workspaces::WorkspaceMap,
+    graph_files: &GraphFiles,
+) -> Vec<Edge> {
+    if workspace.packages.is_empty() {
+        return vec![];
+    }
+
+    all_files
+        .par_iter()
+        .filter(|path| path.file_name().and_then(|name| name.to_str()) == Some("package.json"))
+        .flat_map_iter(|path| {
+            let Ok(source) = std::fs::read_to_string(path) else {
+                return vec![];
+            };
+            let Ok(package_json) = serde_json::from_str::<serde_json::Value>(&source) else {
+                return vec![];
+            };
+            package_dependency_names(&package_json)
+                .into_iter()
+                .filter_map(|name| {
+                    workspace.resolve_package(&name).and_then(|entry| {
+                        if !graph_files.is_visible(entry) {
+                            return None;
+                        }
+                        Some((
+                            NodeId::File(path.clone()),
+                            NodeId::File(entry.clone()),
+                            EdgeKind::WorkspaceImport,
+                        ))
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+fn package_dependency_names(package_json: &serde_json::Value) -> Vec<String> {
+    let mut names = Vec::new();
+    for field in [
+        "dependencies",
+        "devDependencies",
+        "peerDependencies",
+        "optionalDependencies",
+    ] {
+        let Some(deps) = package_json.get(field).and_then(|value| value.as_object()) else {
+            continue;
+        };
+        for (name, version) in deps {
+            if version.as_str().is_some() {
+                names.push(name.clone());
+            }
+        }
+    }
+    names.sort();
+    names.dedup();
+    names
+}
+
+#[cfg(test)]
+fn package_name_from_spec(spec: &str) -> &str {
+    if spec.starts_with('@') {
+        // @scope/pkg[/subpath]
+        let after_scope = spec.trim_start_matches('@');
+        let slash_idx = after_scope.find('/').map(|i| i + 1);
+        if let Some(idx) = slash_idx {
+            let after_first_slash = &after_scope[idx..];
+            let end = after_first_slash
+                .find('/')
+                .map(|i| idx + i + 1)
+                .unwrap_or(spec.len());
+            &spec[..end]
+        } else {
+            spec
+        }
+    } else {
+        // pkg[/subpath]
+        match spec.find('/') {
+            Some(idx) => &spec[..idx],
+            None => spec,
+        }
+    }
+}
+
+/// Collect `TestOf` edges between source files and their test counterparts.
+fn collect_test_edges(files: &[PathBuf]) -> Vec<Edge> {
+    let file_set: HashSet<&PathBuf> = files.iter().collect();
+
+    let test_exts = ["mts", "ts", "tsx", "mjs", "js", "jsx"];
+    let test_variants = ["test", "spec"];
+
+    files
+        .par_iter()
+        .flat_map_iter(|path| {
+            let mut edges = Vec::new();
+            let stem = match path.file_stem().and_then(|s| s.to_str()) {
+                Some(s) => s.to_string(),
+                None => return edges,
+            };
+            let dir = match path.parent() {
+                Some(d) => d,
+                None => return edges,
+            };
+
+            let source_stem = test_variants.iter().find_map(|&v| {
+                let suffix = format!(".{v}");
+                stem.strip_suffix(&suffix).map(str::to_string)
+            });
+
+            if let Some(src_stem) = source_stem {
+                for ext in &test_exts {
+                    let src_path = dir.join(format!("{src_stem}.{ext}"));
+                    if file_set.contains(&src_path) {
+                        edges.push((
+                            NodeId::File(path.clone()),
+                            NodeId::File(src_path),
+                            EdgeKind::TestOf,
+                        ));
+                    }
+                }
+            } else {
+                for variant in &test_variants {
+                    for ext in &test_exts {
+                        let test_path = dir.join(format!("{stem}.{variant}.{ext}"));
+                        if file_set.contains(&test_path) {
+                            edges.push((
+                                NodeId::File(test_path),
+                                NodeId::File(path.clone()),
+                                EdgeKind::TestOf,
+                            ));
+                        }
+                    }
+                }
+            }
+            edges
+        })
+        .collect()
+}
+
+/// Collect `MarkdownLink` edges from `.md` files to the files they link to.
+fn collect_md_edges(all_files: &[PathBuf], graph_files: &GraphFiles) -> Vec<Edge> {
+    let md_files: Vec<PathBuf> = all_files
+        .iter()
+        .filter(|p| matches!(p.extension().and_then(|e| e.to_str()), Some("md" | "mdx")))
+        .cloned()
+        .collect();
+
+    md_files
+        .into_par_iter()
+        .flat_map_iter(|path| {
+            let source = match std::fs::read_to_string(&path) {
+                Ok(s) => s,
+                Err(_) => return vec![],
+            };
+            let dir = match path.parent() {
+                Some(d) => d.to_path_buf(),
+                None => return vec![],
+            };
+            crate::codebase::md_links::extract_links(&source)
+                .into_iter()
+                .filter_map(|link| {
+                    if crate::codebase::md_links::is_external(&link) {
+                        return None;
+                    }
+                    let target = dir.join(&link);
+                    let target_str = target.to_string_lossy();
+                    let clean = target_str
+                        .split('?')
+                        .next()
+                        .unwrap_or(&target_str)
+                        .split('#')
+                        .next()
+                        .unwrap_or(&target_str);
+                    let target = PathBuf::from(clean);
+                    // Resolve `..` lexically (no filesystem access) so the path
+                    // matches the normalized form used elsewhere in the graph.
+                    let target = crate::codebase::ts_resolver::normalize_path(&target);
+                    if graph_files.is_visible(&target) {
+                        Some((
+                            NodeId::File(path.clone()),
+                            NodeId::File(target),
+                            EdgeKind::MarkdownLink,
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// Add `CiInvocation` edges from workflow YAML files to Rust binary source files.
+fn add_ci_edges(root: &Path, all_files: &[PathBuf], forward: &mut EdgeMap, reverse: &mut EdgeMap) {
+    // Parse Cargo.toml for binary entries.
+    let cargo_toml_path = root.join("Cargo.toml");
+    let cargo_toml = match std::fs::read_to_string(&cargo_toml_path) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let bins = match crate::codebase::ci_workflows::parse_cargo_bins(&cargo_toml) {
+        Ok(b) => b,
+        Err(_) => return,
+    };
+
+    if bins.is_empty() {
+        return;
+    }
+
+    // Walk .github/workflows/*.yml
+    let workflows_dir = root.join(".github").join("workflows");
+    if !workflows_dir.is_dir() {
+        return;
+    }
+
+    for path in all_files
+        .iter()
+        .filter(|path| path.starts_with(&workflows_dir))
+    {
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if ext != "yml" && ext != "yaml" {
+            continue;
+        }
+
+        let source = match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+
+        let invocations = match crate::codebase::ci_workflows::extract_invocations(&source) {
+            Ok(inv) => inv,
+            Err(_) => continue,
+        };
+
+        for inv in invocations {
+            for binary_name in &inv.binaries {
+                if let Some(bin_path) = bins.get(binary_name) {
+                    let source_file = root.join(bin_path);
+                    if source_file.exists() {
+                        add_file_edge(
+                            forward,
+                            path.clone(),
+                            source_file.clone(),
+                            EdgeKind::CiInvocation,
+                        );
+                        add_file_edge(reverse, source_file, path.clone(), EdgeKind::CiInvocation);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Collect `RouteRef` edges from route-referencing files to route-definition files.
+/// Only fires if `.guardrailsrc.yml` has route-consistency configuration.
+fn collect_route_edges(root: &Path, tsconfig: &TsConfig, all_files: &[PathBuf]) -> Vec<Edge> {
+    use crate::codebase::config::{load_config, RouteOptions};
+    use crate::codebase::ts_routes::{defs_backend, defs_frontend, matcher, refs};
+    use globset::{GlobBuilder, GlobSetBuilder};
+
+    let config = match load_config(root) {
+        Ok(c) => c,
+        Err(_) => return vec![],
+    };
+
+    let opts: RouteOptions = config.rule_options("route-consistency");
+
+    if (opts.backend_pattern.is_empty() || opts.backend_register_object.is_empty())
+        && opts.frontend_root.is_empty()
+    {
+        return vec![];
+    }
+
+    let mut all_defs: Vec<(PathBuf, String)> = Vec::new();
+    if !opts.backend_pattern.is_empty() && !opts.backend_register_object.is_empty() {
+        let glob = match GlobBuilder::new(&opts.backend_pattern)
+            .literal_separator(false)
+            .build()
+        {
+            Ok(g) => g,
+            Err(_) => return vec![],
+        };
+        let mut gb = GlobSetBuilder::new();
+        gb.add(glob);
+        let gs = match gb.build() {
+            Ok(g) => g,
+            Err(_) => return vec![],
+        };
+        all_defs.extend(defs_backend::collect_backend_routes_from_files(
+            root,
+            all_files,
+            &opts.backend_register_object,
+            &gs,
+        ));
+    }
+    if !opts.frontend_root.is_empty() {
+        let frontend_abs = root.join(&opts.frontend_root);
+        all_defs.extend(defs_frontend::collect_frontend_routes_from_files(
+            &frontend_abs,
+            all_files,
+        ));
+    }
+    if all_defs.is_empty() {
+        return vec![];
+    }
+
+    let mut pattern_to_files: HashMap<String, Vec<PathBuf>> = HashMap::new();
+    for (file, pattern) in &all_defs {
+        pattern_to_files
+            .entry(pattern.clone())
+            .or_default()
+            .push(file.clone());
+    }
+    let all_patterns: Vec<String> = pattern_to_files.keys().cloned().collect();
+
+    let backend_prefixes = if opts.backend_prefixes.is_empty() {
+        vec![
+            "/api/".to_string(),
+            "/infra/".to_string(),
+            "/sitemaps/".to_string(),
+        ]
+    } else {
+        opts.backend_prefixes.clone()
+    };
+    let backend_exact = opts.backend_exact_paths.clone();
+
+    let scan_globs: Vec<String> = if opts.scan_patterns.is_empty() {
+        vec![
+            "**/*.tsx".to_string(),
+            "**/*.ts".to_string(),
+            "**/*.mts".to_string(),
+        ]
+    } else {
+        opts.scan_patterns.clone()
+    };
+    let mut scan_gb = GlobSetBuilder::new();
+    for g in &scan_globs {
+        if let Ok(glob) = Glob::new(g) {
+            scan_gb.add(glob);
+        }
+    }
+    let scan_gs = match scan_gb.build() {
+        Ok(g) => g,
+        Err(_) => return vec![],
+    };
+
+    let scan_files: Vec<PathBuf> = all_files
+        .iter()
+        .filter(|p| {
+            p.strip_prefix(root)
+                .map(|rel| scan_gs.is_match(rel))
+                .unwrap_or(false)
+        })
+        .cloned()
+        .collect();
+
+    let _ = tsconfig;
+
+    scan_files
+        .into_par_iter()
+        .flat_map_iter(|path| {
+            let rel = match path.strip_prefix(root) {
+                Ok(r) => r.to_path_buf(),
+                Err(_) => return vec![],
+            };
+            let source = match std::fs::read_to_string(&path) {
+                Ok(s) => s,
+                Err(_) => return vec![],
+            };
+            let rel_str = rel.to_string_lossy().into_owned();
+            let route_refs = refs::extract_route_refs(&source, &rel_str);
+            let mut edges = Vec::new();
+            for route_ref in route_refs {
+                let is_backend = backend_prefixes
+                    .iter()
+                    .any(|p| route_ref.pattern.starts_with(p.as_str()))
+                    || backend_exact.iter().any(|p| p == &route_ref.pattern);
+                if !is_backend && opts.frontend_root.is_empty() {
+                    continue;
+                }
+                for pattern in &all_patterns {
+                    if matcher::matches(&route_ref.pattern, pattern) {
+                        if let Some(def_files) = pattern_to_files.get(pattern) {
+                            for def_file in def_files {
+                                if def_file != &path {
+                                    edges.push((
+                                        NodeId::File(path.clone()),
+                                        NodeId::File(def_file.clone()),
+                                        EdgeKind::RouteRef,
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            edges
+        })
+        .collect()
+}
+
+/// Add `QueueEnqueue` and `QueueWorker` edges via virtual `QueueJob` nodes.
+///
+/// Per-job convention (GlideMQ / BullMQ):
+///   Enqueue:  `<binding>.add('jobName', data)` or `.addBulk([{ name: 'jobName', ... }])`
+///   Worker:   `new Worker('queueName', handler)` dispatching via
+///             `import * as processors from './processors.mts'`
+///
+/// Only fires if `.guardrailsrc.yml` has `queue-dashboard-reachability` config.
+fn add_queue_edges(
+    root: &Path,
+    resolver: &ImportResolver<'_>,
+    files: &[PathBuf],
+    forward: &mut EdgeMap,
+    reverse: &mut EdgeMap,
+) {
+    use crate::codebase::config::{load_config, QueueOptions};
+    use crate::codebase::ts_queues::factory::{find_create_queue_line, find_queue_name};
+    use crate::codebase::ts_queues::usage::extract_queue_usage;
+    use crate::codebase::ts_symbols::extract_symbols;
+    use globset::GlobBuilder;
+
+    let config = match load_config(root) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+
+    let opts: QueueOptions = config.rule_options("queue-dashboard-reachability");
+
+    if opts.queue_pattern.is_empty() || opts.factory_specifier.is_empty() {
+        return;
+    }
+
+    let glob = match GlobBuilder::new(&opts.queue_pattern)
+        .literal_separator(false)
+        .build()
+    {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+    let mut gb = globset::GlobSetBuilder::new();
+    gb.add(glob);
+    let gs = match gb.build() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+
+    // Phase 1: Find queue-def files and their queue names.
+    // queue_name → def_file  (only queues with string-literal names)
+    let mut queue_name_to_def: HashMap<String, PathBuf> = HashMap::new();
+    // def_file → queue_name (for reverse lookup)
+    let mut def_to_queue_name: HashMap<PathBuf, String> = HashMap::new();
+
+    for path in files {
+        let rel = match path.strip_prefix(root) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        if !gs.is_match(rel) {
+            continue;
+        }
+        let source = match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        if find_create_queue_line(&source, &opts.factory_specifier, &opts.factory_function)
+            .is_none()
+        {
+            continue;
+        }
+        if let Some(queue_name) =
+            find_queue_name(&source, &opts.factory_specifier, &opts.factory_function)
+        {
+            queue_name_to_def.insert(queue_name.clone(), path.clone());
+            def_to_queue_name.insert(path.clone(), queue_name);
+        }
+    }
+
+    if queue_name_to_def.is_empty() {
+        return;
+    }
+
+    // Phase 2: For each file, extract queue usage. Collect:
+    //   - EnqueueSites: (queue_def_file, job_name) per source file
+    //   - WorkerSites: (queue_def_file, processor_file, job_names) per source file
+
+    // enqueue_sites: (source_file, queue_def_file, job_name)
+    let mut enqueue_sites: Vec<(PathBuf, PathBuf, String)> = Vec::new();
+    // worker_sites: (worker_file, queue_def_file, processor_file, job_names)
+    let mut worker_sites: Vec<(PathBuf, PathBuf, PathBuf, Vec<String>)> = Vec::new();
+
+    let queue_def_paths: HashSet<PathBuf> = def_to_queue_name.keys().cloned().collect();
+
+    for path in files {
+        let source = match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+
+        let usage = extract_queue_usage(&source);
+
+        // Resolve which imports come from queue-def files.
+        // Build: local_binding → queue_def_file
+        let mut binding_to_queue_def: HashMap<String, PathBuf> = HashMap::new();
+        for (local_binding, import_spec) in &usage.imports {
+            if let Some(resolved) = resolver.resolve(import_spec, path) {
+                if queue_def_paths.contains(&resolved) {
+                    binding_to_queue_def.insert(local_binding.clone(), resolved);
+                }
+            }
+        }
+
+        // Enqueue sites.
+        for call in &usage.enqueue_calls {
+            if let (Some(queue_def), Some(job)) =
+                (binding_to_queue_def.get(&call.binding), &call.job)
+            {
+                enqueue_sites.push((path.clone(), queue_def.clone(), job.clone()));
+            }
+        }
+
+        // Worker registrations.
+        for worker in &usage.worker_declarations {
+            let queue_def = match &worker.queue_name {
+                Some(n) => queue_name_to_def.get(n).cloned(),
+                None => None,
+            };
+            let queue_def = match queue_def {
+                Some(d) => d,
+                None => continue,
+            };
+
+            let processors_file = match &worker.processors_specifier {
+                Some(spec) => resolver.resolve(spec, path),
+                None => None,
+            };
+            let processors_file = match processors_file {
+                Some(p) => p,
+                None => continue,
+            };
+
+            // Extract job names from the processors module.
+            let proc_source = match std::fs::read_to_string(&processors_file) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            let is_tsx = processors_file
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e == "tsx" || e == "jsx")
+                .unwrap_or(false);
+            let job_names: Vec<String> = match extract_symbols(&proc_source, is_tsx) {
+                Ok(symbols) => symbols
+                    .exports
+                    .into_iter()
+                    .filter_map(|e| {
+                        if matches!(
+                            e.kind,
+                            crate::codebase::ts_symbols::ExportKind::Function
+                                | crate::codebase::ts_symbols::ExportKind::Const
+                                | crate::codebase::ts_symbols::ExportKind::Let
+                                | crate::codebase::ts_symbols::ExportKind::Var
+                        ) {
+                            Some(e.name)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect(),
+                Err(_) => continue,
+            };
+
+            if !job_names.is_empty() {
+                worker_sites.push((path.clone(), queue_def, processors_file, job_names));
+            }
+        }
+    }
+
+    // Phase 3: Build QueueJob nodes for matched (queue, job) pairs.
+    // A job is "matched" if it appears in BOTH an enqueue site AND a worker.
+    // Build index: (queue_def, job) → [enqueue_files]
+    let mut enqueue_index: HashMap<(PathBuf, String), Vec<PathBuf>> = HashMap::new();
+    for (src, queue_def, job) in &enqueue_sites {
+        enqueue_index
+            .entry((queue_def.clone(), job.clone()))
+            .or_default()
+            .push(src.clone());
+    }
+
+    for (worker_file, queue_def, processor_file, job_names) in &worker_sites {
+        for job in job_names {
+            let key = (queue_def.clone(), job.clone());
+            let enqueue_files = match enqueue_index.get(&key) {
+                Some(files) => files,
+                None => continue,
+            };
+
+            let queue_job = NodeId::QueueJob {
+                queue_file: queue_def.clone(),
+                job: job.clone(),
+            };
+
+            // Ensure the QueueJob node exists in the forward map.
+            forward.entry(queue_job.clone()).or_default();
+            reverse.entry(queue_job.clone()).or_default();
+
+            // Enqueue site → QueueJob.
+            for enqueue_file in enqueue_files {
+                add_edge(
+                    forward,
+                    NodeId::File(enqueue_file.clone()),
+                    queue_job.clone(),
+                    EdgeKind::QueueEnqueue,
+                );
+                add_edge(
+                    reverse,
+                    queue_job.clone(),
+                    NodeId::File(enqueue_file.clone()),
+                    EdgeKind::QueueEnqueue,
+                );
+            }
+
+            // QueueJob → processor file.
+            add_edge(
+                forward,
+                queue_job.clone(),
+                NodeId::File(processor_file.clone()),
+                EdgeKind::QueueWorker,
+            );
+            // Also emit QueueJob → worker_file (the file with `new Worker(...)`) as QueueWorker.
+            if worker_file != processor_file {
+                add_edge(
+                    forward,
+                    queue_job.clone(),
+                    NodeId::File(worker_file.clone()),
+                    EdgeKind::QueueWorker,
+                );
+                add_edge(
+                    reverse,
+                    NodeId::File(worker_file.clone()),
+                    queue_job.clone(),
+                    EdgeKind::QueueWorker,
+                );
+            }
+            add_edge(
+                reverse,
+                NodeId::File(processor_file.clone()),
+                queue_job.clone(),
+                EdgeKind::QueueWorker,
+            );
+        }
+    }
+}
+
+/// Collect `RouteTest` edges from playwright test files to the frontend page files they visit.
+/// Uses `route-consistency.frontendRoot` when configured, otherwise `web/app` when present.
+fn collect_playwright_route_edges(root: &Path, all_files: &[PathBuf]) -> Vec<Edge> {
+    let Ok(report) =
+        crate::codebase::playwright_coverage::collect_report_from_files(root, None, &[], all_files)
+    else {
+        return vec![];
+    };
+
+    report
+        .routes
+        .into_iter()
+        .flat_map(|route| {
+            route.tests.into_iter().map(move |test| {
+                (
+                    NodeId::File(root.join(test.file)),
+                    NodeId::File(root.join(route.file.clone())),
+                    EdgeKind::RouteTest,
+                )
+            })
+        })
+        .collect()
+}
+
+// ── HTTP call edges ───────────────────────────────────────────────────────────
+
+/// Collect `HttpCall` edges: files that make literal HTTP calls to paths that
+/// match a backend route definition.
+///
+/// Route definitions are discovered in `<root>/backend/api/**/*.mts` (default)
+/// or as configured by `route-consistency.backend_pattern` in `.guardrailsrc.yml`.
+/// HTTP client calls are any `.<verb>(literal_path)` or `fetch(literal_path)`
+/// where `literal_path` starts with a known backend prefix.
+///
+/// Runs defensively: non-literal call sites produce no edge. The
+/// `http-call-static-paths` guardrail enforces literal discipline.
+fn collect_http_call_edges(
+    root: &Path,
+    tsconfig: &TsConfig,
+    files: &[(PathBuf, String)],
+    all_files: &[PathBuf],
+) -> Vec<Edge> {
+    use crate::codebase::config::{load_config, HttpCallOptions, HttpRouteOptions, RouteOptions};
+    use crate::codebase::ts_http_calls::extract_http_calls;
+    use crate::codebase::ts_routes::{defs_backend, matcher};
+    use globset::{GlobBuilder, GlobSetBuilder};
+
+    // Determine backend route scan pattern, register object, and backend prefixes.
+    // Priority: http-route-static-paths / http-call-static-paths options (new rules)
+    // fall back to route-consistency options (legacy), then hard-coded defaults.
+    let (backend_pattern, register_object, backend_prefixes) = if let Ok(config) = load_config(root)
+    {
+        let route_opts: RouteOptions = config.rule_options("route-consistency");
+        let http_route_opts: HttpRouteOptions = config.rule_options("http-route-static-paths");
+        let http_call_opts: HttpCallOptions = config.rule_options("http-call-static-paths");
+
+        let pattern = if !http_route_opts.backend_pattern.is_empty() {
+            http_route_opts.backend_pattern.clone()
+        } else if !route_opts.backend_pattern.is_empty() {
+            route_opts.backend_pattern.clone()
+        } else {
+            "backend/api/**/*.mts".to_string()
+        };
+        let obj = if !http_route_opts.register_object.is_empty() {
+            http_route_opts.register_object.clone()
+        } else if !route_opts.backend_register_object.is_empty() {
+            route_opts.backend_register_object.clone()
+        } else {
+            "app".to_string()
+        };
+        let prefixes = if !http_call_opts.backend_prefixes.is_empty() {
+            http_call_opts.backend_prefixes.clone()
+        } else if !route_opts.backend_prefixes.is_empty() {
+            route_opts.backend_prefixes.clone()
+        } else {
+            vec![
+                "/api/".to_string(),
+                "/infra/".to_string(),
+                "/sitemaps/".to_string(),
+            ]
+        };
+        (pattern, obj, prefixes)
+    } else {
+        (
+            "backend/api/**/*.mts".to_string(),
+            "app".to_string(),
+            vec![
+                "/api/".to_string(),
+                "/infra/".to_string(),
+                "/sitemaps/".to_string(),
+            ],
+        )
+    };
+
+    let glob = match GlobBuilder::new(&backend_pattern)
+        .literal_separator(false)
+        .build()
+    {
+        Ok(g) => g,
+        Err(_) => return vec![],
+    };
+    let mut gb = GlobSetBuilder::new();
+    gb.add(glob);
+    let gs = match gb.build() {
+        Ok(g) => g,
+        Err(_) => return vec![],
+    };
+
+    // Collect backend route definitions: (file, pattern)
+    let route_defs =
+        defs_backend::collect_backend_routes_from_files(root, all_files, &register_object, &gs);
+    if route_defs.is_empty() {
+        return vec![];
+    }
+
+    let prefix_strs: Vec<&str> = backend_prefixes.iter().map(String::as_str).collect();
+
+    let _ = tsconfig; // reserved for future alias-aware call resolution
+
+    // For each source file, find HTTP calls and match against route defs.
+    files
+        .par_iter()
+        .flat_map_iter(|(caller, source)| {
+            let calls = extract_http_calls(source, &prefix_strs);
+            if calls.is_empty() {
+                return vec![];
+            }
+
+            let mut edges = Vec::new();
+            for call in &calls {
+                for (def_file, def_pattern) in &route_defs {
+                    if def_file != caller && matcher::matches(&call.path, def_pattern) {
+                        edges.push((
+                            NodeId::File(caller.clone()),
+                            NodeId::File(def_file.clone()),
+                            EdgeKind::HttpCall,
+                        ));
+                    }
+                }
+            }
+            edges
+        })
+        .collect()
+}
+
+// ── Process spawn edges ───────────────────────────────────────────────────────
+
+/// Collect `ProcessSpawn` edges from any file that spawns another via
+/// `spawn`/`exec`/`execFile`/`fork` or Playwright `webServer.command`.
+///
+/// String-literal and template-literal (quasis concatenated) commands are
+/// resolved; dynamic expressions are silently skipped.
+fn collect_process_spawn_edges(root: &Path, files: &[(PathBuf, String)]) -> Vec<Edge> {
+    use crate::codebase::ts_process_spawn::extract_spawn_edges;
+
+    files
+        .par_iter()
+        .flat_map_iter(|(spawner, source)| {
+            extract_spawn_edges(source, spawner, root)
+                .into_iter()
+                .map(|e| {
+                    (
+                        NodeId::File(e.spawner),
+                        NodeId::File(e.entry),
+                        EdgeKind::ProcessSpawn,
+                    )
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+// ── Filter spec ──────────────────────────────────────────────────────────────
+
+/// A compiled filter specification handling both file-glob and folder-suffix patterns.
+pub struct FilterSpec {
+    file_set: Option<GlobSet>,
+    folder_specs: Vec<FolderSpec>,
+}
+
+struct FolderSpec {
+    ancestor_depth: usize,
+    set: GlobSet,
+}
+
+/// Build a `FilterSpec` from patterns.
+///
+/// Patterns ending with `/` are folder patterns: they collapse matched files to
+/// the folder ancestor at that depth.
+///
+/// Returns `None` if `patterns` is empty (no filter applied).
+pub fn build_filter(patterns: &[String]) -> Result<Option<FilterSpec>> {
+    if patterns.is_empty() {
+        return Ok(None);
+    }
+
+    let mut file_builder = GlobSetBuilder::new();
+    let mut has_file = false;
+    let mut folder_specs: Vec<FolderSpec> = Vec::new();
+
+    for pattern in patterns {
+        if let Some(base) = pattern.strip_suffix('/') {
+            let ancestor_depth = Path::new(base).components().count();
+            let file_glob = format!("{base}/**");
+            let mut builder = GlobSetBuilder::new();
+            builder.add(Glob::new(&file_glob)?);
+            folder_specs.push(FolderSpec {
+                ancestor_depth,
+                set: builder.build()?,
+            });
+        } else {
+            file_builder.add(Glob::new(pattern)?);
+            has_file = true;
+        }
+    }
+
+    Ok(Some(FilterSpec {
+        file_set: if has_file {
+            Some(file_builder.build()?)
+        } else {
+            None
+        },
+        folder_specs,
+    }))
+}
+
+/// Retain only entries matching `filter`.
+/// QueueJob virtual nodes pass through without path-based filtering.
+pub fn apply_filter(
+    entries: Vec<NodeEntry>,
+    filter: Option<&FilterSpec>,
+    root: &Path,
+) -> Vec<NodeEntry> {
+    let filter = match filter {
+        None => return entries,
+        Some(f) => f,
+    };
+
+    let mut result: Vec<NodeEntry> = Vec::new();
+    let mut folder_seen: HashMap<PathBuf, usize> = HashMap::new();
+
+    for entry in entries {
+        // Virtual nodes (QueueJob) pass through without file-path filtering.
+        let file_path = match entry.node.as_file() {
+            Some(p) => p,
+            None => {
+                result.push(entry);
+                continue;
+            }
+        };
+
+        let rel = file_path.strip_prefix(root).unwrap_or(file_path);
+
+        let mut matched_folder = false;
+        for spec in &filter.folder_specs {
+            if spec.set.is_match(rel) {
+                let folder: PathBuf = rel.components().take(spec.ancestor_depth).collect();
+                if let Some(&idx) = folder_seen.get(&folder) {
+                    if entry.depth < result[idx].depth {
+                        result[idx].depth = entry.depth;
+                    }
+                } else {
+                    let idx = result.len();
+                    folder_seen.insert(folder.clone(), idx);
+                    result.push(NodeEntry {
+                        node: NodeId::File(root.join(&folder)),
+                        depth: entry.depth,
+                        via: entry.via.clone(),
+                    });
+                }
+                matched_folder = true;
+                break;
+            }
+        }
+        if matched_folder {
+            continue;
+        }
+
+        if let Some(gs) = &filter.file_set {
+            if gs.is_match(rel) {
+                result.push(entry);
+            }
+        }
+    }
+
+    result
+}
+
+// ── Symbol index ─────────────────────────────────────────────────────────────
+
+/// An importer record: (importer_file, local_name_used, is_re_export).
+pub type ImporterRecord = (PathBuf, String, bool);
+
+/// Index mapping (source_file, exported_symbol) → list of files importing that symbol.
+pub struct SymbolIndex {
+    map: HashMap<(PathBuf, String), Vec<ImporterRecord>>,
+}
+
+impl SymbolIndex {
+    pub fn build(symbols_by_file: &HashMap<PathBuf, Vec<(PathBuf, String, String, bool)>>) -> Self {
+        let mut map: HashMap<(PathBuf, String), Vec<ImporterRecord>> = HashMap::new();
+
+        for (importer, imports) in symbols_by_file {
+            for (source, imported_name, local_name, is_reexport) in imports {
+                map.entry((source.clone(), imported_name.clone()))
+                    .or_default()
+                    .push((importer.clone(), local_name.clone(), *is_reexport));
+            }
+        }
+
+        Self { map }
+    }
+
+    /// Build a symbol import index for every indexable file under `root`.
+    ///
+    /// This is the companion index required by `DepGraph::dependents_of_symbol`
+    /// for `file#exportName` queries.
+    pub fn build_from_root(root: &Path, tsconfig: &TsConfig) -> Result<Self> {
+        let graph_files = GraphFiles::discover(root);
+        Self::build_from_files(tsconfig, &graph_files)
+    }
+
+    pub(crate) fn build_from_files(tsconfig: &TsConfig, graph_files: &GraphFiles) -> Result<Self> {
+        use crate::codebase::ts_symbols::extract_symbols;
+        type SymEntry = (PathBuf, String, String, bool);
+
+        let resolver = ImportResolver::new(tsconfig).with_visible(graph_files.visible());
+
+        let per_file: Vec<(PathBuf, Vec<SymEntry>)> = graph_files
+            .indexable()
+            .par_iter()
+            .filter_map(|path| {
+                let source = std::fs::read_to_string(path).ok()?;
+                let is_tsx = is_tsx_file(path);
+                let symbols = extract_symbols(&source, is_tsx).ok()?;
+
+                let mut imports_for_file = Vec::new();
+                for ni in &symbols.imports {
+                    if let Some(target) = resolver.resolve(&ni.source, path) {
+                        imports_for_file.push((
+                            target,
+                            ni.imported.clone(),
+                            ni.local.clone(),
+                            false,
+                        ));
+                    }
+                }
+                for exp in &symbols.exports {
+                    if let crate::codebase::ts_symbols::ExportKind::ReExport { source, imported } =
+                        &exp.kind
+                    {
+                        if let Some(target) = resolver.resolve(source, path) {
+                            imports_for_file.push((
+                                target,
+                                imported.clone(),
+                                exp.name.clone(),
+                                true,
+                            ));
+                        }
+                    }
+                }
+
+                if imports_for_file.is_empty() {
+                    None
+                } else {
+                    Some((path.clone(), imports_for_file))
+                }
+            })
+            .collect();
+
+        let symbols_by_file: HashMap<PathBuf, Vec<SymEntry>> = per_file.into_iter().collect();
+
+        Ok(Self::build(&symbols_by_file))
+    }
+
+    pub fn importers_of(&self, source: &Path, symbol: &str) -> Option<&Vec<ImporterRecord>> {
+        self.map.get(&(source.to_path_buf(), symbol.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests;

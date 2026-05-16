@@ -1,0 +1,3 @@
+rules:
+  route-consistency:
+    frontendRoot: "web/app"

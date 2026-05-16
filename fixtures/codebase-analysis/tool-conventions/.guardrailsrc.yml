@@ -1,0 +1,6 @@
+rules:
+  tool-conventions:
+    booleanDiscriminatorNames:
+      - success
+      - found
+      - created

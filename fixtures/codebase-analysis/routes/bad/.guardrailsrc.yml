@@ -1,0 +1,10 @@
+rules:
+  route-consistency:
+    backendPattern: "backend/api/v1/**/*.mts"
+    backendRegisterObject: "app"
+    frontendRoot: "web/app"
+    scanPatterns:
+      - "web/**/*.tsx"
+    backendPrefixes:
+      - "/api/"
+    backendExactPaths: []

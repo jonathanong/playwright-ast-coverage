@@ -1,0 +1,12 @@
+{
+  "name": "@scope/shared",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./src/index.mts",
+      "default": "./src/index.mts"
+    }
+  }
+}

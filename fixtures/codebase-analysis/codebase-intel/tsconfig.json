@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "paths": {
+      "@x/api": ["./packages/api/src/index.mts"],
+      "@x/web": ["./packages/web/src/index.tsx"]
+    }
+  }
+}

@@ -1,0 +1,17 @@
+rules:
+  route-consistency:
+    backendPattern: "packages/api/src/**/*.mts"
+    backendRegisterObject: "app"
+    frontendRoot: "packages/web/app"
+    scanPatterns:
+      - "packages/web/src/**/*.tsx"
+      - "tests/e2e/**/*.ts"
+    backendPrefixes:
+      - "/api/"
+
+  queue-dashboard-reachability:
+    entrypoint: "packages/api/src/index.mts"
+    queuePattern: "packages/api/src/emails.mts"
+    factorySpecifier: "@data-stores/valkey/glide-mq-factory"
+    factoryFunction: "createQueue"
+    tsconfig: "tsconfig.json"

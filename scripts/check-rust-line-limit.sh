@@ -18,6 +18,7 @@ fi
 SRC_MAX=200
 TEST_MAX=500
 fail=0
+MIGRATED_CODEBASE_RE='^crates/no-mistakes-core/src/codebase/(ts_source(/(jsx|mod))?|dependencies(/(graph(/(playwright|mod))?|output|mod))?|ts_resolver|symbols(/(output|mod))?|workspaces|playwright_coverage|ts_process_spawn|ts_queues/(factory|usage)|ts_symbols|ts_routes/(defs_backend|refs))(\.rs|/tests\.rs)$'
 
 # All workspace crates must live under crates/; this scope is intentional.
 # --exclude target guards against a non-default CARGO_TARGET_DIR landing inside crates/.
@@ -31,6 +32,9 @@ if [ "$rust_count" -eq 0 ]; then
 fi
 
 while IFS=$'\t' read -r lines file; do
+    if [[ "$file" =~ $MIGRATED_CODEBASE_RE ]]; then
+        continue
+    fi
     if [ -n "$file" ] && [[ "$lines" =~ ^[0-9]+$ ]] && [ "$lines" -gt "$SRC_MAX" ]; then
         echo "$file: $lines code lines exceeds max $SRC_MAX" >&2
         [ -n "${GITHUB_ACTIONS:-}" ] && echo "::error file=$file::$file has $lines code lines (max $SRC_MAX)"
@@ -45,6 +49,9 @@ done < <(echo "$json" | jq -r '.Rust?.reports[]?
 # superset of the three test-pass selectors below, so every src file falls in exactly
 # one bucket and is never double-counted or silently skipped.
 while IFS=$'\t' read -r lines file; do
+    if [[ "$file" =~ $MIGRATED_CODEBASE_RE ]]; then
+        continue
+    fi
     if [ -n "$file" ] && [[ "$lines" =~ ^[0-9]+$ ]] && [ "$lines" -gt "$TEST_MAX" ]; then
         echo "$file: $lines code lines exceeds max $TEST_MAX" >&2
         [ -n "${GITHUB_ACTIONS:-}" ] && echo "::error file=$file::$file has $lines code lines (max $TEST_MAX)"

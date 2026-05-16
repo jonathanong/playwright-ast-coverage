@@ -1,0 +1,7 @@
+rules:
+  queue-dashboard-reachability:
+    entrypoint: server/glidemq-dashboard.mts
+    queuePattern: "systems/*/queues.mts"
+    factorySpecifier: "@factory/glide-mq"
+    factoryFunction: createQueue
+    tsconfig: tsconfig.json

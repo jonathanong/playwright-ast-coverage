@@ -1,0 +1,26 @@
+{
+  "name": "@ts-shared/session-jwt",
+  "version": "1.0.0",
+  "private": true,
+  "description": "",
+  "license": "UNLICENSED",
+  "author": "",
+  "type": "module",
+  "main": "index.mts",
+  "exports": {
+    ".": {
+      "types": "./index.mts",
+      "import": "./index.mts",
+      "default": "./index.mts"
+    },
+    "./*": {
+      "types": "./*.mts",
+      "import": "./*.mts",
+      "default": "./*.mts"
+    }
+  },
+  "scripts": {},
+  "dependencies": {
+    "jose": "^6.2.0"
+  }
+}

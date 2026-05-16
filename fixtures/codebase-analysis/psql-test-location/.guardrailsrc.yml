@@ -1,0 +1,6 @@
+rules:
+  psql-test-files-location:
+    guardedDirectories:
+      - backend/data-stores/psql/migrations/
+      - backend/data-stores/psql/idempotents/
+      - backend/data-stores/psql/views/

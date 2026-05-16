@@ -1,0 +1,6 @@
+projects:
+  default:
+    rootPath: .
+    rules:
+      - vitest-test-project-mapping
+

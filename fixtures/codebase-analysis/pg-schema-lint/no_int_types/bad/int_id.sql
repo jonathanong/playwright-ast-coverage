@@ -1,0 +1,4 @@
+CREATE TABLE foo (
+  id INT PRIMARY KEY,
+  user_id INTEGER REFERENCES users
+);

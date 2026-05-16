@@ -1,0 +1,12 @@
+rules:
+  services-sql-call-limit:
+    psqlModule: "@data-stores/psql"
+    serviceRoot: "backend/services/"
+    sqlCalls:
+      - read
+      - write
+      - query
+    transactionHelper: withTransaction
+    readPool: readPool
+    writePool: writePool
+    maxCalls: 2

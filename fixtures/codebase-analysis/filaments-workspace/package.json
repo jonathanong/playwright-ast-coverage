@@ -1,0 +1,10 @@
+{
+  "name": "voucha",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "ts-shared/session-jwt",
+    "backend"
+  ]
+}

@@ -1,0 +1,6 @@
+rules:
+  disallow-uuid-functions:
+    bannedFunctions:
+      - uuid_generate_v1
+      - uuid_generate_v4
+      - uuid_generate_v5

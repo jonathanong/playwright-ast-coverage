@@ -1,0 +1,4 @@
+CREATE TABLE foo (
+  id UUID PRIMARY KEY DEFAULT uuidv7(),
+  count INT NOT NULL DEFAULT 0
+);

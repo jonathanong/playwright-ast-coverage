@@ -1,0 +1,5 @@
+rules:
+  required-local-docs:
+    docOwnerRoots:
+      - backend/services
+    allowedDirs: []

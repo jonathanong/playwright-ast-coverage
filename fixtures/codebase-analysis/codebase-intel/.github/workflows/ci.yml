@@ -1,0 +1,11 @@
+name: CI
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run pg-schema
+        run: cargo run --bin pg-schema -- --help
+      - name: Run guardrails
+        run: cargo run --bin guardrails -- --help

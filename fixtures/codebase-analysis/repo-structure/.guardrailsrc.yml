@@ -1,0 +1,5 @@
+rules:
+  repo-structure:
+    directoryPrefixes:
+      - dir: services
+        prefix: "@services/"

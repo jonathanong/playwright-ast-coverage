@@ -1,0 +1,9 @@
+rules:
+  package-manager-lockfiles:
+    lockfileNames:
+      - package-lock.json
+      - yarn.lock
+      - pnpm-lock.yaml
+      - bun.lockb
+    allowedLockfilePaths:
+      - package-lock.json

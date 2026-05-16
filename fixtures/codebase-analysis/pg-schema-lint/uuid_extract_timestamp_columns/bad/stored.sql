@@ -1,0 +1,6 @@
+CREATE TABLE posts (
+  id UUID PRIMARY KEY DEFAULT uuidv7(),
+  title TEXT NOT NULL,
+  created_at TIMESTAMPTZ GENERATED ALWAYS AS (uuid_extract_timestamp(id)) STORED,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

@@ -1,0 +1,4 @@
+interface:
+  display_name: "No Mistakes"
+  short_description: "Resolution-correct TS/JS module-graph queries: imports, dependents, public API, blast radius."
+  default_prompt: "Use $no-mistakes when the question is about what a TS/JS file imports, who imports it, or what it exports. Do not fall back to grep for these questions."

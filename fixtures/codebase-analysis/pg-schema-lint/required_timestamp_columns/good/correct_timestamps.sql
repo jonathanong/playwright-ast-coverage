@@ -1,0 +1,6 @@
+CREATE TABLE orders (
+  id UUID PRIMARY KEY DEFAULT uuidv7(),
+  status TEXT NOT NULL,
+  created_at TIMESTAMPTZ GENERATED ALWAYS AS (uuid_extract_timestamp(id)) VIRTUAL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

@@ -1,0 +1,11 @@
+{
+  "name": "ban-cpu-intensive-packages-fixture",
+  "version": "1.0.0",
+  "dependencies": {
+    "sanitize-html": "^2.11.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "vitest": "^1.0.0"
+  }
+}

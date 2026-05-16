@@ -1,0 +1,9 @@
+rules:
+  mts-extensions:
+    disallowedExtensions:
+      - .js
+      - .ts
+      - .mjs
+      - .cjs
+      - .cts
+    allowedNonMtsFiles: []

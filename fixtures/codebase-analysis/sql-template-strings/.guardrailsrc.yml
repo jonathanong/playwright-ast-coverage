@@ -1,0 +1,3 @@
+rules:
+  sql-template-strings:
+    psqlModule: "@data-stores/psql"

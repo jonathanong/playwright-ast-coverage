@@ -1,0 +1,16 @@
+{
+  "name": "@scope/core",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./src/index.mts",
+      "default": "./src/index.mts"
+    },
+    "./*": {
+      "import": "./*.mts",
+      "default": "./*.mts"
+    }
+  }
+}

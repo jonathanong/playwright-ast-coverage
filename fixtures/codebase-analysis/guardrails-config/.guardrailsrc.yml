@@ -1,0 +1,55 @@
+# Trimmed .guardrailsrc.yml fixture — used by config schema parity tests.
+# Adapted from /Users/jong/filaments/.guardrailsrc.yml.
+
+filesystem:
+  skipDirectories:
+    - .next
+    - build
+    - .turbo
+    - fixtures
+    - __fixtures__
+  skipFilePatterns:
+    - '^guardrails/fixtures/'
+
+rust:
+  root: rust/crates/core
+  maxLines: 200
+
+projects:
+  backend:
+    rootPath: backend
+    rules:
+      - mts-extensions
+      - test-correspondence
+      - ban-dynamic-imports
+      - no-inline-tests
+
+  web:
+    rootPath: web
+    rules:
+      - mts-extensions
+      - ban-dynamic-imports
+
+rules:
+  mts-extensions:
+    disallowedExtensions:
+      - .js
+      - .mjs
+      - .cjs
+      - .ts
+      - .cts
+
+  max-file-size:
+    maxLines: 200
+
+  max-test-size:
+    maxLines: 500
+
+  no-empty-files:
+    checkedExtensions:
+      - .sql
+      - .mts
+      - .ts
+      - .tsx
+      - .css
+      - .rs

@@ -1,0 +1,1 @@
+CREATE OR REPLACE VIEW view_users AS SELECT id FROM users;

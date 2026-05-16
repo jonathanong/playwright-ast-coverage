@@ -1,0 +1,9 @@
+rules:
+  openai-test-naming:
+    importPatterns:
+      - "^@services/openai-"
+      - "^openai$"
+    safeImportPaths:
+      - "/rate-limit$"
+    safeOpenaiSdkImports:
+      - RateLimitError
