@@ -46,7 +46,10 @@ fn check_assert_no_fetch_from_config() {
     let cli = make_cli(PathBuf::from("."));
     let targets = vec!["app/components/Fetcher.tsx".to_string()];
     let violations = run_check(&fixture_root, &cli, &targets, false).expect("should check");
-    assert!(!violations.is_empty(), "config assertNoFetch should trigger violation");
+    assert!(
+        !violations.is_empty(),
+        "config assertNoFetch should trigger violation"
+    );
 }
 
 #[test]

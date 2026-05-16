@@ -90,11 +90,9 @@ fn cli_check_json_output_with_violation() {
 
 #[test]
 fn cli_error_exit_bad_root() {
-    let args =
-        "react-traits\x1f--root\x1f/nonexistent/path/does/not/exist\x1fanalyze\x1f**/*.tsx"
-            .to_string();
+    let args = "react-traits\x1f--root\x1f/nonexistent/path/does/not/exist\x1fanalyze\x1f**/*.tsx"
+        .to_string();
     let _guard = with_run_args_env(Some(args), None);
     let result = crate::run_cli();
     assert!(result.is_err() || result.is_ok());
 }
-

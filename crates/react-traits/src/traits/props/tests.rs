@@ -27,7 +27,8 @@ fn passes_props_to_child() {
 
 #[test]
 fn passes_props_spread_attribute() {
-    let (_, passes_props) = check("export default function App(props) { return <Child {...props} />; }");
+    let (_, passes_props) =
+        check("export default function App(props) { return <Child {...props} />; }");
     assert!(passes_props);
 }
 
@@ -84,12 +85,10 @@ fn has_props_default_fn_expression() {
     assert!(has_props);
 }
 
-
 #[test]
 fn passes_props_to_member_expression_component() {
     // <Foo.Bar prop="x"/> — MemberExpression branch returns true for is_component
-    let (_, passes_props) = check(
-        "export default function App() { return <Foo.Bar prop=\"x\" />; }",
-    );
+    let (_, passes_props) =
+        check("export default function App() { return <Foo.Bar prop=\"x\" />; }");
     assert!(passes_props);
 }

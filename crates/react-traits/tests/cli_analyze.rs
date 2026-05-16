@@ -92,4 +92,3 @@ fn analyze_error_exit_code_on_failure() {
         .assert()
         .code(2);
 }
-

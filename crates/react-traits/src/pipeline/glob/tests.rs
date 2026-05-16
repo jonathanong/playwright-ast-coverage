@@ -14,7 +14,9 @@ fn expands_glob_finds_tsx_files() {
     let patterns = vec!["**/*.tsx".to_string()];
     let files = expand_globs(&root, &patterns).expect("should expand");
     assert!(!files.is_empty());
-    assert!(files.iter().all(|f| f.extension().and_then(|e| e.to_str()) == Some("tsx")));
+    assert!(files
+        .iter()
+        .all(|f| f.extension().and_then(|e| e.to_str()) == Some("tsx")));
 }
 
 #[test]
@@ -41,7 +43,11 @@ fn skips_node_modules_directory() {
     let nm = tmp.path().join("node_modules");
     fs::create_dir(&nm).unwrap();
     fs::write(nm.join("index.tsx"), "export default function Foo() {}").unwrap();
-    fs::write(tmp.path().join("App.tsx"), "export default function App() {}").unwrap();
+    fs::write(
+        tmp.path().join("App.tsx"),
+        "export default function App() {}",
+    )
+    .unwrap();
     let patterns = vec!["**/*.tsx".to_string()];
     let files = expand_globs(tmp.path(), &patterns).expect("should expand");
     assert_eq!(files.len(), 1);
@@ -56,7 +62,11 @@ fn skips_target_directory() {
     let target = tmp.path().join("target");
     fs::create_dir(&target).unwrap();
     fs::write(target.join("index.tsx"), "export default function Foo() {}").unwrap();
-    fs::write(tmp.path().join("App.tsx"), "export default function App() {}").unwrap();
+    fs::write(
+        tmp.path().join("App.tsx"),
+        "export default function App() {}",
+    )
+    .unwrap();
     let patterns = vec!["**/*.tsx".to_string()];
     let files = expand_globs(tmp.path(), &patterns).expect("should expand");
     assert_eq!(files.len(), 1);

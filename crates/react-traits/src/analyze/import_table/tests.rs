@@ -8,8 +8,7 @@ fn fixture_dir() -> PathBuf {
 }
 
 fn build_table_from_source(source: &str, file: &std::path::Path) -> super::ImportTable {
-    ast::with_program(file, source, |program, _| build_import_table(file, program))
-        .unwrap()
+    ast::with_program(file, source, |program, _| build_import_table(file, program)).unwrap()
 }
 
 #[test]
@@ -77,5 +76,8 @@ fn side_effect_import_skipped() {
     let consumer = dir.join("Consumer.tsx");
     let source = "import './Foo';";
     let table = build_table_from_source(source, &consumer);
-    assert!(table.is_empty(), "side-effect import should produce no table entries");
+    assert!(
+        table.is_empty(),
+        "side-effect import should produce no table entries"
+    );
 }

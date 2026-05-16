@@ -34,8 +34,7 @@ fn load_root_and_config_basic() {
 fn load_root_and_config_with_react_traits_key() {
     let fixture_root = fixture("react-traits-config", "assert-no-fetch");
     let cli = make_cli(PathBuf::from("."));
-    let (_root, config) =
-        load_root_and_config(&fixture_root, &cli).expect("should load config");
+    let (_root, config) = load_root_and_config(&fixture_root, &cli).expect("should load config");
     assert_eq!(config.assert_no_fetch, Some(true));
     assert_eq!(config.frontend_root.as_deref(), Some("app"));
 }
@@ -60,9 +59,15 @@ fn run_analyze_nested_aggregates_child_fetch() {
         "app/components/Child.tsx".to_string(),
     ];
     let results = run_analyze(&fixture_root, &cli, &targets, None).expect("should analyze");
-    let parent = results.iter().find(|f| f.file.contains("Parent")).expect("Parent not found");
+    let parent = results
+        .iter()
+        .find(|f| f.file.contains("Parent"))
+        .expect("Parent not found");
     assert!(
-        parent.inherited_from_children.as_ref().is_some_and(|agg| agg.has_fetch),
+        parent
+            .inherited_from_children
+            .as_ref()
+            .is_some_and(|agg| agg.has_fetch),
         "Parent should inherit has_fetch from Child"
     );
 }
@@ -88,9 +93,15 @@ fn run_analyze_repeated_child_exercises_cycle_detection() {
         "app/components/Child.tsx".to_string(),
     ];
     let results = run_analyze(&fixture_root, &cli, &targets, None).expect("should analyze");
-    let parent = results.iter().find(|f| f.file.contains("Parent")).expect("Parent not found");
+    let parent = results
+        .iter()
+        .find(|f| f.file.contains("Parent"))
+        .expect("Parent not found");
     // Child has 2 refs but no fetch/state, so inherited_from_children stays None/default.
-    assert!(parent.children.len() >= 2, "Parent should have at least 2 child refs");
+    assert!(
+        parent.children.len() >= 2,
+        "Parent should have at least 2 child refs"
+    );
 }
 
 #[test]

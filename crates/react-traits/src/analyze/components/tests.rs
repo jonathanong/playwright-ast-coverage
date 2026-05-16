@@ -44,17 +44,14 @@ fn export_default_memo_call() {
 
 #[test]
 fn export_default_react_memo_call() {
-    let names = check_names(
-        "export default React.memo(function Foo() { return <div/>; });",
-    );
+    let names = check_names("export default React.memo(function Foo() { return <div/>; });");
     assert_eq!(names, vec!["default"]);
 }
 
 #[test]
 fn export_default_forwardref() {
-    let names = check_names(
-        "export default forwardRef(function Foo(props, ref) { return <div/>; });",
-    );
+    let names =
+        check_names("export default forwardRef(function Foo(props, ref) { return <div/>; });");
     assert_eq!(names, vec!["default"]);
 }
 
@@ -226,4 +223,3 @@ fn is_component_expr_parenthesized_wraps_arrow() {
     .unwrap();
     assert_eq!(names, vec!["Foo"]);
 }
-
