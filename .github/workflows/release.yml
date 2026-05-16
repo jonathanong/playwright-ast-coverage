@@ -68,9 +68,9 @@ jobs:
           version="$(node -p "require('./package.json').version")"
           
           # Bump npm workspace versions
-          for pkg in eslint-plugin-playwright-ast-coverage no-mistakes-core next-to-fetch playwright-ast-coverage queue-ast-hop react-traits; do
+          for pkg in eslint-plugin-playwright-ast-coverage no-mistakes-core next-to-fetch playwright-ast-coverage queue-ast-hop react-traits server-ast-routes; do
             npm version "$version" --workspace "$pkg" --no-git-tag-version
-            if [[ "$pkg" == "playwright-ast-coverage" || "$pkg" == "next-to-fetch" || "$pkg" == "queue-ast-hop" || "$pkg" == "react-traits" ]]; then
+            if [[ "$pkg" == "playwright-ast-coverage" || "$pkg" == "next-to-fetch" || "$pkg" == "queue-ast-hop" || "$pkg" == "react-traits" || "$pkg" == "server-ast-routes" ]]; then
               npm pkg set "dependencies.no-mistakes-core=^$version" --workspace "$pkg"
             fi
           done
@@ -87,6 +87,7 @@ jobs:
               "crates/playwright-ast-coverage/Cargo.toml",
               "crates/queue-ast-hop/Cargo.toml",
               "crates/react-traits/Cargo.toml",
+              "crates/server-ast-routes/Cargo.toml",
             ];
             for (const file of crates) {
               if (!fs.existsSync(file)) continue;
@@ -182,13 +183,13 @@ jobs:
 
       - name: Check Cargo packages
         run: |
-          for pkg in no-mistakes-core playwright-ast-coverage next-to-fetch queue-ast-hop react-traits; do
+          for pkg in no-mistakes-core playwright-ast-coverage next-to-fetch queue-ast-hop react-traits server-ast-routes; do
             cargo publish --dry-run --locked -p "$pkg"
           done
 
       - name: Check npm packages
         run: |
-          for pkg in playwright-ast-coverage eslint-plugin-playwright-ast-coverage no-mistakes-core next-to-fetch queue-ast-hop react-traits; do
+          for pkg in playwright-ast-coverage eslint-plugin-playwright-ast-coverage no-mistakes-core next-to-fetch queue-ast-hop react-traits server-ast-routes; do
             npm pack --dry-run --workspace "$pkg"
           done
 
@@ -200,7 +201,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target_binary: [playwright-ast-coverage, next-to-fetch, queue-ast-hop, react-traits]
+        target_binary: [playwright-ast-coverage, next-to-fetch, queue-ast-hop, react-traits, server-ast-routes]
         target:
           - x86_64-apple-darwin
           - aarch64-apple-darwin
@@ -308,7 +309,7 @@ jobs:
         run: |
           set -euo pipefail
           version="${{ needs.prepare.outputs.version }}"
-          for pkg in no-mistakes-core playwright-ast-coverage next-to-fetch queue-ast-hop react-traits; do
+          for pkg in no-mistakes-core playwright-ast-coverage next-to-fetch queue-ast-hop react-traits server-ast-routes; do
             if curl --fail --silent --output /dev/null "https://crates.io/api/v1/crates/$pkg/$version"; then
               echo "$pkg $version is already published on crates.io; skipping"
             else
@@ -359,7 +360,7 @@ jobs:
           fi
           version="${{ needs.prepare.outputs.version }}"
           # Order matters: no-mistakes-core should be first
-          for pkg in no-mistakes-core playwright-ast-coverage next-to-fetch queue-ast-hop react-traits eslint-plugin-playwright-ast-coverage; do
+          for pkg in no-mistakes-core playwright-ast-coverage next-to-fetch queue-ast-hop react-traits server-ast-routes eslint-plugin-playwright-ast-coverage; do
             if npm view "$pkg@$version" version >/dev/null 2>&1; then
               echo "$pkg $version is already published on npm; skipping"
             else

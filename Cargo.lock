@@ -1058,6 +1058,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "server-ast-routes"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "assert_cmd",
+ "clap",
+ "no-mistakes-core",
+ "num_cpus",
+ "predicates",
+ "rayon",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+]
+
+[[package]]
 name = "siphasher"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
