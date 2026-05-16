@@ -7,12 +7,16 @@ use oxc_span::Span;
 use std::collections::HashSet;
 
 struct DynamicNameCollector {
-    names: HashSet<String>,
+    component_span: Span,
+    inner_dynamic: HashSet<String>,
+    outer_dynamic: HashSet<String>,
+    inner_non_dynamic: HashSet<String>,
 }
 
 impl<'a> Visit<'a> for DynamicNameCollector {
     fn visit_variable_declaration(&mut self, v: &VariableDeclaration<'a>) {
-        collect_from_var_decl(v, &mut self.names);
+        let in_component = within(v.span, self.component_span);
+        collect_from_var_decl(v, in_component, self);
         walk::walk_variable_declaration(self, v);
     }
 }
@@ -51,12 +55,25 @@ fn overlaps(a: Span, b: Span) -> bool {
     a.start < b.end && a.end > b.start
 }
 
-fn collect_dynamic_names(program: &Program<'_>) -> HashSet<String> {
+fn collect_dynamic_names(program: &Program<'_>, component_span: Span) -> HashSet<String> {
     let mut collector = DynamicNameCollector {
-        names: HashSet::new(),
+        component_span,
+        inner_dynamic: HashSet::new(),
+        outer_dynamic: HashSet::new(),
+        inner_non_dynamic: HashSet::new(),
     };
     collector.visit_program(program);
-    collector.names
+
+    // Effective dynamic names = inner_dynamic ∪ (outer_dynamic ∖ inner_non_dynamic).
+    // Declarations inside the component body shadow outer-scope bindings of the same name;
+    // if the inner binding is non-dynamic, the outer dynamic one is no longer reachable.
+    let mut names = collector.inner_dynamic;
+    for name in collector.outer_dynamic {
+        if !collector.inner_non_dynamic.contains(&name) {
+            names.insert(name);
+        }
+    }
+    names
 }
 
 fn is_component_direct_lazy(program: &Program<'_>, span: Span) -> bool {
@@ -110,7 +127,11 @@ fn is_dynamic_or_lazy_call_by_callee(callee: &Expression<'_>) -> bool {
     matches!(name, "dynamic" | "lazy")
 }
 
-fn collect_from_var_decl(v: &VariableDeclaration<'_>, names: &mut HashSet<String>) {
+fn collect_from_var_decl(
+    v: &VariableDeclaration<'_>,
+    in_component: bool,
+    collector: &mut DynamicNameCollector,
+) {
     for decl in &v.declarations {
         let BindingPattern::BindingIdentifier(id) = &decl.id else {
             continue;
@@ -118,8 +139,15 @@ fn collect_from_var_decl(v: &VariableDeclaration<'_>, names: &mut HashSet<String
         let Some(init) = &decl.init else {
             continue;
         };
+        let name = id.name.as_ref().to_string();
         if is_dynamic_or_lazy_call(init) {
-            names.insert(id.name.as_ref().to_string());
+            if in_component {
+                collector.inner_dynamic.insert(name);
+            } else {
+                collector.outer_dynamic.insert(name);
+            }
+        } else if in_component {
+            collector.inner_non_dynamic.insert(name);
         }
     }
 }
@@ -142,7 +170,7 @@ pub(crate) fn detect_uses_suspense(program: &Program<'_>, span: Span) -> bool {
     if is_component_direct_lazy(program, span) {
         return true;
     }
-    let dynamic_names = collect_dynamic_names(program);
+    let dynamic_names = collect_dynamic_names(program, span);
     let mut visitor = SuspenseVisitor {
         has_suspense: false,
         span,

@@ -173,7 +173,8 @@ fn test_is_client_route_file_unreadable_returns_error() {
     use std::os::unix::fs::PermissionsExt;
     let dir = tempdir().unwrap();
     let file = dir.path().join("unreadable.ts");
-    fs::write(&file, "export {};").unwrap();
+    let fixture_src = fixture("next-to-fetch-routes", "no-use-client").join("server.ts");
+    fs::copy(&fixture_src, &file).unwrap();
     let mut perms = file.metadata().unwrap().permissions();
     perms.set_mode(0o000);
     fs::set_permissions(&file, perms).unwrap();

@@ -38,7 +38,7 @@ pub fn run_cli() -> Result<ExitCode> {
         println!(
             "{}",
             serde_json::to_string_pretty(&report)
-                .expect("serialization of Rust structs never fails")
+                .context("failed to serialize report as JSON")?
         );
     } else {
         print_markdown_report(&report);

@@ -195,3 +195,19 @@ fn lazy_inside_arrow_body_detected() {
         "export default () => { const Lazy = React.lazy(() => import('./Foo')); return <Lazy/>; };"
     ));
 }
+
+#[test]
+fn outer_dynamic_shadowed_by_inner_non_dynamic_not_suspense() {
+    // `const Lazy = dynamic(...)` at top-level, but inside App `const Lazy = 1` shadows it.
+    // The inner non-dynamic binding should prevent <Lazy/> from triggering usesSuspense.
+    let source =
+        "const Lazy = dynamic(() => import('./Foo'));\nexport default function App() { const Lazy = 1; return <Lazy/>; }";
+    let path = std::path::Path::new("test.tsx");
+    let app_start = source.find("export default").unwrap() as u32;
+    let span = oxc_span::Span::new(app_start, source.len() as u32);
+    let result = no_mistakes_core::ast::with_program(path, source, |program, _| {
+        super::detect_uses_suspense(program, span)
+    })
+    .unwrap();
+    assert!(!result, "inner non-dynamic shadow should suppress outer dynamic");
+}
