@@ -1,6 +1,6 @@
 use crate::pipeline::check::run_check;
 use crate::pipeline::run::run_analyze;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -40,7 +40,8 @@ pub fn run_cli() -> Result<ExitCode> {
     } else {
         Cli::parse()
     };
-    let base_root = std::env::current_dir().expect("current working directory must be accessible");
+    let base_root =
+        std::env::current_dir().context("current working directory must be accessible")?;
     match &cli.command {
         Command::Analyze { targets } => {
             let results = run_analyze(&base_root, &cli, targets, None)?;

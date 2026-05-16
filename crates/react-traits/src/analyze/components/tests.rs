@@ -280,6 +280,20 @@ fn local_class_component_resolves_via_export_list() {
 }
 
 #[test]
+fn export_default_function_decl_resolved() {
+    // `function Page() {}; export default Page;` — FunctionDeclaration in first-pass local_vars
+    let names = check_names("function Page() { return <div/>; }\nexport default Page;");
+    assert_eq!(names, vec!["default"]);
+}
+
+#[test]
+fn export_list_resolves_function_decl() {
+    // `function Foo() {}; export { Foo };` — FunctionDeclaration via export-list
+    let names = check_names("function Foo() { return <div/>; }\nexport { Foo };");
+    assert_eq!(names, vec!["Foo"]);
+}
+
+#[test]
 fn is_component_expr_parenthesized_wraps_arrow() {
     // ((() => <div/>)) — double-parenthesized arrow triggers ParenthesizedExpression (line 124).
     let path = std::path::Path::new("test.tsx");

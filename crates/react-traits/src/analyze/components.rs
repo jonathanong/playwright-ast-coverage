@@ -36,6 +36,14 @@ pub(crate) fn extract_components(program: &Program<'_>) -> Vec<ComponentDef> {
                     }
                 }
             }
+            Statement::FunctionDeclaration(f) => {
+                if let Some(id) = &f.id {
+                    let name = id.name.as_ref();
+                    if is_component_name(name) {
+                        local_vars.insert(name, f.span);
+                    }
+                }
+            }
             Statement::ClassDeclaration(c) => {
                 if let Some(id) = &c.id {
                     if is_component_name(id.name.as_ref()) && is_class_component(c) {

@@ -1,8 +1,16 @@
 use super::{collect_imports, collect_imports_from_program, resolve_import};
 use crate::ast;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tempfile::tempdir;
+
+fn fixture(category: &str, name: &str, file: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures")
+        .join(category)
+        .join(name)
+        .join(file)
+}
 
 #[test]
 fn resolve_import_no_parent_returns_none() {
@@ -41,11 +49,7 @@ fn collect_imports_unreadable_file_returns_error() {
 fn collect_imports_parse_error_returns_error() {
     // A file with a parse error causes ast::with_program to return Err,
     // which propagates through the ? at line 60 of collect_imports.
-    let dir = tempdir().unwrap();
-    let file = dir.path().join("bad.ts");
-    // Unclosed function call — fails to parse in oxc.
-    std::fs::write(&file, "await page.goto(").unwrap();
-
+    let file = fixture("no-mistakes-core-imports", "parse-error", "bad.ts");
     let mut cache = HashMap::new();
     let result = collect_imports(&file, &mut cache);
     assert!(result.is_err());
@@ -55,11 +59,9 @@ fn collect_imports_parse_error_returns_error() {
 fn collect_imports_from_program_unresolvable_import() {
     // A relative import that doesn't exist on disk causes resolve_import to return None,
     // which means the import is skipped (exercises the None branch).
-    let dir = tempdir().unwrap();
-    let file = dir.path().join("main.ts");
-    std::fs::write(&file, "import { Foo } from './nonexistent-module';").unwrap();
-
-    let abs_path = file.canonicalize().unwrap();
+    let abs_path = fixture("no-mistakes-core-imports", "unresolvable-import", "main.ts")
+        .canonicalize()
+        .unwrap();
     let source = std::fs::read_to_string(&abs_path).unwrap();
     let mut cache = HashMap::new();
     let imports = ast::with_program(&abs_path, &source, |program, _| {
@@ -73,11 +75,13 @@ fn collect_imports_from_program_unresolvable_import() {
 #[test]
 fn collect_imports_from_program_unresolvable_export_named() {
     // A re-export from a nonexistent module — exercises the None branch in ExportNamedDeclaration.
-    let dir = tempdir().unwrap();
-    let file = dir.path().join("main.ts");
-    std::fs::write(&file, "export { Foo } from './nonexistent';").unwrap();
-
-    let abs_path = file.canonicalize().unwrap();
+    let abs_path = fixture(
+        "no-mistakes-core-imports",
+        "unresolvable-export-named",
+        "main.ts",
+    )
+    .canonicalize()
+    .unwrap();
     let source = std::fs::read_to_string(&abs_path).unwrap();
     let mut cache = HashMap::new();
     let imports = ast::with_program(&abs_path, &source, |program, _| {
@@ -91,11 +95,13 @@ fn collect_imports_from_program_unresolvable_export_named() {
 #[test]
 fn collect_imports_from_program_unresolvable_export_all() {
     // An export-all from a nonexistent module — exercises the None branch in ExportAllDeclaration.
-    let dir = tempdir().unwrap();
-    let file = dir.path().join("main.ts");
-    std::fs::write(&file, "export * from './nonexistent';").unwrap();
-
-    let abs_path = file.canonicalize().unwrap();
+    let abs_path = fixture(
+        "no-mistakes-core-imports",
+        "unresolvable-export-all",
+        "main.ts",
+    )
+    .canonicalize()
+    .unwrap();
     let source = std::fs::read_to_string(&abs_path).unwrap();
     let mut cache = HashMap::new();
     let imports = ast::with_program(&abs_path, &source, |program, _| {

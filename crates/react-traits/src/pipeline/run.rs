@@ -18,14 +18,15 @@ pub(crate) fn run_analyze(
     if !frontend_root.exists() {
         anyhow::bail!("frontend root not found: {}", frontend_root.display());
     }
-    // Expand globs from both root and frontend_root independently; merge and dedup.
+    // Expand globs from root first; only fall back to frontend_root when root yields no matches.
+    // This avoids doubling filesystem traversal on large repos when patterns are already rooted.
     let files = if !targets.is_empty() {
-        let mut from_root = expand_globs(&root, targets)?;
-        let from_frontend = expand_globs(&frontend_root, targets)?;
-        from_root.extend(from_frontend);
-        from_root.sort();
-        from_root.dedup();
-        from_root
+        let from_root = expand_globs(&root, targets)?;
+        if !from_root.is_empty() {
+            from_root
+        } else {
+            expand_globs(&frontend_root, targets)?
+        }
     } else {
         expand_globs(&frontend_root, targets)?
     };
