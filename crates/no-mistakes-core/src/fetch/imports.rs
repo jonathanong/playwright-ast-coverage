@@ -17,11 +17,9 @@ pub fn collect_imports(
     }
 
     let source = std::fs::read_to_string(&abs_path)?;
-    let mut imports = Vec::new();
-    ast::with_program(path, &source, |program, _source| -> Result<()> {
-        imports = collect_imports_from_program(&abs_path, program, import_cache)?;
-        Ok(())
-    })??;
+    let imports = ast::with_program(path, &source, |program, _source| {
+        collect_imports_from_program(&abs_path, program, import_cache)
+    })?;
     Ok(imports)
 }
 
@@ -47,7 +45,7 @@ pub fn collect_runtime_imports_from_program<'a>(
     abs_path: &Path,
     program: &oxc_ast::ast::Program<'a>,
     referenced_identifiers: &HashSet<String>,
-) -> Result<Vec<PathBuf>> {
+) -> Vec<PathBuf> {
     let mut imports = Vec::new();
     for stmt in &program.body {
         if let Statement::ImportDeclaration(import) = stmt {
@@ -59,7 +57,7 @@ pub fn collect_runtime_imports_from_program<'a>(
             }
         }
     }
-    Ok(imports)
+    imports
 }
 
 pub fn is_import_used(
@@ -97,9 +95,9 @@ pub fn collect_imports_from_program<'a>(
     abs_path: &Path,
     program: &oxc_ast::ast::Program<'a>,
     import_cache: &mut HashMap<PathBuf, Vec<PathBuf>>,
-) -> Result<Vec<PathBuf>> {
+) -> Vec<PathBuf> {
     if let Some(cached_imports) = import_cache.get(abs_path) {
-        return Ok(cached_imports.clone());
+        return cached_imports.clone();
     }
 
     let mut imports = Vec::new();
@@ -133,5 +131,5 @@ pub fn collect_imports_from_program<'a>(
     }
 
     import_cache.insert(abs_path.to_path_buf(), imports.clone());
-    Ok(imports)
+    imports
 }
