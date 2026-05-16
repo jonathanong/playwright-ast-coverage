@@ -1,0 +1,29 @@
+{
+  "name": "react-traits",
+  "version": "0.1.0",
+  "description": "Scan React components and report their traits",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jonathanong/playwright-ast-coverage.git",
+    "directory": "packages/react-traits"
+  },
+  "bin": {
+    "react-traits": "bin/react-traits.js"
+  },
+  "files": [
+    "bin/",
+    "scripts/install.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install.js"
+  },
+  "dependencies": {
+    "no-mistakes-core": "^0.1.0"
+  }
+}

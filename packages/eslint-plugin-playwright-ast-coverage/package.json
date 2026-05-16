@@ -8,28 +8,28 @@
     "url": "git+https://github.com/jonathanong/playwright-ast-coverage.git",
     "directory": "packages/eslint-plugin-playwright-ast-coverage"
   },
-  "main": "src/index.js",
   "files": [
     "src/",
     "README.md",
     "LICENSE"
   ],
-  "scripts": {
-    "test": "vitest run --coverage"
-  },
-  "engines": {
-    "node": "^20.19.0 || ^22.13.0 || >=24"
-  },
-  "peerDependencies": {
-    "eslint": ">=9"
-  },
+  "main": "src/index.js",
   "publishConfig": {
     "access": "public"
+  },
+  "scripts": {
+    "test": "vitest run --coverage"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.1.6",
     "eslint": "^10.3.0",
     "oxlint": "^1.64.0",
     "vitest": "^4.1.6"
+  },
+  "peerDependencies": {
+    "eslint": ">=9"
+  },
+  "engines": {
+    "node": "^20.19.0 || ^22.13.0 || >=24"
   }
 }

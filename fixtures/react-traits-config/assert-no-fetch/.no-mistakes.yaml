@@ -1,0 +1,3 @@
+reactTraits:
+  frontendRoot: app
+  assertNoFetch: true

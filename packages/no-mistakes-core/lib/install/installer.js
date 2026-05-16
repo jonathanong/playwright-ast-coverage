@@ -29,9 +29,7 @@ async function install(binName, repository, options = {}) {
   }
 
   const executable =
-    process.platform === "win32" || target.endsWith("windows-msvc")
-      ? `${binName}.exe`
-      : binName;
+    process.platform === "win32" || target.endsWith("windows-msvc") ? `${binName}.exe` : binName;
 
   const vendorDir = options.vendorDir;
   if (!vendorDir) {
@@ -54,7 +52,7 @@ async function install(binName, repository, options = {}) {
   try {
     console.log(`Downloading ${binName} v${version} for ${target}...`);
     await download(`${baseUrl}/${asset}`, temp);
-    
+
     let checksumText;
     try {
       checksumText = await fetchText(`${baseUrl}/${asset}.sha256`);

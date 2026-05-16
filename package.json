@@ -17,9 +17,9 @@
   ],
   "scripts": {
     "test": "vitest run --coverage",
-    "fmt:js": "oxfmt --write packages/playwright-ast-coverage/bin packages/playwright-ast-coverage/scripts packages/eslint-plugin-playwright-ast-coverage/src packages/eslint-plugin-playwright-ast-coverage/test vitest.config.js",
-    "fmt:js:check": "oxfmt --check packages/playwright-ast-coverage/bin packages/playwright-ast-coverage/scripts packages/eslint-plugin-playwright-ast-coverage/src packages/eslint-plugin-playwright-ast-coverage/test vitest.config.js",
-    "lint:js": "oxlint packages/playwright-ast-coverage/bin packages/playwright-ast-coverage/scripts packages/eslint-plugin-playwright-ast-coverage/src packages/eslint-plugin-playwright-ast-coverage/test vitest.config.js",
+    "fmt:js": "oxfmt --write packages/ vitest.config.js",
+    "fmt:js:check": "oxfmt --check packages/ vitest.config.js",
+    "lint:js": "oxlint packages/ vitest.config.js",
     "pack:check": "npm --workspaces pack --dry-run",
     "prepare": "husky"
   },
