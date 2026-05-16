@@ -47,12 +47,10 @@ mod tests;
 
 pub(crate) fn print_violations(violations: &[Violation]) {
     for v in violations {
-        println!(
-            "{}#{}: {} {}",
-            v.file,
-            v.component,
-            v.rule,
-            v.detail.as_deref().unwrap_or("")
-        );
+        if let Some(detail) = &v.detail {
+            println!("{}#{}: {} {}", v.file, v.component, v.rule, detail);
+        } else {
+            println!("{}#{}: {}", v.file, v.component, v.rule);
+        }
     }
 }

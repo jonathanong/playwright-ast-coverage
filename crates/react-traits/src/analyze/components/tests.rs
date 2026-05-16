@@ -366,6 +366,13 @@ fn export_named_ts_type_ignored() {
 }
 
 #[test]
+fn export_const_dynamic_wrapped() {
+    // `export const Foo = dynamic(...)` — dynamic added to is_component_expr callee list
+    let names = check_names("export const Foo = dynamic(() => import('./Heavy'));");
+    assert_eq!(names, vec!["Foo"]);
+}
+
+#[test]
 fn export_class_extends_call_not_component() {
     // `class Foo extends getBase()` — superclass is a CallExpression; hits `_ => false`
     // in is_class_component (helpers.rs line 13)

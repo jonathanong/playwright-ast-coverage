@@ -43,23 +43,21 @@ pub(crate) fn run_analyze(
         results.extend(analysis.components);
     }
 
-    let results = results
-        .into_iter()
-        .map(|mut facts| {
-            let agg = aggregate_children(&facts, &file_cache, &root, &mut HashSet::new());
-            if agg != AggregatedFacts::default() {
-                facts.inherited_from_children = Some(agg);
-            }
-            facts
-        })
-        .collect();
+    let mut all_results = Vec::new();
+    for mut facts in results {
+        let agg = aggregate_children(&facts, &mut file_cache, &root, &mut HashSet::new());
+        if agg != AggregatedFacts::default() {
+            facts.inherited_from_children = Some(agg);
+        }
+        all_results.push(facts);
+    }
 
-    Ok(results)
+    Ok(all_results)
 }
 
 fn aggregate_children(
     facts: &ComponentFacts,
-    file_cache: &HashMap<PathBuf, Vec<ComponentFacts>>,
+    file_cache: &mut HashMap<PathBuf, Vec<ComponentFacts>>,
     root: &Path,
     visited: &mut HashSet<String>,
 ) -> AggregatedFacts {
@@ -72,25 +70,30 @@ fn aggregate_children(
         visited.insert(key.clone());
         let child_path = root.join(&child_ref.file);
         let child_canonical = child_path.canonicalize().ok();
-        let cached = file_cache
-            .get(&child_path)
-            .or_else(|| child_canonical.as_ref().and_then(|p| file_cache.get(p)));
-        // Analyze on-demand if child was not in the target glob (Cgv-B)
-        let on_demand;
-        let components: &Vec<ComponentFacts> = if let Some(c) = cached {
-            c
-        } else if child_path.is_file() {
+        let in_cache = file_cache.contains_key(&child_path)
+            || child_canonical
+                .as_ref()
+                .map_or(false, |p| file_cache.contains_key(p));
+        if !in_cache {
+            if !child_path.is_file() {
+                continue;
+            }
+            // Analyze on-demand and cache so repeated child refs avoid redundant parsing (Cgv-B).
             match analyze_file(&child_path, root) {
                 Ok(a) => {
-                    on_demand = a.components;
-                    &on_demand
+                    file_cache.insert(child_path.clone(), a.components);
                 }
                 Err(_) => continue,
             }
-        } else {
-            continue;
+        }
+        let components: Vec<ComponentFacts> = match file_cache
+            .get(&child_path)
+            .or_else(|| child_canonical.as_ref().and_then(|p| file_cache.get(p)))
+        {
+            Some(c) => c.clone(),
+            None => continue,
         };
-        for child_facts in components {
+        for child_facts in &components {
             if child_facts.name == child_ref.name {
                 agg.has_state |= child_facts.has_state;
                 agg.has_props |= child_facts.has_props;

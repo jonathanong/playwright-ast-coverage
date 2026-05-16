@@ -23,7 +23,7 @@ pub(crate) fn is_component_expr(expr: &Expression<'_>) -> bool {
                 Expression::StaticMemberExpression(m) => m.property.name.as_ref(),
                 _ => return false,
             };
-            matches!(name, "memo" | "forwardRef" | "lazy")
+            matches!(name, "memo" | "forwardRef" | "lazy" | "dynamic")
         }
         Expression::ParenthesizedExpression(p) => is_component_expr(&p.expression),
         _ => false,
