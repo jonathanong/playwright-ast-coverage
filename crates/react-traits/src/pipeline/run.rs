@@ -73,7 +73,7 @@ fn aggregate_children(
         let in_cache = file_cache.contains_key(&child_path)
             || child_canonical
                 .as_ref()
-                .map_or(false, |p| file_cache.contains_key(p));
+                .is_some_and(|p| file_cache.contains_key(p));
         if !in_cache {
             if !child_path.is_file() {
                 continue;
