@@ -21,6 +21,28 @@ fn cargo_run_p() {
 }
 
 #[test]
+fn cargo_run_package_long() {
+    let names = extract_binary_names("cargo run --package my-tool -- serve");
+    assert_eq!(names, vec!["my-tool"]);
+}
+
+#[test]
+fn cargo_run_multiline_bin() {
+    let names = extract_binary_names(
+        r#"cargo run \
+  --bin pg-schema \
+  -- --help"#,
+    );
+    assert_eq!(names, vec!["pg-schema"]);
+}
+
+#[test]
+fn cargo_run_ignores_binary_args_after_separator() {
+    let names = extract_binary_names("cargo run --bin tool -- -p 3000");
+    assert_eq!(names, vec!["tool"]);
+}
+
+#[test]
 fn target_binary() {
     let names = extract_binary_names("./target/release/dependencies --help");
     assert_eq!(names, vec!["dependencies"]);
@@ -155,7 +177,7 @@ version = "0.1.0"
 fn default_bin_path_keeps_hyphenated_name() {
     let toml_str = r#"
 [package]
-name = "exec"
+name = "tools"
 
 [[bin]]
 name = "pg-schema"
@@ -165,6 +187,37 @@ name = "pg-schema"
         bins.get("pg-schema").map(String::as_str),
         Some("src/bin/pg-schema.rs")
     );
+}
+
+#[test]
+fn explicit_bins_preserve_implicit_package_main() {
+    let toml_str = r#"
+[package]
+name = "exec"
+
+[[bin]]
+name = "guardrails"
+path = "src/bin/guardrails.rs"
+"#;
+    let bins = parse_cargo_bins(toml_str).unwrap();
+    assert_eq!(bins.get("exec").map(String::as_str), Some("src/main.rs"));
+    assert_eq!(
+        bins.get("guardrails").map(String::as_str),
+        Some("src/bin/guardrails.rs")
+    );
+}
+
+#[test]
+fn package_named_explicit_bin_defaults_to_main() {
+    let toml_str = r#"
+[package]
+name = "exec"
+
+[[bin]]
+name = "exec"
+"#;
+    let bins = parse_cargo_bins(toml_str).unwrap();
+    assert_eq!(bins.get("exec").map(String::as_str), Some("src/main.rs"));
 }
 
 #[test]

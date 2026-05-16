@@ -2,3 +2,7 @@
 name = "tool-one"
 version = "0.1.0"
 edition = "2021"
+
+[[bin]]
+name = "side-tool"
+path = "src/bin/side-tool.rs"

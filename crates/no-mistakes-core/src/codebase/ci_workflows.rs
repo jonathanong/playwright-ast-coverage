@@ -62,29 +62,16 @@ pub fn extract_invocations(workflow_yaml: &str) -> Result<Vec<Invocation>> {
 ///
 /// Handles:
 /// - `cargo run --bin <name>`
-/// - `cargo run -p <name>` (package name treated as binary name)
+/// - `cargo run -p <name>` or `cargo run --package <name>` (package name treated as binary name)
 /// - `cargo build --bin <name>`
 /// - `./target/<profile>/<name>` (direct invocation)
 /// - `<name> [args]` where `<name>` matches a known binary pattern
 pub fn extract_binary_names(run: &str) -> Vec<String> {
-    static CARGO_BIN: OnceLock<Regex> = OnceLock::new();
-    static CARGO_P: OnceLock<Regex> = OnceLock::new();
     static TARGET_BIN: OnceLock<Regex> = OnceLock::new();
 
-    let cargo_bin_re = CARGO_BIN
-        .get_or_init(|| Regex::new(r"cargo\s+(?:run|build|test)\s+.*?--bin\s+([\w-]+)").unwrap());
-    let cargo_p_re = CARGO_P
-        .get_or_init(|| Regex::new(r"cargo\s+(?:run|build|test)\s+.*?-p\s+([\w-]+)").unwrap());
     let target_bin_re = TARGET_BIN.get_or_init(|| Regex::new(r"\./target/\w+/([\w-]+)").unwrap());
 
-    let mut names: Vec<String> = Vec::new();
-
-    for cap in cargo_bin_re.captures_iter(run) {
-        names.push(cap[1].to_string());
-    }
-    for cap in cargo_p_re.captures_iter(run) {
-        names.push(cap[1].to_string());
-    }
+    let mut names = extract_cargo_binary_names(run);
     for cap in target_bin_re.captures_iter(run) {
         names.push(cap[1].to_string());
     }
@@ -92,6 +79,78 @@ pub fn extract_binary_names(run: &str) -> Vec<String> {
     names.sort();
     names.dedup();
     names
+}
+
+fn extract_cargo_binary_names(run: &str) -> Vec<String> {
+    let tokens = shellish_words(run);
+    let mut names = Vec::new();
+    let mut i = 0;
+    while i + 1 < tokens.len() {
+        if tokens[i] != "cargo" || !is_cargo_binary_subcommand(&tokens[i + 1]) {
+            i += 1;
+            continue;
+        }
+
+        i += 2;
+        while i < tokens.len() {
+            match tokens[i].as_str() {
+                "--" => break,
+                "cargo" if i + 1 < tokens.len() && is_cargo_binary_subcommand(&tokens[i + 1]) => {
+                    break;
+                }
+                "--bin" | "-p" | "--package" => {
+                    if let Some(name) = tokens.get(i + 1).filter(|name| is_cargo_target_name(name))
+                    {
+                        names.push(name.clone());
+                    }
+                    i += 2;
+                }
+                token if token.starts_with("--bin=") => {
+                    let name = token.trim_start_matches("--bin=");
+                    if is_cargo_target_name(name) {
+                        names.push(name.to_string());
+                    }
+                    i += 1;
+                }
+                token if token.starts_with("-p=") => {
+                    let name = token.trim_start_matches("-p=");
+                    if is_cargo_target_name(name) {
+                        names.push(name.to_string());
+                    }
+                    i += 1;
+                }
+                token if token.starts_with("--package=") => {
+                    let name = token.trim_start_matches("--package=");
+                    if is_cargo_target_name(name) {
+                        names.push(name.to_string());
+                    }
+                    i += 1;
+                }
+                _ => i += 1,
+            }
+        }
+    }
+    names
+}
+
+fn shellish_words(input: &str) -> Vec<String> {
+    input
+        .split_whitespace()
+        .filter_map(|token| {
+            let token = token.trim_matches(|c| matches!(c, '"' | '\'' | ';' | '\\'));
+            (!token.is_empty()).then(|| token.to_string())
+        })
+        .collect()
+}
+
+fn is_cargo_binary_subcommand(token: &str) -> bool {
+    matches!(token, "run" | "build" | "test")
+}
+
+fn is_cargo_target_name(token: &str) -> bool {
+    token
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
 /// Parse workspace member entries from a root `Cargo.toml` string.
@@ -121,6 +180,7 @@ pub fn parse_cargo_bins(cargo_toml: &str) -> Result<HashMap<String, String>> {
     #[derive(Deserialize)]
     struct Package {
         name: String,
+        autobins: Option<bool>,
     }
     #[derive(Deserialize)]
     struct BinEntry {
@@ -130,18 +190,27 @@ pub fn parse_cargo_bins(cargo_toml: &str) -> Result<HashMap<String, String>> {
 
     let ct: CargoToml = toml::from_str(cargo_toml)?;
     let mut map = HashMap::new();
+    let package = ct.package;
+    let package_name = package.as_ref().map(|pkg| pkg.name.as_str());
+    if let Some(package) = &package {
+        if package.autobins.unwrap_or(true) {
+            map.insert(package.name.clone(), "src/main.rs".to_string());
+        }
+    }
+
     let explicit_bins = ct.bin.unwrap_or_default();
     if explicit_bins.is_empty() {
-        if let Some(package) = ct.package {
-            map.insert(package.name, "src/main.rs".to_string());
-        }
         return Ok(map);
     }
 
     for entry in explicit_bins {
-        let path = entry
-            .path
-            .unwrap_or_else(|| format!("src/bin/{}.rs", entry.name));
+        let path = entry.path.unwrap_or_else(|| {
+            if package_name == Some(entry.name.as_str()) {
+                "src/main.rs".to_string()
+            } else {
+                format!("src/bin/{}.rs", entry.name)
+            }
+        });
         map.insert(entry.name, path);
     }
     Ok(map)
