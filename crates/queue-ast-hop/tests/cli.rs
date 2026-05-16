@@ -113,20 +113,6 @@ fn related_human_and_markdown_formats_render() {
 }
 
 #[test]
-fn config_missing_exits_with_error_from_main() {
-    Command::cargo_bin("queue-ast-hop")
-        .unwrap()
-        .arg("--root")
-        .arg(fixture("basic"))
-        .arg("--config")
-        .arg("missing.yaml")
-        .arg("edges")
-        .assert()
-        .code(2)
-        .stderr(predicate::str::contains("config file does not exist"));
-}
-
-#[test]
 fn timings_and_jobs_env_are_accepted() {
     Command::cargo_bin("queue-ast-hop")
         .unwrap()
@@ -143,7 +129,7 @@ fn timings_and_jobs_env_are_accepted() {
 }
 
 #[test]
-fn relative_root_existing_config_and_env_jobs_are_accepted() {
+fn relative_root_and_env_jobs_are_accepted() {
     Command::cargo_bin("queue-ast-hop")
         .unwrap()
         .current_dir(
@@ -155,8 +141,6 @@ fn relative_root_existing_config_and_env_jobs_are_accepted() {
         .env("RAYON_NUM_THREADS", "2")
         .arg("--root")
         .arg("fixtures/queue-ast-hop/basic")
-        .arg("--config")
-        .arg("queue-ast-hop.yml")
         .arg("--format")
         .arg("human")
         .arg("edges")
@@ -167,18 +151,21 @@ fn relative_root_existing_config_and_env_jobs_are_accepted() {
 }
 
 #[test]
-fn absolute_config_and_successful_check_are_accepted() {
+fn depth_limits_edges_from_roots() {
     Command::cargo_bin("queue-ast-hop")
         .unwrap()
-        .env_remove("RAYON_NUM_THREADS")
         .arg("--root")
         .arg(fixture("basic"))
-        .arg("--config")
-        .arg(fixture("basic").join("queue-ast-hop.yml"))
-        .arg("check")
+        .arg("--format")
+        .arg("paths")
+        .arg("--depth")
+        .arg("1")
+        .arg("edges")
+        .arg("enqueue.ts")
         .assert()
         .success()
-        .stdout("");
+        .stdout(predicate::str::contains("queues.ts#sendWelcome"))
+        .stdout(predicate::str::contains("worker.ts").not());
 }
 
 #[test]

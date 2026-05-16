@@ -57,6 +57,11 @@ fn flow_producer_edges_are_supported() {
         .edges
         .iter()
         .any(|edge| edge.from == "flow.ts" && edge.to == "flow.ts#resize"));
+    assert!(report
+        .producers
+        .iter()
+        .any(|producer| producer.job.as_deref() == Some("resize")
+            && producer.raw_job.as_deref() == Some("JOB")));
 }
 
 #[test]

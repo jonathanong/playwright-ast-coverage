@@ -1,9 +1,10 @@
 import { FlowProducer, Worker } from "bullmq";
 
 const flow = new FlowProducer();
+const JOB = "resize";
 
 export function enqueueFlow() {
-  return flow.add({ name: "resize", queueName: "images", data: {} });
+  return flow.add({ name: JOB, queueName: "images", data: {} });
 }
 
 export const worker = new Worker("images", async (job) => {

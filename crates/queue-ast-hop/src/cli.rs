@@ -12,8 +12,6 @@ pub(crate) struct Cli {
     #[arg(long, default_value = ".", global = true)]
     root: PathBuf,
     #[arg(long, global = true)]
-    config: Option<PathBuf>,
-    #[arg(long, global = true)]
     tsconfig: Option<PathBuf>,
     #[arg(long = "filter", global = true)]
     filters: Vec<String>,
@@ -67,16 +65,6 @@ pub fn run_cli() -> Result<ExitCode> {
     } else {
         base.join(&cli.root)
     };
-    if let Some(config) = &cli.config {
-        let config = if config.is_absolute() {
-            config.clone()
-        } else {
-            root.join(config)
-        };
-        if !config.exists() {
-            anyhow::bail!("config file does not exist: {}", config.display());
-        }
-    }
     if cli.timings {
         eprintln!("search: 0.000ms");
     }

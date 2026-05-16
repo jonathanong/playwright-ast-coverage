@@ -51,11 +51,15 @@ pub(super) fn record_flow(
     };
     let mut queue = None;
     let mut job = None;
+    let mut raw_job = None;
     for property in &object.properties {
         if let ObjectPropertyKind::ObjectProperty(property) = property {
             match property.key.static_name().as_deref() {
                 Some("queueName") => queue = literal_expr(&property.value, consts),
-                Some("name") => job = literal_expr(&property.value, consts),
+                Some("name") => {
+                    raw_job = Some(span(source, property.value.span()));
+                    job = literal_expr(&property.value, consts);
+                }
                 _ => {}
             }
         }
@@ -70,7 +74,7 @@ pub(super) fn record_flow(
         file: path.to_path_buf(),
         line: line_number(source, call.span.start),
         binding,
-        raw_job: job.clone(),
+        raw_job,
         job,
     });
 }

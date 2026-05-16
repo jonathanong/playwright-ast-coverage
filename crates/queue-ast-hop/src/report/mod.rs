@@ -14,21 +14,22 @@ pub(crate) enum Format {
 pub(crate) fn print_edges(
     report: &ProjectReport,
     roots: &[String],
-    _depth: Option<usize>,
+    depth: Option<usize>,
     format: Format,
 ) -> anyhow::Result<()> {
+    let edges = edge_view(report, roots, depth);
     match format {
         Format::Json => print_json(report),
         Format::Yml => print_yml(report),
         Format::Paths => {
-            for edge in &report.edges {
+            for edge in &edges {
                 println!("{}", edge.to);
             }
             Ok(())
         }
         Format::Md => {
             println!("# Queue edges");
-            for edge in &report.edges {
+            for edge in &edges {
                 println!("- `{}` -> `{}` ({:?})", edge.from, edge.to, edge.kind);
             }
             Ok(())
@@ -39,12 +40,45 @@ pub(crate) fn print_edges(
             } else {
                 println!("{}", roots.join(", "));
             }
-            for edge in &report.edges {
+            for edge in &edges {
                 println!("  {} -> {}", edge.from, edge.to);
             }
             Ok(())
         }
     }
+}
+
+fn edge_view(report: &ProjectReport, roots: &[String], depth: Option<usize>) -> Vec<Edge> {
+    if roots.is_empty() {
+        return report.edges.clone();
+    }
+    let max_depth = depth.unwrap_or(usize::MAX);
+    let mut edges = Vec::new();
+    let mut frontier = roots
+        .iter()
+        .cloned()
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut seen_nodes = frontier.clone();
+    let mut seen_edges = std::collections::BTreeSet::new();
+    for _ in 0..max_depth {
+        let mut next = std::collections::BTreeSet::new();
+        for edge in &report.edges {
+            if !frontier.contains(&edge.from) {
+                continue;
+            }
+            if seen_edges.insert((edge.from.clone(), edge.to.clone(), edge.kind)) {
+                edges.push(edge.clone());
+            }
+            if seen_nodes.insert(edge.to.clone()) {
+                next.insert(edge.to.clone());
+            }
+        }
+        if next.is_empty() {
+            break;
+        }
+        frontier = next;
+    }
+    edges
 }
 
 pub(crate) fn print_related(
