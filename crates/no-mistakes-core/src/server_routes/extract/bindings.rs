@@ -1,0 +1,92 @@
+use super::{helpers::first_object_prefix, import_names, ServerRouteVisitor};
+use crate::server_routes::model::{Binding, ImportBinding};
+use crate::server_routes::types::Framework;
+use oxc_ast::ast::{CallExpression, Expression, ImportDeclarationSpecifier};
+
+impl ServerRouteVisitor<'_> {
+    pub(super) fn record_import(
+        &mut self,
+        source: &str,
+        specifier: &ImportDeclarationSpecifier<'_>,
+    ) {
+        let (local, imported) = import_names(specifier);
+        match source {
+            "express" if imported == "default" => {
+                self.express_names.insert(local.clone());
+            }
+            "hono" | "@hono/hono" if imported == "Hono" => {
+                self.hono_names.insert(local.clone());
+            }
+            "@koa/router" | "koa-router" if imported == "default" || imported == "Router" => {
+                self.koa_router_names.insert(local.clone());
+            }
+            "koa-path-match" | "@koa/path-match" if imported == "default" => {
+                self.path_match_names.insert(local.clone());
+            }
+            "@jongleberry/api-server" | "api-server" if imported == "createApp" => {
+                self.api_server_names.insert(local.clone());
+            }
+            _ => {}
+        }
+        self.facts.imports.push(ImportBinding {
+            local,
+            source: source.to_string(),
+        });
+    }
+
+    pub(super) fn binding_from_expr(&self, expr: &Expression<'_>) -> Option<Binding> {
+        match expr {
+            Expression::CallExpression(call) => self.call_binding(call),
+            Expression::NewExpression(new_expr) => {
+                let Expression::Identifier(id) = &new_expr.callee else {
+                    return None;
+                };
+                let name = id.name.as_str();
+                if self.hono_names.contains(name) {
+                    return Some(Binding::new(
+                        Framework::Hono,
+                        first_object_prefix(&new_expr.arguments),
+                    ));
+                }
+                if self.koa_router_names.contains(name) {
+                    return Some(Binding::new(
+                        Framework::KoaRouter,
+                        first_object_prefix(&new_expr.arguments),
+                    ));
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    fn call_binding(&self, call: &CallExpression<'_>) -> Option<Binding> {
+        match &call.callee {
+            Expression::Identifier(id) if self.express_names.contains(id.name.as_str()) => {
+                Some(Binding::new(Framework::Express, None))
+            }
+            Expression::Identifier(id) if self.api_server_names.contains(id.name.as_str()) => {
+                Some(Binding::new(Framework::ApiServer, None))
+            }
+            Expression::Identifier(id) if self.path_match_names.contains(id.name.as_str()) => {
+                Some(Binding::new(Framework::KoaPathMatch, None))
+            }
+            Expression::StaticMemberExpression(member)
+                if member.property.name.as_str() == "Router"
+                    && matches!(&member.object, Expression::Identifier(id) if self.express_names.contains(id.name.as_str())) =>
+            {
+                Some(Binding::new(Framework::Express, None))
+            }
+            Expression::StaticMemberExpression(member)
+                if member.property.name.as_str() == "basePath" =>
+            {
+                let mut binding = self.binding_from_expr(&member.object)?;
+                if let Some(prefix) = call.arguments.first().and_then(|arg| self.literal_arg(arg)) {
+                    binding.prefixes.push(prefix);
+                }
+                Some(binding)
+            }
+            _ => None,
+        }
+    }
+}

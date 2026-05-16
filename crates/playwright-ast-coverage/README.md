@@ -31,6 +31,7 @@ cargo install playwright-ast-coverage
 - Find `data-testid` and `data-pw` hooks that tests never assert.
 - Ask for related tests when a page or component changes.
 - Give AI agents a deterministic pre-finish coverage check.
+- Map Node.js server route definitions with `server-ast-routes`.
 
 ```sh
 playwright-ast-coverage check --json
