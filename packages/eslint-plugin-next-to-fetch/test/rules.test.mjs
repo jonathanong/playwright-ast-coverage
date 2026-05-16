@@ -72,6 +72,12 @@ describe("static-fetch-url", () => {
       [],
     );
   });
+
+  it("does not treat fetch configured as a global as shadowed", () => {
+    assert.deepEqual(messages("fetch(url);", "static-fetch-url", { fetch: "readonly" }), [
+      "dynamic",
+    ]);
+  });
 });
 
 describe("static-fetch-method", () => {

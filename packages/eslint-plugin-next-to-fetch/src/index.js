@@ -24,14 +24,5 @@ plugin.configs.recommended = {
   },
 };
 
-plugin.configs.strict = {
-  plugins: {
-    "next-to-fetch": plugin,
-  },
-  rules: {
-    ...plugin.configs.recommended.rules,
-  },
-};
-
 /* v8 ignore next */
 module.exports = plugin;

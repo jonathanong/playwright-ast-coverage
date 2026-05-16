@@ -12,8 +12,9 @@ function isStaticString(node) {
 }
 
 function isFetchShadowed(scope) {
-  while (scope.type !== "global") {
-    if (scope.variables.some((v) => v.name === "fetch")) return true;
+  while (scope) {
+    const variable = scope.variables.find((v) => v.name === "fetch");
+    if (variable) return scope.type !== "global";
     scope = scope.upper;
   }
   return false;

@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { describe, it } from "vitest";
 
-import { __dirname } from "./helpers.mjs";
+import { __dirname, require } from "./helpers.mjs";
+
+const oxlintBin = resolve(dirname(require.resolve("oxlint/package.json")), "bin", "oxlint");
 
 describe("oxlint support", () => {
   it("loads the plugin through jsPlugins", () => {
@@ -21,19 +23,17 @@ describe("oxlint support", () => {
       );
       const result = spawnSync(
         process.execPath,
-        [
-          resolve(__dirname, "../../../node_modules/oxlint/bin/oxlint"),
-          "--config",
-          ".oxlintrc.json",
-          "fixture.js",
-        ],
+        [oxlintBin, "--config", ".oxlintrc.json", "fixture.js"],
         {
           cwd: root,
           encoding: "utf8",
         },
       );
       assert.notEqual(result.status, 0);
-      assert.match(`${result.stderr || ""}${result.stdout || ""}`, /static|fetch|statically/i);
+      assert.match(
+        `${result.stderr || ""}${result.stdout || ""}`,
+        /expression-free template literal/,
+      );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

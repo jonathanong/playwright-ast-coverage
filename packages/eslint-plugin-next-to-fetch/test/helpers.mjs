@@ -7,7 +7,7 @@ export const require = createRequire(import.meta.url);
 export const __dirname = dirname(fileURLToPath(import.meta.url));
 export const plugin = require("../src");
 
-export function lint(code, rules, filename = "fixture.js") {
+export function lint(code, rules, filename = "fixture.js", globals = {}) {
   const linter = new Linter({ configType: "flat" });
   return linter.verify(
     code,
@@ -16,6 +16,7 @@ export function lint(code, rules, filename = "fixture.js") {
       languageOptions: {
         ecmaVersion: 2024,
         sourceType: "module",
+        globals,
       },
       plugins: {
         "next-to-fetch": plugin,
@@ -26,6 +27,8 @@ export function lint(code, rules, filename = "fixture.js") {
   );
 }
 
-export function messages(code, rule) {
-  return lint(code, { [`next-to-fetch/${rule}`]: "error" }).map((m) => m.messageId);
+export function messages(code, rule, globals = {}) {
+  return lint(code, { [`next-to-fetch/${rule}`]: "error" }, "fixture.js", globals).map(
+    (m) => m.messageId,
+  );
 }
