@@ -62,9 +62,9 @@ impl<'a> oxc_ast_visit::Visit<'a> for PlaywrightSelectorVisitor<'a, '_> {
             }
         }
 
-        if let Some(describe) = playwright_tests::describe_name(call) {
-            let traversal = playwright_tests::test_callback_traversal(call, self.annotation_status);
-            if let Some((callback_index, callback_status)) = traversal {
+        let traversal = playwright_tests::test_callback_traversal(call, self.annotation_status);
+        if let Some((callback_index, callback_status)) = traversal {
+            if let Some(describe) = playwright_tests::describe_name(call) {
                 self.describe_stack.push(describe);
                 for (index, argument) in call.arguments.iter().enumerate() {
                     if index == callback_index {
@@ -77,12 +77,25 @@ impl<'a> oxc_ast_visit::Visit<'a> for PlaywrightSelectorVisitor<'a, '_> {
                     }
                 }
                 self.describe_stack.pop();
-                return;
+            } else {
+                let test_name = playwright_tests::test_callback_identity(call);
+                let previous_test_name = self.current_test_name.clone();
+                if test_name.is_some() {
+                    self.current_test_name = test_name;
+                }
+                for (index, argument) in call.arguments.iter().enumerate() {
+                    if index == callback_index {
+                        self.with_status(callback_status, |visitor| {
+                            visitor
+                                .with_annotation_scope(|visitor| visitor.visit_argument(argument));
+                        });
+                    } else {
+                        self.visit_argument(argument);
+                    }
+                }
+                self.current_test_name = previous_test_name;
             }
-        }
-
-        let traversal = playwright_tests::test_callback_traversal(call, self.annotation_status);
-        if traversal.is_none() {
+        } else {
             let callback_index = playwright_tests::callback_argument_index(call);
             if playwright_tests::annotation_status_for_call(call).is_some() {
                 self.apply_annotation_call(call);
@@ -94,25 +107,7 @@ impl<'a> oxc_ast_visit::Visit<'a> for PlaywrightSelectorVisitor<'a, '_> {
                 return;
             }
             oxc_ast_visit::walk::walk_call_expression(self, call);
-            return;
         }
-
-        let (callback_index, callback_status) = traversal.expect("checked traversal");
-        let test_name = playwright_tests::test_callback_identity(call);
-        let previous_test_name = self.current_test_name.clone();
-        if test_name.is_some() {
-            self.current_test_name = test_name;
-        }
-        for (index, argument) in call.arguments.iter().enumerate() {
-            if index == callback_index {
-                self.with_status(callback_status, |visitor| {
-                    visitor.with_annotation_scope(|visitor| visitor.visit_argument(argument));
-                });
-            } else {
-                self.visit_argument(argument);
-            }
-        }
-        self.current_test_name = previous_test_name;
     }
 
     fn visit_if_statement(&mut self, statement: &oxc_ast::ast::IfStatement<'a>) {
