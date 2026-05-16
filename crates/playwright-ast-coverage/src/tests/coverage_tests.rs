@@ -1,8 +1,9 @@
 use crate::analysis::coverage::build_coverage;
-use crate::analysis::types::{Edge, UniqueSelectorPolicy};
+use crate::analysis::types::{Edge, FetchIndex, UniqueSelectorPolicy};
 use crate::config::Settings;
 use crate::routes::Route;
 use crate::selectors::{self, AppSelectorValue};
+use no_mistakes_core::fetch::types::{CacheKind, FetchOccurrence, FetchSide};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -46,6 +47,7 @@ fn fetch_edges_mark_fetch_apis_covered() {
         &edges,
         &settings,
         UniqueSelectorPolicy::default(),
+        &FetchIndex::new(),
     );
     assert_eq!(report.summary.total_fetch_apis, 2);
     assert_eq!(report.summary.covered_fetch_apis, 2);
@@ -59,7 +61,7 @@ fn fetch_edges_mark_fetch_apis_covered() {
 
 #[test]
 fn has_configured_html_id_via_component_attributes() {
-    use crate::analysis::coverage::has_configured_html_id_selector;
+    use crate::config::has_configured_html_id_selector;
     use crate::selectors::HTML_ID_ATTRIBUTE;
     let settings_with_component_id = Settings {
         frontend_root: "web/app".to_string(),
@@ -122,6 +124,7 @@ fn coverage_sort_uses_file_as_tiebreaker() {
         &[],
         &settings,
         UniqueSelectorPolicy::default(),
+        &FetchIndex::new(),
     );
     assert_eq!(report.routes[0].file, "web/app/a/page.tsx");
     assert_eq!(report.routes[1].file, "web/app/b/page.tsx");
@@ -144,6 +147,7 @@ fn selector_coverage_sorts_and_counts_uncovered() {
         &[],
         &settings,
         UniqueSelectorPolicy::default(),
+        &FetchIndex::new(),
     );
     assert_eq!(report.summary.total_selectors, 1);
     assert_eq!(report.summary.uncovered_selectors, 1);
@@ -179,6 +183,7 @@ fn selector_coverage_sort_uses_value_and_file_tiebreakers() {
         &[],
         &settings,
         UniqueSelectorPolicy::default(),
+        &FetchIndex::new(),
     );
     assert_eq!(report.selectors[0].file, "web/app/a.tsx");
     assert_eq!(report.selectors[1].file, "web/app/b.tsx");
@@ -211,6 +216,7 @@ fn selector_edges_mark_targets_covered() {
         &edges,
         &settings,
         UniqueSelectorPolicy::default(),
+        &FetchIndex::new(),
     );
     assert_eq!(report.summary.covered_selectors, 1);
     assert_eq!(report.selectors[0].tests, vec!["tests/e2e/app.spec.ts"]);
@@ -240,7 +246,61 @@ fn route_edges_mark_routes_covered() {
         &edges,
         &settings,
         UniqueSelectorPolicy::default(),
+        &FetchIndex::new(),
     );
     assert_eq!(report.summary.covered_routes, 1);
     assert_eq!(report.routes[0].urls, vec!["/users/42"]);
+}
+
+#[test]
+fn seed_fetch_coverage_skips_dynamic_and_unsupported() {
+    let root = Path::new("/repo");
+    let mut fetch_index = FetchIndex::new();
+    fetch_index.insert(
+        "web/app/page.tsx".to_string(),
+        vec![
+            FetchOccurrence {
+                method: "GET".to_string(),
+                path: "/api/data".to_string(),
+                raw_path: "/api/data".to_string(),
+                file: "web/app/page.tsx".to_string(),
+                line: 1,
+                side: FetchSide::Server,
+                rsc: true,
+                cached: false,
+                cache_kind: CacheKind::None,
+                cached_function: None,
+                dynamic: true,
+                unsupported: false,
+            },
+            FetchOccurrence {
+                method: "GET".to_string(),
+                path: "/api/static".to_string(),
+                raw_path: "/api/static".to_string(),
+                file: "web/app/page.tsx".to_string(),
+                line: 2,
+                side: FetchSide::Server,
+                rsc: true,
+                cached: false,
+                cache_kind: CacheKind::None,
+                cached_function: None,
+                dynamic: false,
+                unsupported: false,
+            },
+        ],
+    );
+    let settings = default_settings(vec![]);
+    let report = build_coverage(
+        root,
+        &[],
+        &[],
+        &[],
+        &[],
+        &settings,
+        UniqueSelectorPolicy::default(),
+        &fetch_index,
+    );
+    assert_eq!(report.summary.total_fetch_apis, 1);
+    assert_eq!(report.fetch_apis[0].path, "/api/static");
+    assert!(!report.fetch_apis[0].covered);
 }

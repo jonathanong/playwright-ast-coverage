@@ -1,7 +1,8 @@
 use crate::analysis::duplicates::build_duplicate_selectors;
+use crate::analysis::fetch::{seed_fetch_coverage, FetchCoverageEntry};
 use crate::analysis::types::{
     CoverageFetch, CoverageLinks, CoverageReport, CoverageRoute, CoverageSelector, Edge,
-    SelectorCoverageKey, Summary, TestRef, UniqueSelectorPolicy,
+    FetchIndex, SelectorCoverageKey, Summary, TestRef, UniqueSelectorPolicy,
 };
 use crate::config::Settings;
 use crate::fsutil::relative_string;
@@ -11,11 +12,11 @@ use crate::url::is_ignored;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-type RouteCoverageEntry<'a> = BTreeMap<&'a str, (BTreeSet<String>, BTreeSet<String>, Vec<TestRef>)>;
-type SelectorCoverageEntry = BTreeMap<SelectorCoverageKey, (CoverageLinks, Vec<TestRef>)>;
-type FetchKey = (String, String);
-type FetchCoverageEntry = BTreeMap<FetchKey, (BTreeSet<String>, Vec<TestRef>, BTreeSet<String>)>;
+type RouteCoverageEntry<'a> =
+    BTreeMap<&'a str, (BTreeSet<String>, BTreeSet<String>, BTreeSet<TestRef>)>;
+type SelectorCoverageEntry = BTreeMap<SelectorCoverageKey, (CoverageLinks, BTreeSet<TestRef>)>;
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_coverage(
     root: &Path,
     routes: &[Route],
@@ -24,11 +25,12 @@ pub(crate) fn build_coverage(
     edges: &[Edge],
     settings: &Settings,
     unique_selector_policy: UniqueSelectorPolicy,
+    fetch_index: &FetchIndex,
 ) -> CoverageReport {
     let ignored: Vec<String> = settings.ignore_routes.clone();
     let mut by_route: RouteCoverageEntry<'_> = BTreeMap::new();
     let mut by_selector: SelectorCoverageEntry = BTreeMap::new();
-    let mut by_fetch: FetchCoverageEntry = BTreeMap::new();
+    let mut by_fetch: FetchCoverageEntry = seed_fetch_coverage(fetch_index);
 
     for edge in edges {
         match edge {
@@ -40,12 +42,12 @@ pub(crate) fn build_coverage(
                 url,
                 ..
             } => {
-                let entry = by_route
-                    .entry(route.as_str())
-                    .or_insert_with(|| (Default::default(), Default::default(), Vec::new()));
+                let entry = by_route.entry(route.as_str()).or_insert_with(|| {
+                    (Default::default(), Default::default(), Default::default())
+                });
                 entry.0.insert(test_file.clone());
                 entry.1.insert(url.clone());
-                entry.2.push(TestRef {
+                entry.2.insert(TestRef {
                     file: test_file.clone(),
                     name: test_name.clone(),
                     describe_path: describe_path.clone(),
@@ -62,10 +64,12 @@ pub(crate) fn build_coverage(
             } => {
                 let entry = by_selector
                     .entry((app_file.clone(), attribute.clone(), value.clone()))
-                    .or_insert_with(|| ((Default::default(), Default::default()), Vec::new()));
+                    .or_insert_with(|| {
+                        ((Default::default(), Default::default()), Default::default())
+                    });
                 entry.0 .0.insert(test_file.clone());
                 entry.0 .1.insert(selector.clone());
-                entry.1.push(TestRef {
+                entry.1.insert(TestRef {
                     file: test_file.clone(),
                     name: test_name.clone(),
                     describe_path: describe_path.clone(),
@@ -81,11 +85,11 @@ pub(crate) fn build_coverage(
                 ..
             } => {
                 let key = (method.clone(), path.clone());
-                let entry = by_fetch
-                    .entry(key)
-                    .or_insert_with(|| (Default::default(), Vec::new(), Default::default()));
+                let entry = by_fetch.entry(key).or_insert_with(|| {
+                    (Default::default(), Default::default(), Default::default())
+                });
                 entry.0.insert(test_file.clone());
-                entry.1.push(TestRef {
+                entry.1.insert(TestRef {
                     file: test_file.clone(),
                     name: test_name.clone(),
                     describe_path: describe_path.clone(),
@@ -107,7 +111,7 @@ pub(crate) fn build_coverage(
             file: relative_string(root, &route.file),
             covered,
             tests: tests.into_iter().collect(),
-            tests_detail,
+            tests_detail: tests_detail.into_iter().collect(),
             urls: urls.into_iter().collect(),
         });
     }
@@ -133,7 +137,7 @@ pub(crate) fn build_coverage(
             covered,
             unsupported_dynamic: app_selector.unsupported_dynamic(),
             tests: tests.into_iter().collect(),
-            tests_detail,
+            tests_detail: tests_detail.into_iter().collect(),
             selectors: selectors.into_iter().collect(),
         });
     }
@@ -150,7 +154,7 @@ pub(crate) fn build_coverage(
             |((method, path), (tests, tests_detail, route_files))| CoverageFetch {
                 covered: !tests.is_empty(),
                 tests: tests.into_iter().collect(),
-                tests_detail,
+                tests_detail: tests_detail.into_iter().collect(),
                 route_files: route_files.into_iter().collect(),
                 method,
                 path,
@@ -193,15 +197,4 @@ pub(crate) fn build_coverage(
         duplicate_selectors,
         fetch_apis,
     }
-}
-
-pub(crate) fn has_configured_html_id_selector(settings: &Settings) -> bool {
-    settings
-        .selector_attributes
-        .iter()
-        .any(|attribute| attribute == selectors::HTML_ID_ATTRIBUTE)
-        || settings
-            .component_selector_attributes
-            .values()
-            .any(|attribute| attribute == selectors::HTML_ID_ATTRIBUTE)
 }

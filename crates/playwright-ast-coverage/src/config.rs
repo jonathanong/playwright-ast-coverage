@@ -152,6 +152,18 @@ fn is_playwright_config_name(path: &Path) -> bool {
         && PLAYWRIGHT_CONFIG_EXTENSIONS.contains(&extension)
 }
 
+pub(crate) fn has_configured_html_id_selector(settings: &Settings) -> bool {
+    use crate::selectors::HTML_ID_ATTRIBUTE;
+    settings
+        .selector_attributes
+        .iter()
+        .any(|attribute| attribute == HTML_ID_ATTRIBUTE)
+        || settings
+            .component_selector_attributes
+            .values()
+            .any(|attribute| attribute == HTML_ID_ATTRIBUTE)
+}
+
 fn default_selector_attributes() -> Vec<String> {
     DEFAULT_SELECTOR_ATTRIBUTES
         .iter()

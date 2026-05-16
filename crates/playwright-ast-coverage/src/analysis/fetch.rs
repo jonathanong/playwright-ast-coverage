@@ -1,10 +1,33 @@
-use crate::analysis::types::{Edge, FetchIndex};
+use crate::analysis::types::{Edge, FetchIndex, TestRef};
 use no_mistakes_core::fetch::cache::Cache;
 use no_mistakes_core::fetch::resolve::relative_string;
 use no_mistakes_core::fetch::route_analysis::collect_route_fetches;
 use no_mistakes_core::fetch::types::{FetchOccurrence, FetchSide};
 use no_mistakes_core::routes::Route;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+
+pub(crate) type FetchKey = (String, String);
+pub(crate) type FetchCoverageEntry =
+    BTreeMap<FetchKey, (BTreeSet<String>, BTreeSet<TestRef>, BTreeSet<String>)>;
+
+pub(crate) fn seed_fetch_coverage(fetch_index: &FetchIndex) -> FetchCoverageEntry {
+    let mut by_fetch: FetchCoverageEntry = BTreeMap::new();
+    for (route_file, fetches) in fetch_index {
+        for fetch_occ in fetches {
+            if fetch_occ.dynamic || fetch_occ.unsupported {
+                continue;
+            }
+            let key = (fetch_occ.method.clone(), fetch_occ.path.clone());
+            by_fetch
+                .entry(key)
+                .or_insert_with(|| (Default::default(), Default::default(), Default::default()))
+                .2
+                .insert(route_file.clone());
+        }
+    }
+    by_fetch
+}
 
 pub(crate) fn collect_fetches_for_routes(
     routes: &[Route],

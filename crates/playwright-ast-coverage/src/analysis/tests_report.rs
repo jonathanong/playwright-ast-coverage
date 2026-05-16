@@ -111,6 +111,9 @@ pub(crate) fn print_tests_text(report: &TestsReport) {
         for test_id in &entry.test_ids {
             println!("  test-id: {test_id}");
         }
+        for html_id in &entry.html_ids {
+            println!("  html-id: {html_id}");
+        }
     }
 }
 

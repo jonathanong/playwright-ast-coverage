@@ -126,14 +126,9 @@ impl<'a> Visit<'a> for FetchVisitor<'a> {
             oxc_ast::ast::FunctionType::FunctionDeclaration
                 | oxc_ast::ast::FunctionType::TSDeclareFunction
         ) {
-            self.mark_identifier_shadowed_in_var_scope(
-                function
-                    .id
-                    .as_ref()
-                    .expect("named function declarations should include an identifier")
-                    .name
-                    .as_ref(),
-            );
+            if let Some(id) = &function.id {
+                self.mark_identifier_shadowed_in_var_scope(id.name.as_ref());
+            }
         }
         self.enter_fetch_scope(true);
         walk::walk_function(self, function, flags);

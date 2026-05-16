@@ -1,7 +1,8 @@
 use crate::analysis::output::{build_related_report, print_coverage_text, print_edges_text};
+use crate::analysis::tests_report::print_tests_text;
 use crate::analysis::types::{
     CoverageFetch, CoverageReport, CoverageRoute, CoverageSelector, DuplicateSelector, Edge,
-    EdgeReport, Summary,
+    EdgeReport, Summary, TestEntry, TestsReport,
 };
 use std::path::PathBuf;
 
@@ -146,4 +147,20 @@ fn related_report_includes_fetch_apis() {
     let related = build_related_report(root, &edges, &[PathBuf::from("/repo/web/app/page.tsx")]);
     assert!(related.tests.contains(&"tests/e2e/app.spec.ts".to_string()));
     assert!(related.fetch_apis.contains(&"GET /api/health".to_string()));
+}
+
+#[test]
+fn print_tests_text_covers_html_ids() {
+    let report = TestsReport {
+        tests: vec![TestEntry {
+            file: "tests/e2e/app.spec.ts".to_string(),
+            name: Some("visits home".to_string()),
+            describe_path: vec![],
+            test_ids: vec![],
+            html_ids: vec!["main-nav".to_string()],
+            routes: vec![],
+            fetch_apis: vec![],
+        }],
+    };
+    print_tests_text(&report);
 }

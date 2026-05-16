@@ -15,7 +15,7 @@ pub(crate) struct Summary {
     pub(crate) uncovered_fetch_apis: usize,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct TestRef {
     pub(crate) file: String,

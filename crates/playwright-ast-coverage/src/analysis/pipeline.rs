@@ -1,6 +1,6 @@
 use crate::analysis::app_collect::collect_app_selector_occurrences;
 use crate::analysis::context::TestAnalysisContext;
-use crate::analysis::coverage::{build_coverage, has_configured_html_id_selector};
+use crate::analysis::coverage::build_coverage;
 use crate::analysis::discover::discover_test_files;
 use crate::analysis::fetch::{collect_fetches_for_routes, expand_fetch_edges};
 use crate::analysis::output::{
@@ -13,6 +13,7 @@ use crate::analysis::tests_report::{build_tests_report, print_tests_text};
 use crate::analysis::types::{Analysis, EdgeReport, UniqueSelectorPolicy};
 use crate::cli::{Cli, Command};
 use crate::config;
+use crate::config::has_configured_html_id_selector;
 use crate::fsutil::absolutize;
 use crate::playwright_tests;
 use crate::routes;
@@ -194,6 +195,7 @@ pub(crate) fn analyze_with_policy(
         &edge_report.edges,
         settings,
         unique_selector_policy,
+        &fetch_idx,
     );
     Ok(Analysis {
         coverage,
