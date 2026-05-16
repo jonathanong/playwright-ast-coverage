@@ -70,7 +70,7 @@ pub(super) fn collect_jobs_from_args(args: &[Argument<'_>], source: &str) -> Vec
     jobs
 }
 
-fn quoted_prefix(text: &str) -> Option<String> {
+pub(super) fn quoted_prefix(text: &str) -> Option<String> {
     let quote = text.chars().next()?;
     if quote != '\'' && quote != '"' {
         return None;
@@ -93,5 +93,5 @@ fn quoted_prefix(text: &str) -> Option<String> {
         }
         value.push(ch);
     }
-    None
+    Some(value)
 }

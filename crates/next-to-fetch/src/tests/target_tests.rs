@@ -152,6 +152,19 @@ fn test_route_reaches_target_nonexistent_source_returns_false() {
 }
 
 #[test]
+fn test_route_reaches_target_canonicalize_non_not_found_error() {
+    let base = fixture("next-to-fetch-routes", "simple-file");
+    let too_long = "x".repeat(10_000);
+    let invalid_source = base.join(too_long);
+    let target = base.join("route.ts");
+
+    let mut cache = HashMap::new();
+    let mut visited = std::collections::HashSet::new();
+    let result = route_reaches_target(&invalid_source, &target, &mut visited, &mut cache);
+    assert!(result.is_err());
+}
+
+#[test]
 fn test_route_reaches_target_nonexistent_target_uses_fallback() {
     // When target doesn't exist, canonicalize() fails and unwrap_or_else fallback is used.
     let route = fixture("next-to-fetch-routes", "simple-file").join("route.ts");

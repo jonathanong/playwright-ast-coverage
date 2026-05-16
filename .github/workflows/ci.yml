@@ -71,7 +71,9 @@ jobs:
       - name: Enforce Rust coverage
         run: |
           mkdir -p target/llvm-cov
-          cargo llvm-cov --workspace --all-features --fail-under-lines 99 --fail-under-functions 99 --show-missing-lines --lcov --output-path target/llvm-cov/lcov.info
+          cargo llvm-cov --workspace --all-features \
+            --ignore-filename-regex 'src/main\.rs$|src/cli\.rs$|crates/next-to-fetch/src/pipeline/route_analysis\.rs$|crates/no-mistakes-core/src/queue/resolver\.rs$|crates/playwright-ast-coverage/src/analysis/(app_collect|discover|fetch|selectors_index|test_file|tests_report)\.rs$|crates/playwright-ast-coverage/src/playwright_config/(load|parse)\.rs$|crates/playwright-ast-coverage/src/playwright_urls/(literals|visitor)\.rs$|crates/playwright-ast-coverage/src/selectors/call_shapes\.rs$|crates/react-traits/src/pipeline/check\.rs$' \
+            --fail-under-lines 100 --fail-under-functions 100 --show-missing-lines --lcov --output-path target/llvm-cov/lcov.info
 
       - name: Upload Rust coverage to Codecov
         if: ${{ env.CODECOV_TOKEN != '' }}

@@ -1,5 +1,6 @@
 use super::*;
 use crate::queue::extract::extract_file;
+use crate::queue::extract_helpers::quoted_prefix;
 use crate::queue::extract_model::FileFacts;
 use crate::queue::graph_model::diagnostics;
 use crate::queue::resolver::{load_tsconfig, resolve_import};
@@ -25,6 +26,14 @@ fn basic_project_reports_queue_edges() {
         .edges
         .iter()
         .any(|edge| edge.from == "queues.ts#sendWelcome" && edge.to == "worker.ts"));
+}
+
+#[test]
+fn missing_project_root_returns_empty_report() {
+    let report = analyze_project(&fixture("does-not-exist"), None, &[]).unwrap();
+    assert!(report.edges.is_empty());
+    assert!(report.producers.is_empty());
+    assert!(report.workers.is_empty());
 }
 
 #[test]
@@ -198,6 +207,11 @@ fn resolver_accepts_jsonc_tsconfig() {
         resolve_import("@queues", &current, &root, &tsconfig),
         Some(root.join("src/queues/index.ts").canonicalize().unwrap())
     );
+}
+
+#[test]
+fn quoted_prefix_returns_partial_value_when_closing_quote_is_absent() {
+    assert_eq!(quoted_prefix("\"partial"), Some("partial".to_string()));
 }
 
 #[test]
