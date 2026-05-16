@@ -10,6 +10,7 @@ export const testQueue = new TestQueue("coverage-test");
 const unresolvedQueue = new Queue(getQueueName());
 
 queue.add(JOB, {});
+queue.add('say"hi', {});
 queue.addBulk([{ name: JOB }, { name: DYNAMIC_JOB }, { id: 1 }, { ...process.env }, "skip"]);
 queue.addBulk();
 unresolvedQueue.add("lost", {});
@@ -22,6 +23,7 @@ flow.add({ ...process.env, name: JOB, queueName: QUEUE });
 
 new Worker(QUEUE, async (job) => {
   if (job.name === "welcome") return import("./processor");
+  if (job.name === "say\"hi") return null;
 });
 
 new Worker(QUEUE, { name: "welcome" });

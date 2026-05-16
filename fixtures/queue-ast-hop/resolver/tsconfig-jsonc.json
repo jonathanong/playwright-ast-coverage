@@ -1,0 +1,9 @@
+{
+  // queue-ast-hop should accept JSONC tsconfig files.
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@queues": ["src/queues/index"]
+    }
+  }
+}

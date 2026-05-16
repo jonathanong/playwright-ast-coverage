@@ -42,7 +42,10 @@ pub(crate) fn load_tsconfig(root: &Path, explicit: Option<&Path>) -> Result<TsCo
         });
     };
     let source = std::fs::read_to_string(&path)?;
-    let raw: RawTsConfig = serde_json::from_str(&source)?;
+    let raw: RawTsConfig = serde_json::from_value(jsonc_parser::parse_to_serde_value(
+        &source,
+        &jsonc_parser::ParseOptions::default(),
+    )?)?;
     let dir = path.parent().unwrap_or(root).to_path_buf();
     let options = raw.compiler_options.unwrap_or_default();
     let base_url = options.base_url.map(|url| dir.join(url));

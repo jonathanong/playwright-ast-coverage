@@ -76,6 +76,22 @@ fn quoted_prefix(text: &str) -> Option<String> {
         return None;
     }
     let rest = &text[quote.len_utf8()..];
-    let end = rest.find(quote)?;
-    Some(rest[..end].to_string())
+    let mut escaped = false;
+    let mut value = String::new();
+    for ch in rest.chars() {
+        if escaped {
+            value.push(ch);
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == quote {
+            return Some(value);
+        }
+        value.push(ch);
+    }
+    None
 }
