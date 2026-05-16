@@ -12,9 +12,9 @@ pub(crate) fn run_check(
     targets: &[String],
     assert_no_fetch: bool,
 ) -> Result<Vec<Violation>> {
-    let (_root, file_config) = crate::pipeline::run::load_root_and_config(base_root, cli)?;
+    let (root, file_config) = crate::pipeline::run::load_root_and_config(base_root, cli)?;
     let effective_no_fetch = assert_no_fetch || file_config.assert_no_fetch.unwrap_or(false);
-    let facts_list = crate::pipeline::run::run_analyze(base_root, cli, targets, None)?;
+    let facts_list = crate::pipeline::run::run_analyze_inner(&root, &file_config, targets, None)?;
     let mut violations = Vec::new();
     for facts in &facts_list {
         if effective_no_fetch {

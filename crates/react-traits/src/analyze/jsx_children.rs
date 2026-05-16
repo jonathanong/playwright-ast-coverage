@@ -114,7 +114,7 @@ fn collect_local_components(program: &Program<'_>) -> HashMap<String, String> {
                     _ => {}
                 }
             }
-            Statement::ExportNamedDeclaration(e) => {
+            Statement::ExportNamedDeclaration(e) if e.source.is_none() => {
                 if let Some(decl) = &e.declaration {
                     // Inline export: local name == exported name
                     match decl {

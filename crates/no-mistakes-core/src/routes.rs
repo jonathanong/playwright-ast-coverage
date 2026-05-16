@@ -29,7 +29,9 @@ pub fn collect_routes(frontend_root: &Path, stems: &[&str]) -> Vec<Route> {
             continue;
         }
 
-        let relative = path.strip_prefix(frontend_root).unwrap_or(path);
+        let Ok(relative) = path.strip_prefix(frontend_root) else {
+            continue;
+        };
         routes.push(Route {
             file: path.to_path_buf(),
             pattern: path_to_route_pattern(relative),

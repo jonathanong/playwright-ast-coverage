@@ -39,7 +39,7 @@ pub(crate) fn run_with_base_root(base_root: &Path, cli: &Cli) -> Result<FinalRep
         imports: HashMap::new(),
     };
 
-    let target_specs = resolve_targets(base_root, &root, &cli.targets);
+    let target_specs = resolve_targets(base_root, &root, &cli.targets)?;
     let (reports, matched_targets) =
         analyze_routes(all_routes, &target_specs, &frontend_root, &root, &mut cache)?;
 
@@ -48,11 +48,13 @@ pub(crate) fn run_with_base_root(base_root: &Path, cli: &Cli) -> Result<FinalRep
     Ok(build_final_report(reports))
 }
 
-fn resolve_targets(base_root: &Path, root: &Path, targets: &[String]) -> Vec<TargetSpec> {
+fn resolve_targets(base_root: &Path, root: &Path, targets: &[String]) -> Result<Vec<TargetSpec>> {
     let mut target_specs = Vec::new();
     let mut unique_targets = HashSet::new();
     for target in targets {
         if unique_targets.insert(target.clone()) {
+            // Targets that look like route patterns (e.g. "/users") won't resolve as files;
+            // that's expected — `file: None` causes route-pattern matching downstream.
             let file = resolve_target_file(root, target)
                 .or_else(|_| resolve_target_file(base_root, target))
                 .ok();
@@ -62,7 +64,7 @@ fn resolve_targets(base_root: &Path, root: &Path, targets: &[String]) -> Vec<Tar
             });
         }
     }
-    target_specs
+    Ok(target_specs)
 }
 
 fn analyze_routes(

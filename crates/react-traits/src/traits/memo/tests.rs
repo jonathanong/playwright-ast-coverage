@@ -265,6 +265,22 @@ fn alias_export_memo_detected_by_span() {
 }
 
 #[test]
+fn local_non_memo_call_not_detected_by_span() {
+    // `const Page = forwardRef(() => ...); export default Page;` — d.span == def.span,
+    // init is CallExpression but callee != "memo"; exercises the false path at line 87.
+    assert!(!check(
+        "const Page = forwardRef(() => <div/>);\nexport default Page;"
+    ));
+}
+
+#[test]
+fn local_arrow_not_memo_by_span() {
+    // `const Page = () => ...; export default Page;` — d.span == def.span,
+    // but init is ArrowFunctionExpression (not CallExpression); exercises line 88 false path.
+    assert!(!check("const Page = () => <div/>;\nexport default Page;"));
+}
+
+#[test]
 fn local_var_span_mismatch_not_detected() {
     // Two local vars; only the one whose span matches def.span should trigger usesMemo.
     // The other var exercises the span-mismatch path (d.span != def.span).

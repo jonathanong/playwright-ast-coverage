@@ -4,6 +4,9 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 pub(crate) fn expand_globs(root: &Path, patterns: &[String]) -> Result<Vec<PathBuf>> {
+    if patterns.is_empty() {
+        return Ok(Vec::new());
+    }
     let mut builder = GlobSetBuilder::new();
     for pattern in patterns {
         let glob = GlobBuilder::new(pattern).literal_separator(false).build()?;

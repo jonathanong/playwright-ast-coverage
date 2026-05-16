@@ -11,14 +11,23 @@ pub(crate) fn run_analyze(
     base_root: &Path,
     cli: &Cli,
     targets: &[String],
-    _depth: Option<usize>,
+    depth: Option<usize>,
 ) -> Result<Vec<ComponentFacts>> {
     let (root, file_config) = load_root_and_config(base_root, cli)?;
+    run_analyze_inner(&root, &file_config, targets, depth)
+}
+
+pub(crate) fn run_analyze_inner(
+    root: &Path,
+    file_config: &FileConfig,
+    targets: &[String],
+    _depth: Option<usize>,
+) -> Result<Vec<ComponentFacts>> {
     let frontend_root = root.join(file_config.frontend_root.as_deref().unwrap_or("app"));
     // Expand globs from root first; only fall back to frontend_root when root yields no matches.
     // Skip the frontend_root.exists() gate entirely when patterns match at root level.
     let files = if !targets.is_empty() {
-        let from_root = expand_globs(&root, targets)?;
+        let from_root = expand_globs(root, targets)?;
         if !from_root.is_empty() {
             from_root
         } else {
@@ -38,14 +47,14 @@ pub(crate) fn run_analyze(
     let mut file_cache: HashMap<PathBuf, Vec<ComponentFacts>> = HashMap::new();
 
     for file in &files {
-        let analysis = analyze_file(file, &root)?;
+        let analysis = analyze_file(file, root)?;
         file_cache.insert(file.clone(), analysis.components.clone());
         results.extend(analysis.components);
     }
 
     let mut all_results = Vec::new();
     for mut facts in results {
-        let agg = aggregate_children(&facts, &mut file_cache, &root, &mut HashSet::new());
+        let agg = aggregate_children(&facts, &mut file_cache, root, &mut HashSet::new());
         if agg != AggregatedFacts::default() {
             facts.inherited_from_children = Some(agg);
         }
