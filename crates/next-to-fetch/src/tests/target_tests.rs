@@ -139,8 +139,8 @@ fn test_route_reaches_target_via_import() {
 }
 
 #[test]
-fn test_route_reaches_target_nonexistent_source_returns_error() {
-    // When path doesn't exist, canonicalize() fails — exercises the `?` error branch.
+fn test_route_reaches_target_nonexistent_source_returns_false() {
+    // When path doesn't exist, returns Ok(false) instead of aborting with an error.
     let base = fixture("next-to-fetch-routes", "route-reaches");
     let nonexistent = base.join("ghost.ts");
     let target = base.join("target.ts");
@@ -148,10 +148,7 @@ fn test_route_reaches_target_nonexistent_source_returns_error() {
     let mut cache = HashMap::new();
     let mut visited = std::collections::HashSet::new();
     let result = route_reaches_target(&nonexistent, &target, &mut visited, &mut cache);
-    assert!(
-        result.is_err(),
-        "non-existent source should return an error"
-    );
+    assert!(!result.unwrap(), "non-existent source should return false");
 }
 
 #[test]

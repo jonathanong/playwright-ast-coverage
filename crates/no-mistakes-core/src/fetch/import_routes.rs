@@ -13,10 +13,23 @@ pub fn route_reaches_target(
     visited: &mut HashSet<PathBuf>,
     import_cache: &mut HashMap<PathBuf, Vec<PathBuf>>,
 ) -> Result<bool> {
-    let abs_path = path.canonicalize()?;
     let abs_target = target
         .canonicalize()
         .unwrap_or_else(|_| target.to_path_buf());
+    route_reaches_target_inner(path, &abs_target, visited, import_cache)
+}
+
+fn route_reaches_target_inner(
+    path: &Path,
+    abs_target: &Path,
+    visited: &mut HashSet<PathBuf>,
+    import_cache: &mut HashMap<PathBuf, Vec<PathBuf>>,
+) -> Result<bool> {
+    let abs_path = match path.canonicalize() {
+        Ok(p) => p,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(e.into()),
+    };
     if abs_path == abs_target {
         return Ok(true);
     }
@@ -26,7 +39,7 @@ pub fn route_reaches_target(
     visited.insert(abs_path.clone());
 
     for import in collect_imports(&abs_path, import_cache)? {
-        if route_reaches_target(&import, &abs_target, visited, import_cache)? {
+        if route_reaches_target_inner(&import, abs_target, visited, import_cache)? {
             return Ok(true);
         }
     }
