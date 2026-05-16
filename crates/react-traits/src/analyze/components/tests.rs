@@ -224,6 +224,62 @@ fn export_default_identifier_unknown_name_ignored() {
 }
 
 #[test]
+fn export_list_component() {
+    // `export { Foo }` where Foo is a local component const (Cgv-P)
+    let names = check_names("const Foo = () => <div/>;\nexport { Foo };");
+    assert_eq!(names, vec!["Foo"]);
+}
+
+#[test]
+fn export_list_with_alias() {
+    // `export { Foo as Bar }` — exported name is Bar
+    let names = check_names("const Foo = () => <div/>;\nexport { Foo as Bar };");
+    assert_eq!(names, vec!["Bar"]);
+}
+
+#[test]
+fn export_list_non_component_ignored() {
+    // `export { foo }` where foo is lowercase — not in local_vars (not a component)
+    let names = check_names("const foo = () => <div/>;\nexport { foo };");
+    assert!(names.is_empty());
+}
+
+#[test]
+fn export_class_extends_component() {
+    // `export class Foo extends Component {}` (Cgv-R)
+    let names = check_names("export class Foo extends Component {}");
+    assert_eq!(names, vec!["Foo"]);
+}
+
+#[test]
+fn export_class_extends_react_component() {
+    // `export class Foo extends React.Component {}`
+    let names = check_names("export class Foo extends React.Component {}");
+    assert_eq!(names, vec!["Foo"]);
+}
+
+#[test]
+fn export_class_no_superclass_ignored() {
+    // Plain class without extending Component is not a React component
+    let names = check_names("export class Foo {}");
+    assert!(names.is_empty());
+}
+
+#[test]
+fn export_class_extends_pure_component() {
+    // `export class Foo extends PureComponent {}`
+    let names = check_names("export class Foo extends PureComponent {}");
+    assert_eq!(names, vec!["Foo"]);
+}
+
+#[test]
+fn local_class_component_resolves_via_export_list() {
+    // class Foo extends Component defined locally, exported via { Foo }
+    let names = check_names("class Foo extends Component {}\nexport { Foo };");
+    assert_eq!(names, vec!["Foo"]);
+}
+
+#[test]
 fn is_component_expr_parenthesized_wraps_arrow() {
     // ((() => <div/>)) — double-parenthesized arrow triggers ParenthesizedExpression (line 124).
     let path = std::path::Path::new("test.tsx");

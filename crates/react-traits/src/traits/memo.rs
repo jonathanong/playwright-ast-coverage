@@ -37,7 +37,10 @@ impl<'a> Visit<'a> for MemoVisitor {
     }
 }
 
-fn is_wrapped_in_memo(program: &Program<'_>, _def: &ComponentDef) -> bool {
+fn is_wrapped_in_memo(program: &Program<'_>, def: &ComponentDef) -> bool {
+    if def.name != "default" {
+        return false;
+    }
     for stmt in &program.body {
         let Statement::ExportDefaultDeclaration(e) = stmt else {
             continue;
@@ -45,10 +48,12 @@ fn is_wrapped_in_memo(program: &Program<'_>, _def: &ComponentDef) -> bool {
         if let ExportDefaultDeclarationKind::CallExpression(call) = &e.declaration {
             let name = match &call.callee {
                 Expression::Identifier(id) => id.name.as_ref(),
-                Expression::StaticMemberExpression(m) => m.property.name.as_ref(),
+                Expression::StaticMemberExpression(m) if matches!(&m.object, Expression::Identifier(obj) if obj.name == "React") => {
+                    m.property.name.as_ref()
+                }
                 _ => "",
             };
-            if matches!(name, "memo" | "forwardRef") {
+            if name == "memo" {
                 return true;
             }
         }

@@ -15,18 +15,19 @@ pub(crate) fn run_analyze(
 ) -> Result<Vec<ComponentFacts>> {
     let (root, file_config) = load_root_and_config(base_root, cli)?;
     let frontend_root = root.join(file_config.frontend_root.as_deref().unwrap_or("app"));
-    // Try glob from root first (targets like "app/components/*.tsx"),
-    // fall back to frontend_root (targets like "components/*.tsx").
+    if !frontend_root.exists() {
+        anyhow::bail!("frontend root not found: {}", frontend_root.display());
+    }
+    // Expand globs from both root and frontend_root independently; merge and dedup.
     let files = if !targets.is_empty() {
-        let from_root = expand_globs(&root, targets)?;
-        if !from_root.is_empty() {
-            from_root
-        } else {
-            expand_globs(&frontend_root, targets)
-                .expect("same patterns already validated; infallible")
-        }
+        let mut from_root = expand_globs(&root, targets)?;
+        let from_frontend = expand_globs(&frontend_root, targets)?;
+        from_root.extend(from_frontend);
+        from_root.sort();
+        from_root.dedup();
+        from_root
     } else {
-        expand_globs(&frontend_root, targets).expect("empty patterns always succeed")
+        expand_globs(&frontend_root, targets)?
     };
 
     let mut results = Vec::new();
@@ -66,31 +67,42 @@ fn aggregate_children(
         }
         visited.insert(key.clone());
         let child_path = root.join(&child_ref.file);
-        let children = file_cache.get(&child_path).or_else(|| {
-            child_path
-                .canonicalize()
-                .ok()
-                .and_then(|p| file_cache.get(&p))
-        });
-        if let Some(components) = children {
-            for child_facts in components {
-                if child_facts.name == child_ref.name {
-                    agg.has_state |= child_facts.has_state;
-                    agg.has_props |= child_facts.has_props;
-                    agg.passes_props |= child_facts.passes_props;
-                    agg.uses_memo |= child_facts.uses_memo;
-                    agg.uses_context_provider |= child_facts.uses_context_provider;
-                    agg.uses_suspense |= child_facts.uses_suspense;
-                    agg.has_fetch |= !child_facts.fetches.is_empty();
-                    let child_agg = aggregate_children(child_facts, file_cache, root, visited);
-                    agg.has_state |= child_agg.has_state;
-                    agg.has_fetch |= child_agg.has_fetch;
-                    agg.uses_suspense |= child_agg.uses_suspense;
-                    agg.uses_context_provider |= child_agg.uses_context_provider;
-                    agg.uses_memo |= child_agg.uses_memo;
-                    agg.has_props |= child_agg.has_props;
-                    agg.passes_props |= child_agg.passes_props;
+        let child_canonical = child_path.canonicalize().ok();
+        let cached = file_cache
+            .get(&child_path)
+            .or_else(|| child_canonical.as_ref().and_then(|p| file_cache.get(p)));
+        // Analyze on-demand if child was not in the target glob (Cgv-B)
+        let on_demand;
+        let components: &Vec<ComponentFacts> = if let Some(c) = cached {
+            c
+        } else if child_path.is_file() {
+            match analyze_file(&child_path, root) {
+                Ok(a) => {
+                    on_demand = a.components;
+                    &on_demand
                 }
+                Err(_) => continue,
+            }
+        } else {
+            continue;
+        };
+        for child_facts in components {
+            if child_facts.name == child_ref.name {
+                agg.has_state |= child_facts.has_state;
+                agg.has_props |= child_facts.has_props;
+                agg.passes_props |= child_facts.passes_props;
+                agg.uses_memo |= child_facts.uses_memo;
+                agg.uses_context_provider |= child_facts.uses_context_provider;
+                agg.uses_suspense |= child_facts.uses_suspense;
+                agg.has_fetch |= !child_facts.fetches.is_empty();
+                let child_agg = aggregate_children(child_facts, file_cache, root, visited);
+                agg.has_state |= child_agg.has_state;
+                agg.has_fetch |= child_agg.has_fetch;
+                agg.uses_suspense |= child_agg.uses_suspense;
+                agg.uses_context_provider |= child_agg.uses_context_provider;
+                agg.uses_memo |= child_agg.uses_memo;
+                agg.has_props |= child_agg.has_props;
+                agg.passes_props |= child_agg.passes_props;
             }
         }
     }

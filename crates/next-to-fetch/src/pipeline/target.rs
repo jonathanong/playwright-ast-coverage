@@ -21,9 +21,7 @@ pub(crate) fn resolve_target_file(root: &Path, target: &str) -> Result<PathBuf> 
     if !candidate.is_file() {
         anyhow::bail!("target path is not a file: {}", candidate.display());
     }
-    Ok(candidate
-        .canonicalize()
-        .expect("canonicalize succeeds since we verified the file exists above"))
+    Ok(candidate.canonicalize()?)
 }
 
 pub(crate) fn normalize_target_pattern(target: &str) -> Option<String> {

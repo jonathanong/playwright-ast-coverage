@@ -9,9 +9,7 @@ pub(crate) fn build_globset(patterns: &[String]) -> Result<GlobSet> {
         let glob = GlobBuilder::new(pattern).literal_separator(false).build()?;
         builder.add(glob);
     }
-    Ok(builder
-        .build()
-        .expect("GlobSet::build is infallible after valid globs are added"))
+    Ok(builder.build()?)
 }
 
 pub(crate) fn walk_files(root: &Path) -> Vec<PathBuf> {

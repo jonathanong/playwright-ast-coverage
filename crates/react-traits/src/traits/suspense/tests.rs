@@ -18,10 +18,39 @@ fn detects_suspense_jsx() {
 }
 
 #[test]
-fn detects_next_dynamic_import() {
+fn detects_next_dynamic_component_rendered() {
+    // dynamic() creates a lazily-loaded component; rendering it in JSX triggers uses_suspense
     assert!(check(
+        "const Lazy = dynamic(() => import('./Foo')); export default function App() { return <Lazy/>; }"
+    ));
+}
+
+#[test]
+fn dynamic_import_without_render_not_suspense() {
+    // importing next/dynamic without rendering the resulting component = no suspense (Chper)
+    assert!(!check(
         "import dynamic from 'next/dynamic'; export default function App() { return <div/>; }"
     ));
+}
+
+#[test]
+fn detects_react_lazy_component_rendered() {
+    // React.lazy() component rendered in JSX within span triggers uses_suspense
+    assert!(check(
+        "const Lazy = React.lazy(() => import('./Foo')); export default function App() { return <Lazy/>; }"
+    ));
+}
+
+#[test]
+fn dynamic_component_outside_span_not_detected() {
+    // dynamic-named JSX element outside span should not trigger suspense
+    let source = "const Lazy = dynamic(() => import('./Foo')); export default function App() { return <Lazy/>; }";
+    let path = std::path::Path::new("test.tsx");
+    let result = no_mistakes_core::ast::with_program(path, source, |program, _| {
+        super::detect_uses_suspense(program, oxc_span::Span::new(0, 0))
+    })
+    .unwrap();
+    assert!(!result);
 }
 
 #[test]

@@ -24,9 +24,7 @@ pub(crate) fn analyze_file(
         return Ok(false);
     }
 
-    let abs_path = path
-        .canonicalize()
-        .expect("canonicalize succeeds since path.exists() was checked above");
+    let abs_path = path.canonicalize()?;
     let visit_key = (
         abs_path.clone(),
         inherited_is_client,

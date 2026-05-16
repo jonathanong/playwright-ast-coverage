@@ -12,7 +12,7 @@ fn collect_children_names(source: &str, file: &std::path::Path) -> Vec<String> {
     ast::with_program(file, source, |program, _| {
         let table = build_import_table(file, program);
         let span = oxc_span::Span::new(0, source.len() as u32);
-        collect_jsx_children(program, &table, span)
+        collect_jsx_children(program, &table, &file.to_path_buf(), span)
             .into_iter()
             .map(|(_, name)| name)
             .collect::<Vec<_>>()
@@ -89,11 +89,35 @@ fn children_outside_span_excluded() {
     let source = "import Foo from './Foo';\nexport default function App() { return <Foo />; }";
     let names = ast::with_program(&file, source, |program, _| {
         let table = build_import_table(&file, program);
-        collect_jsx_children(program, &table, oxc_span::Span::new(0, 0))
+        collect_jsx_children(
+            program,
+            &table,
+            &file.to_path_buf(),
+            oxc_span::Span::new(0, 0),
+        )
+        .into_iter()
+        .map(|(_, name)| name)
+        .collect::<Vec<_>>()
+    })
+    .unwrap();
+    assert!(names.is_empty(), "elements outside span should be excluded");
+}
+
+#[test]
+fn same_file_component_resolved() {
+    // Child defined in the same file (no import) — resolves to file itself (Chpey)
+    let dir = fixture_dir();
+    let file = dir.join("Consumer.tsx");
+    let source =
+        "export const Child = () => <div/>;\nexport default function Parent() { return <Child/>; }";
+    let names = ast::with_program(&file, source, |program, _| {
+        let table = build_import_table(&file, program);
+        let span = oxc_span::Span::new(0, source.len() as u32);
+        collect_jsx_children(program, &table, &file.to_path_buf(), span)
             .into_iter()
             .map(|(_, name)| name)
             .collect::<Vec<_>>()
     })
     .unwrap();
-    assert!(names.is_empty(), "elements outside span should be excluded");
+    assert_eq!(names, vec!["Child"]);
 }

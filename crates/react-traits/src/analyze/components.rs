@@ -1,5 +1,6 @@
 use oxc_ast::ast::{
-    BindingPattern, Declaration, ExportDefaultDeclarationKind, Expression, Program, Statement,
+    BindingPattern, Class, Declaration, ExportDefaultDeclarationKind, Expression, Program,
+    Statement,
 };
 use oxc_span::Span;
 use std::collections::HashMap;
@@ -16,23 +17,33 @@ fn is_component_name(name: &str) -> bool {
 }
 
 pub(crate) fn extract_components(program: &Program<'_>) -> Vec<ComponentDef> {
-    // Collect top-level `const X = <component expr>` declarations for resolving
-    // `export default X` re-exports (common pattern: const Page = () => ...; export default Page).
+    // First pass: collect top-level component variable and class declarations for resolving
+    // `export default X` and `export { X }` re-exports.
     let mut local_vars: HashMap<&str, Span> = HashMap::new();
     for stmt in &program.body {
-        if let Statement::VariableDeclaration(v) = stmt {
-            for declarator in &v.declarations {
-                if let BindingPattern::BindingIdentifier(id) = &declarator.id {
-                    let name = id.name.as_ref();
-                    if is_component_name(name) {
-                        if let Some(init) = &declarator.init {
-                            if is_component_expr(init) {
-                                local_vars.insert(name, declarator.span);
+        match stmt {
+            Statement::VariableDeclaration(v) => {
+                for declarator in &v.declarations {
+                    if let BindingPattern::BindingIdentifier(id) = &declarator.id {
+                        let name = id.name.as_ref();
+                        if is_component_name(name) {
+                            if let Some(init) = &declarator.init {
+                                if is_component_expr(init) {
+                                    local_vars.insert(name, declarator.span);
+                                }
                             }
                         }
                     }
                 }
             }
+            Statement::ClassDeclaration(c) => {
+                if let Some(id) = &c.id {
+                    if is_component_name(id.name.as_ref()) && is_class_component(c) {
+                        local_vars.insert(id.name.as_ref(), c.span);
+                    }
+                }
+            }
+            _ => {}
         }
     }
 
@@ -125,7 +136,29 @@ pub(crate) fn extract_components(program: &Program<'_>) -> Vec<ComponentDef> {
                                 }
                             }
                         }
+                        Declaration::ClassDeclaration(c) if c.id.is_some() => {
+                            let id = c.id.as_ref().unwrap();
+                            let name = id.name.as_ref();
+                            if is_component_name(name) && is_class_component(c) {
+                                components.push(ComponentDef {
+                                    name: name.to_string(),
+                                    span: c.span,
+                                });
+                            }
+                        }
                         _ => {}
+                    }
+                } else {
+                    // `export { Foo, Bar }` — resolve specifiers against local_vars
+                    for spec in &export.specifiers {
+                        let local_name = spec.local.name();
+                        if let Some(&var_span) = local_vars.get(local_name.as_ref()) {
+                            let exported_name = spec.exported.name();
+                            components.push(ComponentDef {
+                                name: exported_name.as_ref().to_string(),
+                                span: var_span,
+                            });
+                        }
                     }
                 }
             }
@@ -138,6 +171,20 @@ pub(crate) fn extract_components(program: &Program<'_>) -> Vec<ComponentDef> {
 
 #[cfg(test)]
 mod tests;
+
+fn is_class_component(c: &Class<'_>) -> bool {
+    let Some(super_class) = &c.super_class else {
+        return false;
+    };
+    match super_class {
+        Expression::Identifier(id) => id.name == "Component" || id.name == "PureComponent",
+        Expression::StaticMemberExpression(m) => {
+            matches!(&m.object, Expression::Identifier(obj) if obj.name == "React")
+                && (m.property.name == "Component" || m.property.name == "PureComponent")
+        }
+        _ => false,
+    }
+}
 
 pub(crate) fn is_component_expr(expr: &Expression<'_>) -> bool {
     match expr {

@@ -9,9 +9,7 @@ pub(crate) fn expand_globs(root: &Path, patterns: &[String]) -> Result<Vec<PathB
         let glob = GlobBuilder::new(pattern).literal_separator(false).build()?;
         builder.add(glob);
     }
-    let globset = builder
-        .build()
-        .expect("GlobSet::build is infallible after valid globs are added");
+    let globset = builder.build()?;
 
     const EXTENSIONS: &[&str] = &["tsx", "ts", "jsx", "js"];
     let mut files = Vec::new();

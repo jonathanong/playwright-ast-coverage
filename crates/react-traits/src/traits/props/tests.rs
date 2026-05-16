@@ -95,6 +95,27 @@ fn passes_props_to_member_expression_component() {
 }
 
 #[test]
+fn has_props_memo_wrapped_function() {
+    // export default memo(function App(props) {}) — props inside wrapper (Chpev)
+    let (has_props, _) = check("export default memo(function App(props) { return <div/>; });");
+    assert!(has_props);
+}
+
+#[test]
+fn has_props_memo_wrapped_arrow() {
+    // export default memo((props) => <div/>) — arrow inside memo wrapper
+    let (has_props, _) = check("export default memo((props) => <div/>);");
+    assert!(has_props);
+}
+
+#[test]
+fn no_props_memo_wrapped_no_params() {
+    // export default memo(() => <div/>) — no params, exercises the CallExpression branch
+    let (has_props, _) = check("export default memo(() => <div/>);");
+    assert!(!has_props);
+}
+
+#[test]
 fn jsx_props_outside_span_not_detected() {
     // Span that covers nothing — visit_jsx_opening_element returns early (line 22-24).
     let source = "export default function App() { return <Child name=\"x\" />; }";

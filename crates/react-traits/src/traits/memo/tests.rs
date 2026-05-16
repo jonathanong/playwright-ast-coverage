@@ -53,10 +53,34 @@ fn detects_use_memo_react_dot() {
 }
 
 #[test]
-fn detects_forwardref_wrapper() {
-    assert!(check(
+fn forwardref_wrapper_not_memo() {
+    // forwardRef wrapping is not classified as usesMemo (Chpet)
+    assert!(!check(
         "export default forwardRef(function App(props, ref) { return <div ref={ref}/>; });"
     ));
+}
+
+#[test]
+fn non_react_member_memo_not_detected() {
+    // Foo.memo(...) must not be treated as React.memo (CgvaA)
+    assert!(!check(
+        "export default Foo.memo(function App() { return <div/>; });"
+    ));
+}
+
+#[test]
+fn memo_wrapper_only_for_default_component() {
+    // Named export must not inherit usesMemo=true from export default memo(...) (Chpeq)
+    let source = "export const Foo = () => <div/>;\nexport default memo(function Bar() { return <span/>; });";
+    let path = std::path::Path::new("test.tsx");
+    let span = oxc_span::Span::new(0, source.len() as u32);
+    let result = no_mistakes_core::ast::with_program(path, source, |program, _| {
+        let defs = crate::analyze::components::extract_components(program);
+        let foo_def = defs.iter().find(|d| d.name == "Foo").cloned().unwrap();
+        super::detect_uses_memo(program, span, &foo_def)
+    })
+    .unwrap();
+    assert!(!result);
 }
 
 #[test]

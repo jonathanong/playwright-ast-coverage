@@ -57,6 +57,23 @@ fn has_function_params(program: &Program<'_>, span: Span) -> bool {
                 {
                     return true;
                 }
+                ExportDefaultDeclarationKind::CallExpression(call) if overlaps(e.span, span) => {
+                    if let Some(first_arg) = call.arguments.first() {
+                        if let Some(expr) = first_arg.as_expression() {
+                            match expr {
+                                Expression::FunctionExpression(f) if !f.params.items.is_empty() => {
+                                    return true;
+                                }
+                                Expression::ArrowFunctionExpression(a)
+                                    if !a.params.items.is_empty() =>
+                                {
+                                    return true;
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
                 _ => {}
             },
             Statement::ExportNamedDeclaration(e) => {
