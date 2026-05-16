@@ -10,11 +10,14 @@ pub(crate) fn collect_fetches_for_routes(
     routes: &[Route],
     frontend_root: &Path,
     root: &Path,
-    cache: &mut Cache,
 ) -> anyhow::Result<FetchIndex> {
+    let mut cache = Cache {
+        files: std::collections::HashMap::new(),
+        imports: std::collections::HashMap::new(),
+    };
     let mut index = FetchIndex::new();
     for route in routes {
-        let fetches = collect_route_fetches(route, frontend_root, root, cache)?;
+        let fetches = collect_route_fetches(route, frontend_root, root, &mut cache)?;
         let rel_file = relative_string(root, &route.file);
         index.insert(rel_file, fetches);
     }

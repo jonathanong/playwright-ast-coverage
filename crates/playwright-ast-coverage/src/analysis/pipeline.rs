@@ -18,9 +18,7 @@ use crate::playwright_tests;
 use crate::routes;
 use crate::selectors;
 use anyhow::{Context, Result};
-use no_mistakes_core::fetch::cache::Cache;
 use rayon::prelude::*;
-use std::collections::HashMap;
 use std::path::Path;
 use std::process::ExitCode;
 
@@ -182,11 +180,7 @@ pub(crate) fn analyze_with_policy(
             Ok(left)
         })?;
 
-    let mut fetch_cache = Cache {
-        files: HashMap::new(),
-        imports: HashMap::new(),
-    };
-    let fetch_idx = collect_fetches_for_routes(&routes, &route_root, root, &mut fetch_cache)?;
+    let fetch_idx = collect_fetches_for_routes(&routes, &route_root, root)?;
     edges.extend(expand_fetch_edges(&edges, &fetch_idx));
     edges.sort();
     edges.dedup();
