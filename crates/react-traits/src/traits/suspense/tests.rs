@@ -262,7 +262,9 @@ fn non_react_suspense_member_not_detected() {
 #[test]
 fn react_dynamic_callee_not_suspense() {
     // `React.dynamic(...)` — dynamic is a Next.js helper; only React.lazy counts in the React.* form
-    assert!(!check("export default React.dynamic(() => import('./Heavy'));"));
+    assert!(!check(
+        "export default React.dynamic(() => import('./Heavy'));"
+    ));
 }
 
 #[test]

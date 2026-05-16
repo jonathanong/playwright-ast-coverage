@@ -148,9 +148,7 @@ fn is_component_direct_lazy(program: &Program<'_>, span: Span) -> bool {
 fn is_dynamic_or_lazy_call_by_callee(callee: &Expression<'_>) -> bool {
     match callee {
         Expression::Identifier(id) => matches!(id.name.as_ref(), "dynamic" | "lazy"),
-        Expression::StaticMemberExpression(m)
-            if matches!(&m.object, Expression::Identifier(obj) if obj.name == "React") =>
-        {
+        Expression::StaticMemberExpression(m) if matches!(&m.object, Expression::Identifier(obj) if obj.name == "React") => {
             m.property.name.as_ref() == "lazy"
         }
         _ => false,
@@ -188,9 +186,7 @@ fn is_dynamic_or_lazy_call(expr: &Expression<'_>) -> bool {
     };
     match &call.callee {
         Expression::Identifier(id) => matches!(id.name.as_ref(), "dynamic" | "lazy"),
-        Expression::StaticMemberExpression(m)
-            if matches!(&m.object, Expression::Identifier(obj) if obj.name == "React") =>
-        {
+        Expression::StaticMemberExpression(m) if matches!(&m.object, Expression::Identifier(obj) if obj.name == "React") => {
             m.property.name.as_ref() == "lazy"
         }
         _ => false,
