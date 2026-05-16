@@ -59,14 +59,13 @@ pub(crate) fn analyze_file(abs_path: &Path, root: &Path) -> Result<FileAnalysis>
                 })
                 .collect();
 
-            let children: Vec<ComponentRef> =
-                collect_jsx_children(program, &import_table, span)
-                    .into_iter()
-                    .map(|(path, name)| ComponentRef {
-                        name,
-                        file: relative_string(root, &path),
-                    })
-                    .collect();
+            let children: Vec<ComponentRef> = collect_jsx_children(program, &import_table, span)
+                .into_iter()
+                .map(|(path, name)| ComponentRef {
+                    name,
+                    file: relative_string(root, &path),
+                })
+                .collect();
 
             components.push(ComponentFacts {
                 name: def.name.clone(),

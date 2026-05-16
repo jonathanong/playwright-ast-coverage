@@ -212,9 +212,7 @@ fn export_named_let_no_init() {
 #[test]
 fn export_default_identifier_resolves_local_component() {
     // Common Next.js pattern: const Page = () => ...; export default Page
-    let names = check_names(
-        "const Page = () => <div/>;\nexport default Page;",
-    );
+    let names = check_names("const Page = () => <div/>;\nexport default Page;");
     assert_eq!(names, vec!["default"]);
 }
 
