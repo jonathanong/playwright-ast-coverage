@@ -30,7 +30,11 @@ pub(crate) fn relative_string(root: &Path, path: &Path) -> String {
 }
 
 pub(crate) fn line_number(source: &str, start: u32) -> usize {
-    source[..start as usize].lines().count() + 1
+    source.as_bytes()[..start as usize]
+        .iter()
+        .filter(|&&b| b == b'\n')
+        .count()
+        + 1
 }
 
 fn is_skip_dir(path: &Path) -> bool {

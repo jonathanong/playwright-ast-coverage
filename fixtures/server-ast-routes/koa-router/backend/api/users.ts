@@ -2,8 +2,10 @@ import Router from "@koa/router";
 
 const api = new Router({ prefix: "/api" });
 const users = new Router();
+const profilePath = `/:id/profile`;
 
 users.get("user", "/:id", getUser);
+users.get("profile", profilePath, getUser);
 users.del("/:id", deleteUser);
 api.use("/users", users.routes());
 

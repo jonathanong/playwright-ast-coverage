@@ -1,5 +1,6 @@
 mod bindings;
 mod helpers;
+mod literals;
 mod records;
 
 use crate::ast;
@@ -50,9 +51,10 @@ impl<'a> Visit<'a> for ServerRouteVisitor<'a> {
             walk::walk_variable_declarator(self, decl);
             return;
         };
-        if let Some(Expression::StringLiteral(value)) = &decl.init {
-            self.const_strings
-                .insert(name.clone(), value.value.as_str().to_string());
+        if let Some(init) = &decl.init {
+            if let Some(value) = const_string(init) {
+                self.const_strings.insert(name.clone(), value);
+            }
         }
         if let Some(init) = &decl.init {
             if let Some(binding) = self.binding_from_expr(init) {
@@ -80,6 +82,21 @@ impl<'a> Visit<'a> for ServerRouteVisitor<'a> {
     fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
         self.record_call(call);
         walk::walk_call_expression(self, call);
+    }
+}
+
+fn const_string(expr: &Expression<'_>) -> Option<String> {
+    match expr {
+        Expression::StringLiteral(value) => Some(value.value.as_str().to_string()),
+        Expression::TemplateLiteral(template) if template.expressions.is_empty() => Some(
+            template
+                .quasis
+                .iter()
+                .filter_map(|quasi| quasi.value.cooked.as_deref())
+                .collect::<Vec<_>>()
+                .join(""),
+        ),
+        _ => None,
     }
 }
 

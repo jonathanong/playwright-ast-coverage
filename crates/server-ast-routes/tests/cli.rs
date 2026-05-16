@@ -72,6 +72,25 @@ fn edges_paths_can_start_from_file() {
 }
 
 #[test]
+fn edges_json_honors_roots_and_depth() {
+    Command::cargo_bin("server-ast-routes")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("express"))
+        .arg("--format")
+        .arg("json")
+        .arg("--depth")
+        .arg("1")
+        .arg("edges")
+        .arg("backend/api/users.ts")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""roots": ["#))
+        .stdout(predicate::str::contains("/api/v1/users/*"))
+        .stdout(predicate::str::contains("/api/v1/ignored").not());
+}
+
+#[test]
 fn related_supports_directions_and_formats() {
     for format in ["json", "md", "yml", "human", "paths"] {
         Command::cargo_bin("server-ast-routes")
@@ -103,5 +122,5 @@ fn timings_and_jobs_env_are_accepted() {
         .arg("routes")
         .assert()
         .success()
-        .stderr(predicate::str::contains("search:"));
+        .stderr(predicate::str::contains("analysis:"));
 }

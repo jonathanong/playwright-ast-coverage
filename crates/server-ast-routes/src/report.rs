@@ -47,10 +47,30 @@ pub(crate) fn print_edges(
     depth: Option<usize>,
     format: Format,
 ) -> anyhow::Result<()> {
+    #[derive(Serialize)]
+    struct Edges<'a> {
+        roots: &'a [String],
+        depth: Option<usize>,
+        edges: &'a [Edge],
+    }
     let edges = edge_view(report, roots, depth);
     match format {
-        Format::Json => println!("{}", serde_json::to_string_pretty(report)?),
-        Format::Yml => println!("{}", serde_yaml::to_string(report)?),
+        Format::Json => println!(
+            "{}",
+            serde_json::to_string_pretty(&Edges {
+                roots,
+                depth,
+                edges: &edges,
+            })?
+        ),
+        Format::Yml => println!(
+            "{}",
+            serde_yaml::to_string(&Edges {
+                roots,
+                depth,
+                edges: &edges,
+            })?
+        ),
         Format::Paths => {
             for edge in &edges {
                 println!("{}", edge.to);

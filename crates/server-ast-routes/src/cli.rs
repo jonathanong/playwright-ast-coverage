@@ -5,6 +5,7 @@ use no_mistakes_core::server_routes::{analyze_project, related, RelatedDirection
 use rayon::ThreadPoolBuilder;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::time::Instant;
 
 #[derive(Parser)]
 #[command(author, version, about)]
@@ -67,10 +68,14 @@ pub fn run_cli() -> Result<ExitCode> {
     } else {
         base.join(&cli.root)
     };
-    if cli.timings {
-        eprintln!("search: 0.000ms");
-    }
+    let started = Instant::now();
     let report = analyze_project(&root, cli.tsconfig.as_deref(), &cli.filters)?;
+    if cli.timings {
+        eprintln!(
+            "analysis: {:.3}ms",
+            started.elapsed().as_secs_f64() * 1000.0
+        );
+    }
     let format = cli.format.unwrap_or(if cli.json {
         Format::Json
     } else {

@@ -5,7 +5,7 @@ use super::{
 use crate::server_routes::model::{Binding, MountSite, RouteSite};
 use crate::server_routes::source::line_number;
 use crate::server_routes::types::Framework;
-use oxc_ast::ast::{Argument, CallExpression, Expression};
+use oxc_ast::ast::{CallExpression, Expression};
 
 impl ServerRouteVisitor<'_> {
     pub(super) fn record_call(&mut self, call: &CallExpression<'_>) {
@@ -32,10 +32,7 @@ impl ServerRouteVisitor<'_> {
         let Some(binding) = object_identifier(object) else {
             return;
         };
-        for path in route_args(
-            &call.arguments,
-            method == "all" || self.is_koa_router(&binding),
-        ) {
+        for path in self.route_args(&call.arguments, self.is_koa_router(&binding)) {
             self.push_route(call, &binding, method, &path);
         }
     }
@@ -44,11 +41,18 @@ impl ServerRouteVisitor<'_> {
         let Some(binding) = object_identifier(object) else {
             return;
         };
-        let Some(method) = call.arguments.first().and_then(|arg| self.literal_arg(arg)) else {
-            return;
+        let methods = match call.arguments.first() {
+            Some(arg) => self.literal_args(arg),
+            None => return,
         };
-        if let Some(path) = call.arguments.get(1).and_then(|arg| self.literal_arg(arg)) {
-            self.push_route(call, &binding, &method.to_lowercase(), &path);
+        let paths = match call.arguments.get(1) {
+            Some(arg) => self.literal_args(arg),
+            None => return,
+        };
+        for method in methods {
+            for path in &paths {
+                self.push_route(call, &binding, &method_name(&method), path);
+            }
         }
     }
 
@@ -151,52 +155,4 @@ impl ServerRouteVisitor<'_> {
             .get(binding)
             .is_some_and(|binding| binding.framework == Framework::KoaRouter)
     }
-
-    pub(super) fn literal_arg(&self, arg: &Argument<'_>) -> Option<String> {
-        match arg {
-            Argument::StringLiteral(value) => Some(value.value.as_str().to_string()),
-            Argument::TemplateLiteral(template) if template.expressions.is_empty() => Some(
-                template
-                    .quasis
-                    .iter()
-                    .filter_map(|quasi| quasi.value.cooked.as_deref())
-                    .collect::<Vec<_>>()
-                    .join(""),
-            ),
-            Argument::Identifier(id) => self.const_strings.get(id.name.as_str()).cloned(),
-            _ => None,
-        }
-    }
-}
-
-fn route_args(args: &[Argument<'_>], allow_named: bool) -> Vec<String> {
-    if allow_named {
-        if let (Some(Argument::StringLiteral(first)), Some(Argument::StringLiteral(second))) =
-            (args.first(), args.get(1))
-        {
-            if !first.value.starts_with('/') && second.value.starts_with('/') {
-                return vec![second.value.as_str().to_string()];
-            }
-        }
-    }
-    let mut paths = Vec::new();
-    for arg in args.iter().take(2) {
-        match arg {
-            Argument::StringLiteral(value) if value.value.starts_with('/') => {
-                paths.push(value.value.as_str().to_string());
-            }
-            Argument::ArrayExpression(array) => {
-                for element in &array.elements {
-                    if let oxc_ast::ast::ArrayExpressionElement::StringLiteral(value) = element {
-                        paths.push(value.value.as_str().to_string());
-                    }
-                }
-            }
-            Argument::StringLiteral(value) if allow_named && paths.is_empty() => {
-                paths.push(value.value.as_str().to_string());
-            }
-            _ => {}
-        }
-    }
-    paths
 }

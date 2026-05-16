@@ -17,6 +17,7 @@ export const exported = new Router();
 
 expressApp.get(["/array/:id", "/array/:id/edit"], () => {});
 expressApp.get(path, () => {});
+expressApp.all("not-a-route", () => {});
 api.route("/api-server/:id").get(() => {});
 route("/matched/:id").delete(() => {});
 router.prefix("/v1");

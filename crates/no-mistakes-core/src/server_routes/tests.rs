@@ -27,6 +27,14 @@ fn hono_project_reports_prefixed_routes() {
         .routes
         .iter()
         .any(|route| route.route == "/api/posts/*" && route.method == "get"));
+    assert!(report
+        .routes
+        .iter()
+        .any(|route| { route.route == "/api/posts/*/comments" && route.method == "get" }));
+    assert!(report
+        .routes
+        .iter()
+        .any(|route| route.route == "/api/posts/*/likes" && route.method == "post"));
 }
 
 #[test]
@@ -36,6 +44,10 @@ fn koa_router_named_routes_and_mounts_are_supported() {
         .routes
         .iter()
         .any(|route| route.route == "/api/users/*" && route.method == "delete"));
+    assert!(report
+        .routes
+        .iter()
+        .any(|route| route.route == "/api/users/*/profile" && route.method == "get"));
 }
 
 #[test]
@@ -77,6 +89,10 @@ fn mixed_framework_shapes_are_supported() {
             "missing {expected}"
         );
     }
+    assert!(!report
+        .routes
+        .iter()
+        .any(|route| route.route == "not-a-route"));
 }
 
 #[test]
