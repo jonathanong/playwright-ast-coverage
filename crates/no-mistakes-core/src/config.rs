@@ -65,10 +65,11 @@ pub fn parse_config<T: DeserializeOwned>(source: &str, path: &Path) -> Result<T>
             .with_context(|| format!("failed to parse {}", path.display())),
         Some("json") => serde_json::from_str(source)
             .with_context(|| format!("failed to parse {}", path.display())),
-        Some("jsonc") => Ok(serde_json::from_value(jsonc_parser::parse_to_serde_value(
+        Some("jsonc") => serde_json::from_value(jsonc_parser::parse_to_serde_value(
             source,
             &jsonc_parse_options(),
-        )?)?),
+        )?)
+        .with_context(|| format!("failed to parse {}", path.display())),
         Some(extension) => anyhow::bail!(
             "unsupported config file extension .{extension}; supported extensions are .yaml, .yml, .json, and .jsonc"
         ),

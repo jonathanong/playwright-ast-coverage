@@ -115,7 +115,7 @@ fn test_parse_config_jsonc_error() {
     let err = parse_config::<TestConfig>("", Path::new("test.jsonc"))
         .err()
         .unwrap();
-    assert!(err.to_string().contains("invalid"));
+    assert!(err.to_string().contains("failed to parse"));
 }
 
 #[test]

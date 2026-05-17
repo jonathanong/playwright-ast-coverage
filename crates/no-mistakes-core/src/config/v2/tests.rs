@@ -419,6 +419,12 @@ fn find_config_root_tool_stem_returns_root() {
 }
 
 #[test]
+fn find_config_root_guardrails_returns_containing_dir() {
+    let dir = fixture("legacy-guardrails");
+    assert_eq!(find_config_root(&dir), dir);
+}
+
+#[test]
 fn find_config_root_no_config_returns_start() {
     let dir = fixture("empty");
     assert_eq!(find_config_root(&dir), dir);
