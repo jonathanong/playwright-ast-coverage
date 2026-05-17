@@ -338,3 +338,26 @@ fn invalid_root_config_exits_with_error() {
         .code(2)
         .stderr(predicate::str::contains("expected string literal"));
 }
+
+#[test]
+fn help_describes_commands_and_tests_command() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Check route and selector coverage",
+        ))
+        .stdout(predicate::str::contains("tests"));
+
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("tests")
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Print route, selector, and fetch assertions grouped by test",
+        ));
+}

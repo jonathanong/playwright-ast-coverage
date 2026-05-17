@@ -30,6 +30,33 @@ fn test_cli_json() {
 }
 
 #[test]
+fn test_cli_format_paths() {
+    let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
+    cmd.arg("--root")
+        .arg(fixture("nextjs-fetches", "next-app"))
+        .arg("--format")
+        .arg("paths");
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("app/page.tsx"))
+        .stdout(predicate::str::contains("### /").not());
+}
+
+#[test]
+fn test_cli_format_yml_uses_structured_output() {
+    let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
+    cmd.arg("--root")
+        .arg(fixture("nextjs-fetches", "next-app"))
+        .arg("--format")
+        .arg("yml");
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("routes:"))
+        .stdout(predicate::str::contains("summary:"))
+        .stdout(predicate::str::contains("\"route\":").not());
+}
+
+#[test]
 fn test_cli_missing_frontend_root() {
     let mut cmd = Command::cargo_bin("next-to-fetch").unwrap();
     cmd.arg("--root")

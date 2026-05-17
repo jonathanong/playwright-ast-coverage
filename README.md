@@ -1,79 +1,59 @@
-# playwright-ast-coverage
+# no-mistakes
 
-Static Playwright AST coverage for Next.js App Router projects.
+Deterministic AST-based codebase intelligence for humans and AI agents.
 
-`playwright-ast-coverage` helps teams and coding agents see which routes and
-test-hook selectors are not exercised by Playwright tests. It scans source code
-statically, so it is fast enough for local checks, CI guardrails, and agent
-handoffs.
+This repository contains Rust CLIs, npm wrappers, ESLint/Oxlint plugins, and
+Codex skills for answering structural questions about TypeScript, JavaScript,
+React, Next.js, Playwright, queue, and server-route code without running the
+application or calling an AI model.
 
-It is a heuristic coverage tool for Playwright/App Router workflows, not a
-replacement for runtime code coverage.
+## Start Here
+
+The canonical documentation lives in [docs/](docs/README.md):
+
+- [Documentation index](docs/README.md)
+- [CLI reference](docs/cli-reference.md)
+- [AST analysis behavior](docs/ast-analysis.md)
+- [Agent guide](docs/agent-guide.md)
+- [ESLint and Oxlint plugins](docs/eslint-plugin.md)
+
+## Tools
+
+| Tool | Purpose |
+| --- | --- |
+| `no-mistakes` | Unified codebase graph, symbols, React, queue, server-route, and check commands. |
+| `playwright-ast-coverage` | Static Playwright coverage for Next.js App Router routes and selectors. |
+| `next-to-fetch` | Map Next.js routes to static `fetch()` API calls. |
+| `queue-ast-hop` | Map BullMQ and glide-mq producers to workers. |
+| `server-ast-routes` | Extract Express, Hono, Koa, and related server route graphs. |
+| `react-traits` | Report React component traits and rendered component relationships. |
+| `eslint-plugin-playwright-ast-coverage` | Keep Playwright test IDs static, unique, and consistent. |
+| `eslint-plugin-next-to-fetch` | Keep `fetch()` URLs and methods statically analyzable. |
 
 ## Install
 
+Use the published packages where available:
+
 ```sh
-npm install --save-dev playwright-ast-coverage
-npx playwright-ast-coverage check
+npm install --save-dev playwright-ast-coverage eslint-plugin-playwright-ast-coverage
 ```
 
-The npm package installs a small JavaScript wrapper and downloads the matching
-native binary from GitHub Releases. Unsupported platforms can install from
-Cargo:
+Or install the Rust binary directly:
 
 ```sh
 cargo install playwright-ast-coverage
 ```
 
-## Why Use It
-
-- Find App Router pages that no Playwright test visits.
-- Find `data-testid` and `data-pw` hooks that tests never assert.
-- Ask for related tests when a page or component changes.
-- Give AI agents a deterministic pre-finish coverage check.
-- Map BullMQ/glide-mq producers to queue workers with `queue-ast-hop`.
-- Map Node.js server route definitions with `server-ast-routes`.
-- Query TS/JS module graphs with `no-mistakes dependencies`, `no-mistakes dependents`,
-  and `no-mistakes symbols`.
+For local development from a clone, run workspace binaries with Cargo:
 
 ```sh
-playwright-ast-coverage check --json
-playwright-ast-coverage related 'web/app/users/[id]/page.tsx'
-playwright-ast-coverage edges --json
-queue-ast-hop related 'backend/jobs/email.ts' --json
-server-ast-routes edges 'backend/api/users.ts' --format paths
-no-mistakes dependents 'src/utils.mts' --json
+cargo run -p no-mistakes -- dependents src/utils.mts --format paths
 ```
 
-## Configure
+## Link Lint
 
-Create `.playwright-ast-coverage.yaml`, `.playwright-ast-coverage.yml`,
-`.playwright-ast-coverage.json`, or `.playwright-ast-coverage.jsonc` when your
-app is not under the default `app` directory or when selectors live in shared
-component folders:
+Documentation links are linted with [lychee](https://github.com/lycheeverse/lychee):
 
-```yaml
-frontendRoot: web/app
-playwrightConfig: playwright.config.ts
-navigationHelpers:
-  - navigateTo
-selectorAttributes:
-  - data-testid
-  - data-pw
-componentSelectorAttributes:
-  dataPw: data-pw
-htmlIds: true
-selectorRoots:
-  - web/app
-  - web/components
-selectorExclude:
-  - "**/*.test.tsx"
-  - "**/*.stories.tsx"
+```sh
+lychee --no-progress --exclude-path '^fixtures/' README.md 'docs/**/*.md' 'skills/**/*.md' 'packages/*/README.md' 'crates/*/README.md' CLAUDE.md
 ```
-
-## References
-
-- [CLI reference](docs/cli-reference.md)
-- [AST analysis behavior](docs/ast-analysis.md)
-- [Agent guide](docs/agent-guide.md)
-- [ESLint and Oxlint plugin](docs/eslint-plugin.md)

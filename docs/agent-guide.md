@@ -1,85 +1,103 @@
 # Agent Guide
 
-Use `playwright-ast-coverage` when frontend work changes Next.js App Router
-pages, Playwright tests, or components with test-hook selectors.
+Use these tools before finishing code changes when static codebase intelligence
+can reduce missed tests, hidden dependencies, or fragile dynamic patterns.
 
-## Suggested Agent Instructions
+## Command Selection
 
-Add guidance like this to `AGENTS.md`, `CLAUDE.md`, or another agent instruction
-file:
+| Agent question | Command |
+| --- | --- |
+| What files does this file import? | `no-mistakes dependencies <file> --format json` |
+| What files are affected by this change? | `no-mistakes dependents <file> --format paths` |
+| What tests should run? | `no-mistakes dependents <file> --test vitest --format paths` or `playwright-ast-coverage related <file>` |
+| What public API does this file expose? | `no-mistakes symbols <file> --include both --format json` |
+| Is this App Router route tested? | `playwright-ast-coverage check --json` |
+| Which Playwright tests assert this page/component? | `playwright-ast-coverage related <file> --json` |
+| Which test IDs/routes/fetches does a test cover? | `playwright-ast-coverage tests <test-file> --json` |
+| Which API calls can this Next.js route make? | `next-to-fetch <route-or-file> --format json` |
+| Does this queue job have a worker? | `no-mistakes queues check --format json` |
+| What server route file owns this endpoint? | `no-mistakes server routes --format json` |
+| Does this component tree call fetch? | `no-mistakes react check <glob> --assert-no-fetch --format json` |
+
+## Recommended Agent Instructions
+
+Add project-specific versions of these instructions to `AGENTS.md`, `CLAUDE.md`,
+or the repository's agent guide:
 
 ```md
-All non-Shadcn UI components should have at least one `data-pw` attribute.
-`data-pw` attributes should be unique, mapping to a component or component state.
-All Next.js routes should have at least one Playwright test asserting the route.
-All `data-pw` attributes should have at least one Playwright test asserting the test hook ID.
-Run `playwright-ast-coverage check --json` before finishing frontend work.
+Use no-mistakes for structural TS/JS questions before falling back to grep.
+Run no-mistakes dependents <changed-file> --format paths to choose focused tests.
+Run playwright-ast-coverage check --json before finishing Next.js App Router or Playwright work.
+Use playwright-ast-coverage related <file> to identify Playwright tests for changed pages or selector-bearing components.
+Keep test IDs and fetch URLs static unless the project explicitly accepts that the AST tools cannot reason about them.
 ```
 
-## Agent Workflow
+## Pre-Finish Workflows
 
-Run a full check before finishing frontend work:
+### TS/JS Module Change
+
+```sh
+changed=src/utils.mts
+no-mistakes symbols "$changed" --include both --format json
+no-mistakes dependents "$changed" --format paths
+tests=$(no-mistakes dependents "$changed" --test vitest --format paths)
+if [ -n "$tests" ]; then
+  printf '%s\n' "$tests" | xargs vitest related
+fi
+```
+
+Use `rg` after `no-mistakes dependents` when you need exact call lines inside
+the affected files.
+
+### Next.js App Router Or Playwright Change
 
 ```sh
 playwright-ast-coverage check --json
+playwright-ast-coverage related 'web/app/users/[id]/page.tsx'
+playwright-ast-coverage tests --json
 ```
 
-Use `related` when a changed page or component should drive the Playwright test
-selection:
+Fix uncovered routes by adding navigation or URL assertions. Fix uncovered
+selectors by asserting a stable test hook with `getByTestId(...)` or a supported
+CSS selector.
+
+### API Or Fetch Change
 
 ```sh
-changed='web/app/users/[id]/page.tsx'
-tests=$(playwright-ast-coverage related "$changed")
-if [ -n "$tests" ]; then
-  npx playwright test $tests
-fi
+next-to-fetch --format json
 ```
 
-Use `edges` when diagnosing why a route or selector is counted as covered:
+If `next-to-fetch` reports dynamic paths, prefer static route strings or small
+static wrappers so agents can reason about route-to-API relationships.
+When the project uses `eslint-plugin-next-to-fetch`, run the project's own
+ESLint command so local config, ignores, and package boundaries are respected.
+
+### Queue Or Server Route Change
 
 ```sh
-playwright-ast-coverage edges --json
+no-mistakes queues check --format json
+no-mistakes queues related backend/jobs/email.ts --format paths
+no-mistakes server routes --format json
+no-mistakes server related backend/api/users.ts --format paths
 ```
 
-## Fixing Gaps
+Root-scoped `edges` commands default to direct edges. Pass a larger `--depth`
+when you want more transitive hops, or omit roots when you want the full edge
+list.
 
-- For uncovered routes, add or update Playwright navigation that visits a URL
-  matching the reported route pattern.
-- For uncovered selectors, assert the hook with `getByTestId(...)` or a supported
-  CSS attribute selector.
-- For duplicate exact test IDs or HTML IDs, rename hooks so each reported value
-  maps to one element or state.
-- Re-run `playwright-ast-coverage check --json` after changes.
+## Failure Handling
 
-See the [CLI reference](cli-reference.md) for command options and the
-[AST analysis reference](ast-analysis.md) for supported static forms.
+- Empty or surprising dependency results usually mean the wrong `--tsconfig`,
+  dynamic imports, unsupported aliases, or external package boundaries.
+- Dynamic selectors, fetch URLs, route paths, queue names, and job names should
+  be made static when the project expects agent-readable behavior.
+- For monorepos with multiple tsconfigs, pass the package tsconfig explicitly.
+- Treat parse errors as real blockers unless the file is intentionally outside
+  the analyzer's supported language set.
 
-## Running related tests with `no-mistakes related`
+## Output Guidance
 
-Use `no-mistakes related` with `--format paths` to pipe affected files to a test
-runner:
-
-```sh
-# Vitest — run tests related to a changed file
-vitest related $(no-mistakes related src/foo.ts --format paths)
-
-# Run only tests related to files changed since the last commit
-changed_files=$(git diff --name-only HEAD~1)
-if [ -n "$changed_files" ]; then
-  tests=$(printf '%s\n' "$changed_files" | xargs no-mistakes related --format paths)
-  if [ -n "$tests" ]; then
-    vitest related $tests
-  fi
-fi
-```
-
-Use `no-mistakes queues` and `no-mistakes server` to explore queue and server-route
-graphs:
-
-```sh
-# Check for unmatched queue producers/workers
-no-mistakes queues --root . check
-
-# Show all server routes as JSON
-no-mistakes server --root . --json routes
-```
+- Use `--format json` when another tool or agent needs structured data.
+- Use `--format paths` for shell pipelines and focused test commands.
+- Use `--format human` for interactive debugging.
+- Use `--timings` when investigating slow graph queries.

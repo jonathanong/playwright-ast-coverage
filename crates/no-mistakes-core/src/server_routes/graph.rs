@@ -1,12 +1,14 @@
+use crate::codebase::ts_resolver::{find_tsconfig, load_tsconfig, ImportResolver, TsConfig};
 use crate::server_routes::extract::extract_file;
 use crate::server_routes::model::{FileFacts, ProjectReport, RouteSite};
-use crate::server_routes::mounts::{prefixes_for, resolve_mounts};
+use crate::server_routes::mounts::{prefixes_for, resolve_mounts_with_resolver};
 use crate::server_routes::normalize::{join_paths, normalize_route};
 use crate::server_routes::source::{discover_source_files, relative_string};
 use crate::server_routes::types::{Diagnostic, Edge, EdgeKind, ServerRoute, Severity, Summary};
+use anyhow::Context;
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use rayon::prelude::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -18,10 +20,11 @@ pub enum RelatedDirection {
 
 pub fn analyze_project(
     root: &Path,
-    _tsconfig_path: Option<&Path>,
+    tsconfig_path: Option<&Path>,
     filters: &[String],
 ) -> anyhow::Result<ProjectReport> {
     let root = root.canonicalize().unwrap_or(root.to_path_buf());
+    let tsconfig = resolve_tsconfig(&root, tsconfig_path)?;
     let filter = build_filter(filters)?;
     let mut files = Vec::new();
     for path in discover_source_files(&root) {
@@ -43,14 +46,20 @@ pub fn analyze_project(
                 .map(|file_facts| (path.clone(), file_facts))
         })
         .collect();
-    Ok(build_report(&root, &facts))
+    Ok(build_report(&root, &facts, &tsconfig))
 }
 
-pub(super) fn build_report(root: &Path, facts: &HashMap<PathBuf, FileFacts>) -> ProjectReport {
+pub(super) fn build_report(
+    root: &Path,
+    facts: &HashMap<PathBuf, FileFacts>,
+    tsconfig: &TsConfig,
+) -> ProjectReport {
     let mut routes = Vec::new();
     let mut edges = Vec::new();
     let mut diagnostics = Vec::new();
-    let mounts = resolve_mounts(facts);
+    let visible = facts.keys().cloned().collect::<HashSet<_>>();
+    let resolver = ImportResolver::new(tsconfig).with_visible(&visible);
+    let mounts = resolve_mounts_with_resolver(facts, &resolver);
     for (path, file_facts) in facts {
         diagnostics.extend(
             file_facts
@@ -93,6 +102,31 @@ pub(super) fn build_report(root: &Path, facts: &HashMap<PathBuf, FileFacts>) -> 
         routes,
         edges,
         diagnostics,
+    }
+}
+
+fn resolve_tsconfig(root: &Path, explicit: Option<&Path>) -> anyhow::Result<TsConfig> {
+    let explicit_path = explicit.is_some();
+    let path = match explicit {
+        Some(path) if path.is_absolute() => Some(path.to_path_buf()),
+        Some(path) => Some(root.join(path)),
+        None => find_tsconfig(root),
+    };
+    match path {
+        Some(path) if explicit_path => {
+            load_tsconfig(&path).context(format!("loading tsconfig {}", path.display()))
+        }
+        Some(path) => Ok(load_tsconfig(&path).unwrap_or_else(|_| empty_tsconfig(root))),
+        None => Ok(empty_tsconfig(root)),
+    }
+}
+
+fn empty_tsconfig(root: &Path) -> TsConfig {
+    TsConfig {
+        dir: root.to_path_buf(),
+        paths_dir: root.to_path_buf(),
+        paths: Vec::new(),
+        base_url: None,
     }
 }
 

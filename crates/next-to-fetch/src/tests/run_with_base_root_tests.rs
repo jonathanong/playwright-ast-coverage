@@ -1,5 +1,6 @@
 use crate::cli::Cli;
 use crate::pipeline::run::run_with_base_root;
+use no_mistakes_core::cli::Format;
 use std::fs;
 use std::path::PathBuf;
 use tempfile::tempdir;
@@ -14,6 +15,7 @@ fn test_run_with_base_root_errors_when_route_target_matcher_fails() {
     let cli = Cli {
         root: PathBuf::from("."),
         config: None,
+        format: Format::Human,
         json: false,
         targets: vec!["app/target.ts".to_string()],
     };
@@ -37,6 +39,7 @@ fn test_run_with_base_root_errors_when_layout_target_matcher_fails() {
     let cli = Cli {
         root: PathBuf::from("."),
         config: None,
+        format: Format::Human,
         json: false,
         targets: vec!["app/target.ts".to_string()],
     };
@@ -54,6 +57,7 @@ fn test_run_with_base_root_errors_when_route_analysis_fails() {
     let cli = Cli {
         root: PathBuf::from("."),
         config: None,
+        format: Format::Human,
         json: false,
         targets: vec![],
     };
@@ -76,6 +80,7 @@ fn test_run_with_base_root_errors_when_layout_analysis_fails() {
     let cli = Cli {
         root: PathBuf::from("."),
         config: None,
+        format: Format::Human,
         json: false,
         targets: vec![],
     };
@@ -93,6 +98,7 @@ fn test_run_with_base_root_errors_when_target_is_unmatched() {
     let cli = Cli {
         root: PathBuf::from("."),
         config: None,
+        format: Format::Human,
         json: false,
         targets: vec!["app/missing.ts".to_string()],
     };
@@ -129,6 +135,7 @@ fn test_run_with_base_root_sorts_duplicates_and_unsupported_entries() {
     let cli = Cli {
         root: PathBuf::from("."),
         config: None,
+        format: Format::Human,
         json: false,
         targets: vec![],
     };

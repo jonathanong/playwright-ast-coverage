@@ -39,7 +39,8 @@ Each workspace directory's `package.json` is read for `name`, `exports`, `module
 
 **Resolution chain:** `exports["."][import]` → `exports["."][default]` → `module` → `main` → `types` → `src/index.mts` → `index.mts`.
 
-**Known limitation:** only the `"."` entry of `exports` is resolved. Subpath exports like `"./utils"` are not — an import of `@scope/pkg/utils` will not create a graph edge.
+**Subpath exports:** exact subpaths and single-`*` export patterns are resolved.
+More complex export maps are not.
 
 ## Extension fallback
 

@@ -41,6 +41,10 @@ fn stdout(output: &Output) -> String {
     String::from_utf8(output.stdout.clone()).expect("stdout should be utf8")
 }
 
+fn stderr(output: &Output) -> String {
+    String::from_utf8(output.stderr.clone()).expect("stderr should be utf8")
+}
+
 #[test]
 fn queues_edges_format_json_outputs_json() {
     let root = queue_fixture("basic");
@@ -74,6 +78,20 @@ fn queues_edges_format_paths_prints_one_per_line() {
     for line in out.lines() {
         assert!(!line.contains("->"), "paths format should not contain ->");
     }
+}
+
+#[test]
+fn queues_timings_emits_analysis_timing() {
+    let root = queue_fixture("basic");
+    let output = run(&[
+        "queues",
+        "--root",
+        root.to_str().unwrap(),
+        "--timings",
+        "edges",
+    ]);
+    assert!(output.status.success());
+    assert!(stderr(&output).contains("analysis:"));
 }
 
 #[test]
@@ -155,6 +173,20 @@ fn server_edges_format_paths_prints_one_per_line() {
     for line in out.lines() {
         assert!(!line.contains("->"), "paths format should not contain ->");
     }
+}
+
+#[test]
+fn server_timings_emits_analysis_timing() {
+    let root = server_fixture("express");
+    let output = run(&[
+        "server",
+        "--root",
+        root.to_str().unwrap(),
+        "--timings",
+        "edges",
+    ]);
+    assert!(output.status.success());
+    assert!(stderr(&output).contains("analysis:"));
 }
 
 #[test]
@@ -262,6 +294,16 @@ fn global_check_format_json_on_bad_queue_fixture() {
     assert!(!output.status.success());
     let json: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
     assert!(json.get("queues").and_then(|q| q.as_array()).is_some());
+}
+
+#[test]
+fn global_check_format_markdown_on_bad_react_fixture() {
+    let root = react_fixture("react-traits-config", "assert-no-fetch");
+    let output = run(&["check", "--root", root.to_str().unwrap(), "--format", "md"]);
+    assert!(!output.status.success());
+    let stdout = stdout(&output);
+    assert!(stdout.contains("# no-mistakes check"));
+    assert!(stdout.contains("Fetcher"));
 }
 
 #[test]

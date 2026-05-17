@@ -20,6 +20,18 @@ What are you trying to find?
 ├─ Named imports of a file (what it consumes)
 │   └─ no-mistakes symbols <file> --include imports
 │
+├─ React component traits / fetch checks
+│   └─ no-mistakes react analyze 'app/components/**/*.tsx'
+│   └─ no-mistakes react check 'app/components/**/*.tsx' --assert-no-fetch
+│
+├─ Queue producer/worker hops
+│   └─ no-mistakes queues edges [file] [--depth N]
+│   └─ no-mistakes queues check
+│
+├─ Server route extraction / related files
+│   └─ no-mistakes server routes
+│   └─ no-mistakes server related <file>
+│
 ├─ Tests to run after changing a file
 │   └─ no-mistakes dependents <file> --test vitest --relationship test
 │   or no-mistakes dependents <file> --test playwright --relationship test

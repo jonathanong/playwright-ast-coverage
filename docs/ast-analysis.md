@@ -1,223 +1,148 @@
-# AST Analysis
+# AST Analysis Behavior
 
-`playwright-ast-coverage` uses the Oxc parser to inspect JavaScript,
-TypeScript, JSX, and TSX source. It does not run tests or execute project code.
-Only static forms described here are detected.
+The tools parse source files and configuration files statically. They do not run
+project code, evaluate build output, query databases, or infer dynamic values
+from runtime behavior.
 
-For CLI flags and output shapes, see [CLI Reference](cli-reference.md). For
-agent workflow guidance, see [Agent Guide](agent-guide.md).
+## Shared File Model
 
-## Playwright Config
+- TS/JS source extensions: `.mts`, `.ts`, `.tsx`, `.mjs`, `.js`, `.jsx`, plus
+  `.cts` and `.cjs` where a tool explicitly supports them.
+- Ignored directories include `.git`, `node_modules`, `target`, `dist`, `build`,
+  `coverage`, and test output directories.
+- Most outputs are root-relative paths. Inputs may be root-relative or absolute.
+- Static literals and expression-free template literals are preferred. Dynamic
+  expressions are either skipped, reported as unsupported, or treated as fuzzy
+  matches depending on the analyzer.
 
-The tool parses root-level `playwright*.config.*` files discovered under
-`--root`, paths from analyzer config `playwrightConfig`, or repeated
-`--playwright-config` options.
+## Module Graphs
 
-Supported config shapes:
+`no-mistakes dependencies`, `dependents`, `related`, and `symbols` parse TS/JS
+imports, exports, and package metadata.
 
-```ts
-export default { testDir: "./tests" };
-export default defineConfig({ testDir: "./tests" });
+Supported import edges:
 
-const config = { testDir: "./tests" };
-export default config;
+- Static `import` and `export ... from` declarations.
+- Type-only imports and inline `import { type X }` declarations.
+- String-literal dynamic `import("...")`.
+- String-literal CommonJS `require("...")`.
+- Workspace package imports resolved from `package.json#workspaces`.
 
-module.exports = { testDir: "./tests" };
-module.exports = defineConfig({ testDir: "./tests" });
-```
+Resolution support:
 
-It can follow top-level object bindings used as the exported config, the
-`defineConfig(...)` argument, or the `use` object. Cyclic bindings are ignored.
+- Relative imports with extension fallback.
+- `compilerOptions.paths`, including `tsconfig.extends` chains. Path
+  replacements are resolved relative to `baseUrl` when it is present, matching
+  TypeScript behavior; otherwise they are resolved relative to the tsconfig that
+  defines `paths`.
+- Workspace package entrypoints and exact or single-`*` export subpaths.
 
-Supported literal fields:
+Intentional limits:
 
-- `name`
-- `testDir`
-- `testMatch`
-- `testIgnore`
-- `baseURL` and `use.baseURL`
-- `testIdAttribute` and `use.testIdAttribute`
-- `projects`, when entries are object literals
+- Bare external packages such as `react`, `express`, and `node:path` are ignored.
+- `baseUrl`-only aliases are not resolved unless represented in `paths`.
+- Non-literal `import()`, `require()`, and computed specifiers are not resolved.
+- Symbol queries answer import/export relationships, not line-level call sites.
+  Use `rg` on returned files for exact call locations.
 
-`testDir`, `baseURL`, `testIdAttribute`, and `name` must be string literals or
-expression-free template literals. `testMatch` and `testIgnore` may be a string
-literal or an array of string literals. Regular-expression `testMatch` and
-`testIgnore` patterns are not supported.
+## Playwright Coverage
 
-## Route Files
+`playwright-ast-coverage` scans Next.js App Router pages and Playwright tests.
 
-Routes are collected from Next.js App Router files under `frontendRoot`:
+Route files are collected under `frontendRoot` from:
 
 - `page.ts`
 - `page.tsx`
 - `page.js`
 - `page.jsx`
 
-Route groups like `(admin)` and parallel route segments like `@modal` are
-ignored when building route patterns. Dynamic segments map as follows:
+Route groups like `(admin)` and parallel route segments like `@modal` do not
+contribute URL segments. Dynamic route segments map to `:name`, catch-all
+segments map to `*`, and optional catch-all segments map to `**`.
 
-| App Router segment | Route pattern segment |
-| ------------------ | --------------------- |
-| `[id]`             | `:id`                 |
-| `[...rest]`        | `*`                   |
-| `[[...rest]]`      | `**`                  |
-
-## Test URL Detection
-
-Tests cover routes when a detected URL normalizes to a local path and that path
-matches a route pattern.
-
-Detected AST forms:
+Detected test URL forms include:
 
 ```ts
 await page.goto("/users/42");
 await page.goto("http://localhost:3000/users/42");
-await page.goto(`/users/${id}`);
 await page.click('a[href="/settings"]');
-await page.click(`a[href='/settings']`);
 await expect(page).toHaveURL("/settings");
 await expect(page).toHaveURL(new RegExp(`/users/${id}`));
 await navigateTo(page, "/settings");
-await testHelpers.openPath(page, "/settings");
 ```
 
-Detection rules:
+Absolute URLs count only when they match a literal Playwright `baseURL`.
+Negative `.not.toHaveURL(...)` assertions are ignored. Conditional and skipped
+tests are tracked with policy flags described in the [CLI reference](cli-reference.md).
 
-- Candidate URLs must start with `/`, `http://`, or `https://`.
-- Protocol-relative URLs such as `//example.com/path` are treated as external.
-- Absolute URLs only count when they start with a literal Playwright `baseURL`;
-  the base is stripped before route matching.
-- External absolute URLs without a matching `baseURL` are ignored.
-- `page.goto(...)` only contributes a URL when the first argument is a string or
-  template literal.
-- `page.click(...)` only contributes a URL when the selector contains an
-  `href="..."` or `href='...'` value.
-- Positive `.toHaveURL(...)` assertions and configured `navigationHelpers` use
-  the first URL-like string literal or template literal found anywhere in the
-  call arguments.
-- Negative `.not.toHaveURL(...)` assertions are ignored.
+Selector coverage collects configured JSX attributes such as `data-testid`,
+`data-pw`, mapped component props, and optionally HTML `id` values. Tests cover
+them through `getByTestId(...)`, CSS attribute selectors, and CSS ID selectors
+when HTML IDs are enabled.
 
-## App Selector Collection
+Unsupported dynamic app selectors, such as `data-testid={id}`, are reported but
+do not count as covered. Static templates such as `` user-${id} `` are fuzzy and
+can be covered by matching static parts.
 
-Selector coverage compares selectors declared in app JSX with selectors used by
-Playwright tests. App selector source files may use these extensions:
+## Next.js Fetch Calls
 
-- `.ts`
-- `.tsx`
-- `.js`
-- `.jsx`
-- `.mts`
-- `.cts`
-- `.mjs`
-- `.cjs`
+`next-to-fetch` maps route, layout, and template files to reachable `fetch()`
+calls through static import traversal.
 
-Supported JSX forms for configured `selectorAttributes`:
-
-```tsx
-<button data-testid="save" />
-<button data-testid='save' />
-<button data-testid={"save"} />
-<button data-testid={'save'} />
-<article data-testid={`user-${id}`} />
-<button data-testid={id} />
-```
-
-When `htmlIds: true` is configured, the same static, template, and unsupported
-dynamic value rules also apply to JSX `id` attributes:
-
-```tsx
-<button id="save" />
-<article id={`user-${id}`} />
-```
-
-Configured `componentSelectorAttributes` collect props from component JSX and
-report them as the mapped DOM attribute:
-
-```tsx
-// componentSelectorAttributes: { dataPw: data-pw }
-<SaveButton dataPw="save" />
-<UI.Button dataPw="publish" />
-```
-
-Lowercase intrinsic elements do not use component mappings, so
-`<button dataPw="save" />` is ignored unless `dataPw` is also listed in
-`selectorAttributes`.
-
-Quoted string values and quoted expression values are exact selectors. Template
-literals with at least one static part are fuzzy selectors, so `user-${id}` can
-be covered by a test selector such as `user-42`.
-
-Dynamic expressions without static template text, such as `{id}` or `` `${id}` ``,
-are reported with `unsupportedDynamic: true` and never count as covered.
-
-## Playwright Selector Detection
-
-Detected `getByTestId(...)` forms:
+Detected fetch forms include literal and expression-free template URL arguments:
 
 ```ts
-await page.getByTestId("save").click();
-await page.getByTestId("save").click();
-await page.getByTestId(`save`).click();
-await page.getByTestId(/^user-/).click();
+fetch("/api/users");
+fetch(`/api/users`);
+fetch("/api/users", { method: "POST" });
 ```
 
-`getByTestId(...)` maps to each Playwright `testIdAttribute` discovered for the
-test file. By default this covers `data-testid`. If Playwright config sets
-`use.testIdAttribute: 'data-pw'`, then `getByTestId('save')` covers
-`data-pw="save"`.
+The report records method, path, route, file, line, client/server side, React
+Server Component context, duplicate calls, unsupported dynamic paths, and cache
+signals such as `fetch` cache options and known cache wrappers.
 
-Detected CSS attribute selectors:
+Dynamic paths such as `` fetch(`/api/${id}`) `` are reported as unsupported
+instead of guessed.
 
-```ts
-await page.locator('[data-testid="save"]').click();
-await page.locator("[data-testid='save']").click();
-await page.locator('[data-testid^="user-"]').click();
-await page.locator('[data-testid$="-button"]').click();
-await page.locator('[data-testid*="nav"]').click();
-```
+## Queue Graphs
 
-CSS attribute selectors are detected for configured `selectorAttributes` and
-mapped DOM attributes from `componentSelectorAttributes`. When `htmlIds: true`
-is configured, `[id="save"]` and related `id` attribute selectors are also
-detected. Supported operators are exact (`=`), prefix (`^=`), suffix (`$=`), and
-contains (`*=`).
+`queue-ast-hop` and `no-mistakes queues` detect static BullMQ and glide-mq
+producer/worker relationships.
 
-Detected CSS ID selectors when `htmlIds: true` is configured:
+The graph uses virtual queue-job nodes such as `queues.ts#sendWelcome` so a
+producer can connect to the worker that processes the same static job name.
+`check` reports unmatched static producers and workers.
 
-```ts
-await page.locator('#save').click();
-await page.locator('button#save').click();
-await page.locator('#save, #publish').click();
-```
+Static queue names, job names, queue factory imports, and worker registrations
+are required. Dynamic queue or job construction is skipped or reported as
+unmatched rather than guessed.
 
-The selector string must appear as a string or template literal argument to a
-known Playwright selector method. Supported methods include `locator`, `click`,
-`fill`, `hover`, `press`, `waitForSelector`, `$`, `$$`, `$eval`, `$$eval`,
-`frameLocator`, and related selector-taking methods. `dragAndDrop(...)` checks
-both selector arguments.
+## Server Route Graphs
 
-## Matching Behavior
+`server-ast-routes` and `no-mistakes server` extract route definitions and edges
+from Node.js server frameworks.
 
-A Playwright selector covers an app selector only when both the attribute and
-value matcher match.
+Supported frameworks include Express, Hono, Koa router patterns, and known
+project helper shapes. The analyzer records method, normalized route pattern,
+source file, and route edges. Dynamic route paths are skipped because guessing
+would create noisy graph edges.
 
-- Exact app selectors match exact, prefix, suffix, contains, or regex test
-  selectors according to the test selector semantics.
-- Template app selectors match against their static parts.
-- `getByTestId(/.../)` regex selectors are tested against static app selector
-  values and against a generated sample for template selectors where each
-  dynamic hole is replaced with `x`. JavaScript regex flags are ignored; the
-  pattern is evaluated as a Rust regex string.
-- Unsupported dynamic app selectors never count as covered.
+## React Traits
 
-## Limitations
+`react-traits` and `no-mistakes react` scan React component files and report
+traits such as state, props, memoization, environment directives, fetch usage,
+and rendered child components.
 
-- Project code is never executed.
-- Non-literal optional Playwright config values are ignored.
-- Computed object properties and method properties in Playwright config are not
-  parsed as supported options.
-- Regular-expression Playwright `testMatch` and `testIgnore` values are not
-  supported; use string globs.
-- URL and selector values built through variables, function calls, string
-  concatenation, or conditionals are not detected unless a supported literal or
-  template literal appears in the inspected call.
+Component detection is heuristic. It favors static exports, local declarations,
+and JSX component usage. Broken files produce parse errors; unknown dynamic
+component references are not expanded.
+
+## Lint Plugins
+
+The ESLint/Oxlint plugins enforce code shapes the AST tools can understand:
+
+- `eslint-plugin-playwright-ast-coverage` keeps test IDs literal, unique,
+  defaulted, consistently named, and easy to assert with Playwright.
+- `eslint-plugin-next-to-fetch` keeps `fetch()` URL and method arguments static.
+
+See [ESLint and Oxlint plugins](eslint-plugin.md).

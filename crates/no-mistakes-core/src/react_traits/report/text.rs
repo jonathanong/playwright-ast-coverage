@@ -54,3 +54,23 @@ pub fn print_violations(violations: &[Violation]) {
         }
     }
 }
+
+pub fn print_results_md(results: &[ComponentFacts]) {
+    println!("# React traits");
+    for result in results {
+        println!(
+            "- `{}` `{}` ({})",
+            result.file, result.name, result.environment
+        );
+    }
+}
+
+pub fn print_violations_md(violations: &[Violation]) {
+    println!("# React trait violations");
+    for violation in violations {
+        println!(
+            "- `{}` `{}`: {}",
+            violation.file, violation.component, violation.rule
+        );
+    }
+}

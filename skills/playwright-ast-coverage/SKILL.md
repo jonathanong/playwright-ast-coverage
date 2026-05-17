@@ -28,6 +28,8 @@ or Playwright test-hook selector coverage.
 - Use `related <file>` to identify Playwright tests for a changed page or
   selector-bearing component.
 - Use `edges --json` to debug why a route or selector is counted as covered.
+- Use `tests [test-file] --json` to inspect which routes, fetch APIs, test IDs,
+  and HTML IDs each Playwright test covers.
 - Add `--assert-unique-test-ids` in CI when exact test ID values must be unique
   across the configured app, not just within one linted file. Add
   `--assert-unique-html-ids` when HTML `id` values must also be unique.
@@ -42,6 +44,8 @@ or Playwright test-hook selector coverage.
   when stable test coverage is expected.
 - Duplicate selector: rename exact hook values so each maps to one element or
   state.
+- Conditional/skipped test mismatch: use `--assert-conditional-tests` to require
+  active tests only, or `--allow-skipped-tests` when skipped tests should count.
 
 ## References
 

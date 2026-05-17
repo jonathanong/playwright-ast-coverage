@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::fmt;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
@@ -39,6 +40,15 @@ pub struct QueueWorker {
 pub enum EdgeKind {
     QueueEnqueue,
     QueueWorker,
+}
+
+impl fmt::Display for EdgeKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EdgeKind::QueueEnqueue => f.write_str("queue-enqueue"),
+            EdgeKind::QueueWorker => f.write_str("queue-worker"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize)]

@@ -245,6 +245,8 @@ fn queues_edges_json_with_specific_file() {
         "queues",
         "--root",
         root.to_str().unwrap(),
+        "--depth",
+        "1",
         "--json",
         "edges",
         "enqueue.ts",

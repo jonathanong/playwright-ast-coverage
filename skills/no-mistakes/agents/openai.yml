@@ -1,4 +1,4 @@
 interface:
   display_name: "No Mistakes"
-  short_description: "Resolution-correct TS/JS module-graph queries: imports, dependents, public API, blast radius."
-  default_prompt: "Use $no-mistakes when the question is about what a TS/JS file imports, who imports it, or what it exports. Do not fall back to grep for these questions."
+  short_description: "Deterministic TS/JS imports, dependents, symbols, tests, React traits, queues, and server routes."
+  default_prompt: "Use $no-mistakes for structural codebase questions: imports, dependents, exports, test impact, React traits, queue hops, and server route graphs. Use grep only for plain text or exact line-level call sites."

@@ -10,18 +10,26 @@ use std::time::Instant;
 #[derive(Parser)]
 #[command(author, version, about)]
 pub(crate) struct Cli {
+    /// Project root directory.
     #[arg(long, default_value = ".", global = true)]
     root: PathBuf,
+    /// Path to tsconfig.json for path alias resolution.
     #[arg(long, global = true)]
     tsconfig: Option<PathBuf>,
+    /// Filter to source files matching this glob. Can be repeated.
     #[arg(long = "filter", global = true)]
     filters: Vec<String>,
-    #[arg(long, global = true)]
+    /// Maximum edge traversal depth for the edges command when roots are provided.
+    /// Defaults to 1 when roots are provided, and unlimited otherwise.
+    #[arg(long, alias = "max-depth", global = true)]
     depth: Option<usize>,
+    /// Output format.
     #[arg(long, value_enum, global = true, conflicts_with = "json")]
     format: Option<Format>,
+    /// Shorthand for --format json.
     #[arg(long, global = true, conflicts_with = "format")]
     json: bool,
+    /// Emit phase timings to stderr.
     #[arg(long, global = true)]
     timings: bool,
     #[command(flatten)]
@@ -32,15 +40,22 @@ pub(crate) struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// List extracted server routes.
     Routes {
+        /// Only show routes whose file or route exactly matches one of these values.
         files: Vec<String>,
     },
+    /// Print server route dependency edges.
     Edges {
+        /// Only show edges whose source exactly matches these files/nodes.
         roots: Vec<String>,
     },
+    /// Print files related to the given files through server route edges.
     Related {
+        /// Files or route nodes to traverse from.
         #[arg(required = true)]
         roots: Vec<String>,
+        /// Traverse dependencies, dependents, or both directions.
         #[arg(long, value_enum, default_value = "both")]
         direction: DirectionArg,
     },

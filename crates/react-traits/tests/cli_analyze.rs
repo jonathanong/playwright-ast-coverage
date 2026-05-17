@@ -64,6 +64,69 @@ fn analyze_json_output() {
 }
 
 #[test]
+fn analyze_format_paths_outputs_files() {
+    let root = common::fixture("react-traits-components", "basic");
+    let output = cmd()
+        .arg("analyze")
+        .arg("app/components/Greeting.tsx")
+        .arg("--root")
+        .arg(&root)
+        .arg("--format")
+        .arg("paths")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let out = String::from_utf8(output).unwrap();
+    assert!(
+        out.contains("Greeting.tsx"),
+        "expected file path in output: {out}"
+    );
+}
+
+#[test]
+fn analyze_format_yaml_outputs_yaml() {
+    let root = common::fixture("react-traits-components", "basic");
+    let output = cmd()
+        .arg("analyze")
+        .arg("app/components/Greeting.tsx")
+        .arg("--root")
+        .arg(&root)
+        .arg("--format")
+        .arg("yml")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let out = String::from_utf8(output).unwrap();
+    assert!(out.contains("name: default"), "expected YAML output: {out}");
+}
+
+#[test]
+fn analyze_format_markdown_outputs_markdown() {
+    let root = common::fixture("react-traits-components", "basic");
+    let output = cmd()
+        .arg("analyze")
+        .arg("app/components/Greeting.tsx")
+        .arg("--root")
+        .arg(&root)
+        .arg("--format")
+        .arg("md")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let out = String::from_utf8(output).unwrap();
+    assert!(
+        out.contains("# React traits") && out.contains("Greeting.tsx"),
+        "expected markdown output: {out}"
+    );
+}
+
+#[test]
 fn analyze_nested() {
     let root = common::fixture("react-traits-components", "nested");
     cmd()

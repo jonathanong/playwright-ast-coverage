@@ -1,289 +1,189 @@
 # CLI Reference
 
-`playwright-ast-coverage` scans a Next.js App Router project and reports route
-and selector coverage inferred from Playwright tests.
+All commands are local and deterministic. Use `--format json` for tooling,
+`--format paths` for shell pipelines, and `--timings` where available when an
+agent needs to explain cost. `--json` is a shorthand for JSON on commands that
+support it.
 
-For agent-oriented workflows, see [Agent Guide](agent-guide.md). For lint-time
-test-hook validation, see [ESLint and Oxlint Plugin](eslint-plugin.md).
+## `no-mistakes`
 
-## Commands
+Unified entry point for codebase graph and check commands.
+
+```sh
+no-mistakes dependencies <FILE>... [--root <PATH>] [--tsconfig <FILE>]
+no-mistakes dependents <FILE[#SYMBOL]>... [--root <PATH>] [--tsconfig <FILE>]
+no-mistakes related <FILE[#SYMBOL]>...
+no-mistakes symbols <FILE>...
+no-mistakes react analyze [TARGETS]...
+no-mistakes react check [TARGETS]... [--assert-no-fetch]
+no-mistakes queues edges [FILES]... [--depth N]
+no-mistakes queues related <FILES>... [--direction deps|dependents|both]
+no-mistakes queues check
+no-mistakes server routes [FILES]...
+no-mistakes server edges [ROOTS]... [--depth N]
+no-mistakes server related <ROOTS>... [--direction deps|dependents|both]
+no-mistakes check
+```
+
+### Graph Commands
+
+`dependencies`, `dependents`, and `related` share these options:
+
+| Option | Description |
+| --- | --- |
+| `--root <PATH>` | Project root. Defaults to the current working directory. |
+| `--tsconfig <FILE>` | tsconfig for path aliases. If omitted, searches upward from root. |
+| `--depth <N>` | Maximum traversal depth. `--max-depth` is an alias on graph, queue, and server edge commands. Queue/server `edges` default to direct edges when roots are provided, and to the full edge list otherwise. |
+| `--filter <GLOB>` | Include only matching files. Repeatable; trailing `/` collapses to folder level. |
+| `--test <FRAMEWORK>` | Filter to `vitest`, `playwright`, or `cargo` test globs. Repeatable. |
+| `--relationship <KIND>` | Follow only `import`, `workspace`, `test`, `route`, `queue`, `md`, `ci`, `http`, `process`, or `all`. Repeatable. |
+| `--format <FORMAT>` | `json`, `md`, `yml`, `paths`, or `human`. |
+| `--json` | Shorthand for `--format json`. |
+| `--timings` | Emit phase timings on stderr. |
+| `-j, --jobs <N>` | Rayon worker threads. `0` means all cores. |
+
+Examples:
+
+```sh
+no-mistakes dependencies src/main.mts --relationship import --format json
+no-mistakes dependents src/utils.mts --test vitest --format paths
+no-mistakes dependents src/queues.mts#sendEmail --json
+no-mistakes related web/app/users/page.tsx --relationship test --format paths
+```
+
+`FILE#SYMBOL` is supported only by `dependents`/`related`. It finds files that
+import that named export, including through re-export chains. Namespace imports
+match all symbols.
+
+### Symbols
+
+```sh
+no-mistakes symbols src/api.mts --include both --format json
+no-mistakes symbols src/types.mts --kind type --kind interface
+```
+
+Options: `--root`, `--tsconfig`, repeatable `--kind`, `--include
+exports|imports|both`, `--format`, `--json`, `--timings`, and `--jobs`.
+
+### React
+
+```sh
+no-mistakes react analyze 'app/components/**/*.tsx' --format json
+no-mistakes react check 'app/components/**/*.tsx' --assert-no-fetch
+```
+
+Options: `--root`, `--config`, `--format`, and `--json`. `--jobs` is a global
+wrapper option, for example `no-mistakes --jobs 4 react ...`.
+
+### Queues
+
+```sh
+no-mistakes queues edges --format json
+no-mistakes queues edges backend/jobs/email.ts --depth 1
+no-mistakes queues related backend/jobs/email.ts --direction dependents --format paths
+no-mistakes queues check
+```
+
+Options: `--root`, `--tsconfig`, repeatable `--filter`, `--depth` for `edges`,
+`--max-depth` as a `--depth` alias, `--format`, `--json`, and `--timings`.
+When `edges` receives roots and no depth, it returns direct edges only. `--jobs`
+is a global wrapper option, for example `no-mistakes --jobs 4 queues ...`.
+
+### Server Routes
+
+```sh
+no-mistakes server routes --format json
+no-mistakes server edges backend/api/users.ts --depth 1
+no-mistakes server related backend/api/users.ts --direction deps --format paths
+```
+
+Options: `--root`, `--tsconfig`, repeatable `--filter`, `--depth` for `edges`,
+`--max-depth` as a `--depth` alias, `--format`, `--json`, and `--timings`.
+When `edges` receives roots and no depth, it returns direct edges only. `--jobs`
+is a global wrapper option, for example `no-mistakes --jobs 4 server ...`.
+
+### Global Check
+
+```sh
+no-mistakes check --format json
+no-mistakes check --json
+```
+
+Runs configured React and queue checks. Options: `--root`, `--config`,
+`--tsconfig`, `--format`, and `--json`. `--jobs` is a global wrapper option,
+for example `no-mistakes --jobs 4 check ...`.
+
+## `playwright-ast-coverage`
+
+Static Playwright coverage for Next.js App Router routes, selectors, and fetch
+assertions.
 
 ```sh
 playwright-ast-coverage check [OPTIONS]
 playwright-ast-coverage edges [OPTIONS]
 playwright-ast-coverage related [OPTIONS] <FILES>...
+playwright-ast-coverage tests [OPTIONS] [FILES]...
 ```
 
-- `check` prints route and selector coverage. It exits `1` when any non-ignored
-  route or selector is uncovered.
-- `edges` prints the discovered links from test files to route files and app
-  selector files.
-- `related` prints test files that directly cover the given route or selector
-  source files.
-
-## Options
-
-| Option                                    | Default                                                                                           | Description                                                                                                                                                                   |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--root <ROOT>`                           | `.`                                                                                               | Repository or package root to analyze. Relative paths are resolved from the current working directory.                                                                        |
-| `--config <CONFIG>`                       | `.playwright-ast-coverage.{yaml,yml,json,jsonc}` under `--root`, when present                     | Analyzer config file. Relative paths are resolved from `--root`. Passing a missing file is an error.                                                                          |
-| `--playwright-config <PLAYWRIGHT_CONFIG>` | Analyzer `playwrightConfig`, otherwise all root-level `playwright*.config.*` files under `--root` | Playwright config file. May be repeated. Relative paths are resolved from `--root`. This overrides `playwrightConfig` in analyzer config. Passing a missing file is an error. |
-| `--project <PROJECT>`                     |                                                                                                   | Filter by top-level Playwright config `name`, not by `projects[].name`.                                                                                                       |
-| `--json`                                  | `false`                                                                                           | Emit pretty-printed JSON instead of text output.                                                                                                                              |
-| `--assert-conditional-tests`              | `false`                                                                                           | Require coverage from active tests. URLs and selectors found only in conditional tests or suites do not count.                                                                |
-| `--allow-skipped-tests`                   | `false`                                                                                           | Allow URLs and selectors found in unconditionally skipped tests or suites to count.                                                                                           |
-| `--assert-unique-test-ids`                | `false`                                                                                           | Fail `check` when an exact test ID value is used more than once across configured selector roots. Template and unsupported dynamic values are ignored.                        |
-| `--assert-unique-html-ids`                | `false`                                                                                           | Fail `check` when an exact HTML `id` value is used more than once across configured selector roots. This check does not enable HTML ID coverage.                              |
-| `--assert-unique-selectors`               | `false`                                                                                           | Deprecated. Use `--assert-unique-test-ids` and `--assert-unique-html-ids`. For compatibility, checks test IDs and also HTML IDs when `htmlIds: true` is configured.           |
-| `-h`, `--help`                            |                                                                                                   | Print CLI help.                                                                                                                                                               |
-| `-V`, `--version`                         |                                                                                                   | Print package version.                                                                                                                                                        |
-
-Options can be written after the subcommand:
-
-```sh
-playwright-ast-coverage check --json
-playwright-ast-coverage related --project storybook 'web/app/users/[id]/page.tsx'
-```
-
-## Defaults
-
-By default the tool:
-
-- reads `.playwright-ast-coverage.{yaml,yml,json,jsonc}` when present,
-- reads `playwrightConfig` from analyzer config when present, otherwise reads all
-  root-level `playwright*.config.*` files when present,
-- analyzes `frontendRoot: app` unless configured,
-- checks route coverage and selector coverage,
-- checks `data-testid` and `data-pw` selectors unless configured,
-- checks HTML `id` selectors only when `htmlIds: true` is configured,
-- counts coverage from active tests and conditionally skipped tests,
-- ignores coverage from unconditionally skipped tests and suites,
-- exits `1` when any non-ignored route or selector is uncovered,
-- optionally exits `1` for duplicate exact test ID values when
-  `--assert-unique-test-ids` is set,
-- optionally exits `1` for duplicate exact HTML `id` values when
-  `--assert-unique-html-ids` is set,
-- exits `2` for configuration or parse errors.
-
-Skipped and conditional Playwright tests are detected statically. Unconditional
-`test.skip(...)` and `test.describe.skip(...)` coverage does not count unless
-`--allow-skipped-tests` is set. Conditional wrappers, `test.skip(condition, ...)`,
-`.skipIf(...)`, and tests or suites inside conditional branches count by default;
-set `--assert-conditional-tests` to require active coverage instead.
-
-## Analyzer Configuration
-
-Supported analyzer config filenames are `.playwright-ast-coverage.yaml`,
-`.playwright-ast-coverage.yml`, `.playwright-ast-coverage.json`, and
-`.playwright-ast-coverage.jsonc`.
-
-```yaml
-frontendRoot: web/app
-playwrightConfig: playwright.config.ts
-testInclude: []
-testExclude: []
-ignoreRoutes: []
-navigationHelpers:
-  - navigateTo
-selectorAttributes:
-  - data-testid
-  - data-pw
-componentSelectorAttributes:
-  dataPw: data-pw
-htmlIds: false
-selectorRoots:
-  - web/app
-  - web/components
-selectorInclude: []
-selectorExclude:
-  - "**/*.test.tsx"
-  - "**/*.stories.tsx"
-  - "**/__tests__/**"
-```
-
-| Option                        | Default                                                                          | Description                                                                                                                                                                                         |
-| ----------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `frontendRoot`                | `app`                                                                            | Next.js App Router root containing `page.ts`, `page.tsx`, `page.js`, and `page.jsx` files. Relative to `--root`.                                                                                    |
-| `playwrightConfig`            | All root-level `playwright*.config.*` files found under `--root`, otherwise none | Playwright config path, or array of paths. Relative to `--root`. Overridden by repeated `--playwright-config`.                                                                                      |
-| `testInclude`                 | `[]`                                                                             | Root-relative glob patterns for test files. When non-empty, this replaces test discovery from Playwright `testDir` and `testMatch`.                                                                 |
-| `testExclude`                 | `[]`                                                                             | Root-relative glob patterns for test files to ignore. Applied to `testInclude` discovery and also in addition to Playwright `testIgnore`.                                                           |
-| `ignoreRoutes`                | `[]`                                                                             | Route patterns that should count as covered even when no test URL matches them. Uses the same route matching rules as coverage.                                                                     |
-| `navigationHelpers`           | `[]`                                                                             | Callee names for project navigation helpers. The first URL-like string literal inside each matching call is counted as a visited URL. Names can include dots, such as `testHelpers.openPath`.       |
-| `selectorAttributes`          | `["data-testid", "data-pw"]`                                                     | JSX attributes to collect from app source and CSS attribute selectors to detect in tests. Set this and `componentSelectorAttributes` to empty values to disable selector coverage.                  |
-| `componentSelectorAttributes` | `{}`                                                                             | Component prop names to collect from JSX component usage and report as DOM selector attributes, such as `{ dataPw: data-pw }`. Mapped DOM attributes are also detected in Playwright CSS selectors. |
-| `htmlIds`                     | `false`                                                                          | Opt in to collecting JSX `id` attributes and matching them against Playwright CSS ID selectors such as `#save` plus `[id="save"]` attribute selectors.                                               |
-| `selectorRoots`               | `[frontendRoot]`                                                                 | Root-relative directories to scan for app selectors. Use this for shared component directories outside the App Router tree. Missing roots are skipped.                                              |
-| `selectorInclude`             | `[]`                                                                             | Root-relative glob patterns for app selector source files. When empty, all source files under `selectorRoots` are included before excludes.                                                         |
-| `selectorExclude`             | `[]`                                                                             | Root-relative glob patterns for app selector source files to ignore. Useful for unit tests, stories, and generated files.                                                                           |
-
-## Playwright Config
-
-The tool reads a limited set of literal values from Playwright config:
-
-| Playwright field                           | Description                                                                                                                                           |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `testDir`                                  | Directory containing tests. Project values override the root value. Defaults to `.` when no Playwright config exists.                                 |
-| `testMatch`                                | String glob or array of string globs for tests. Project values override the root value. JavaScript regular-expression patterns are not supported.     |
-| `testIgnore`                               | String glob or array of string globs for ignored tests. Root and project values are combined.                                                         |
-| `use.baseURL` or `baseURL`                 | Literal base URL used to normalize absolute URLs such as `http://localhost:3000/users/42` to `/users/42`. Non-literal values are ignored.             |
-| `use.testIdAttribute` or `testIdAttribute` | Attribute that Playwright `getByTestId(...)` uses. Defaults to `data-testid`; project values override the root value. Non-literal values are ignored. |
-| `projects`                                 | Array of project objects. Each project inherits supported root options unless the project provides its own supported value.                           |
-
-When more than one Playwright config file is analyzed, or when `--project` is
-used, each analyzed config must define a unique top-level `name`. The CLI
-`--project` flag filters by that config name:
-
-```ts
-export default defineConfig({
-  name: "storybook",
-  testDir: "./playwright/storybook",
-  projects: [{ name: "chromium" }],
-});
-```
-
-In this example, use `--project storybook`. The inner `projects[].name`
-(`chromium`) is still parsed for Playwright inheritance, but it is not matched
-by `--project`.
-
-## File Globs
-
-`testInclude`, `testExclude`, `selectorInclude`, `selectorExclude`, Playwright
-`testMatch`, and Playwright `testIgnore` use `globset` glob syntax. Paths are
-slash-normalized before matching.
-
-- Analyzer config `testInclude`, `testExclude`, `selectorInclude`, and `selectorExclude`
-  are matched against root-relative paths, such as `tests/e2e/users.spec.ts`
-  or `web/components/save-button.tsx`.
-- Playwright `testMatch` and `testIgnore` are matched against root-relative,
-  testDir-relative, and absolute paths.
-- Test and selector file walking skips `.git`, `node_modules`, `target`, `dist`,
-  `build`, `coverage`, and `test-results` directories.
+| Option | Description |
+| --- | --- |
+| `--root <ROOT>` | Repository or package root. |
+| `--config <CONFIG>` | Analyzer config file. |
+| `--playwright-config <FILE>` | Playwright config file. Repeatable. |
+| `--project <NAME>` | Top-level Playwright config `name` filter. |
+| `--json` | Emit JSON. |
+| `--assert-conditional-tests` | Require active test coverage; conditional tests do not count. |
+| `--allow-skipped-tests` | Allow skipped tests/suites to count. |
+| `--assert-unique-test-ids` | Fail on duplicate exact test IDs across selector roots. |
+| `--assert-unique-html-ids` | Fail on duplicate exact HTML `id` values. |
+| `--assert-unique-selectors` | Deprecated compatibility alias. |
 
 Examples:
 
-```yaml
-testInclude:
-  - tests/**/*.spec.ts
-testExclude:
-  - "**/fixtures/**"
-selectorInclude:
-  - web/**/*.tsx
-selectorExclude:
-  - "**/*.test.tsx"
-  - "**/*.stories.tsx"
-  - "**/__tests__/**"
+```sh
+playwright-ast-coverage check --json
+playwright-ast-coverage related 'web/app/users/[id]/page.tsx'
+playwright-ast-coverage edges --json
+playwright-ast-coverage tests tests/e2e/users.spec.ts --json
 ```
 
-When Playwright config does not provide `testMatch`, these default test globs
-are used:
+Supported analyzer config files: `.playwright-ast-coverage.yaml`,
+`.playwright-ast-coverage.yml`, `.playwright-ast-coverage.json`, and
+`.playwright-ast-coverage.jsonc`.
 
-```yaml
-- "**/*.spec.ts"
-- "**/*.spec.tsx"
-- "**/*.spec.js"
-- "**/*.spec.jsx"
-- "**/*.spec.mts"
-- "**/*.spec.cts"
-- "**/*.spec.mjs"
-- "**/*.spec.cjs"
-- "**/*.test.ts"
-- "**/*.test.tsx"
-- "**/*.test.js"
-- "**/*.test.jsx"
-- "**/*.test.mts"
-- "**/*.test.cts"
-- "**/*.test.mjs"
-- "**/*.test.cjs"
+## `next-to-fetch`
+
+Maps Next.js App Router route files to static `fetch()` calls.
+
+```sh
+next-to-fetch [--root <ROOT>] [--config <CONFIG>] [--format <FORMAT>] [--json] [TARGETS]...
 ```
 
-## Route Matching
+Targets may be routes such as `/users`, route files, or files imported by route
+or layout files. Formats are `json`, `yml`, `paths`, `md`, and `human`; `md` and
+`human` render the Markdown report.
 
-Routes are derived from files named `page.ts`, `page.tsx`, `page.js`, or
-`page.jsx` under `frontendRoot`.
-
-| App Router file             | Route pattern |
-| --------------------------- | ------------- |
-| `page.tsx`                  | `/`           |
-| `settings/page.tsx`         | `/settings`   |
-| `users/[id]/page.tsx`       | `/users/:id`  |
-| `(admin)/settings/page.tsx` | `/settings`   |
-| `docs/[...rest]/page.tsx`   | `/docs/*`     |
-| `shop/[[...rest]]/page.tsx` | `/shop/**`    |
-| `@modal/settings/page.tsx`  | `/settings`   |
-
-Route matching rules:
-
-- Literal segments must match exactly.
-- `:name` matches one path segment.
-- A final `*` matches one or more path segments.
-- A final `**` matches zero or more path segments.
-- During route matching, queries, fragments, and a trailing slash on non-root
-  URLs are ignored after local URL normalization.
-- Dynamic and wildcard segments do not match empty path segments from duplicate
-  slashes.
-- `ignoreRoutes` entries are compared to derived route patterns, not concrete
-  visited URLs. For `users/[id]/page.tsx`, use `/users/:id` rather than
-  `/users/42`.
-
-## Output
-
-Default text output is intended for local use. Use `--json` for CI and tooling.
-
-Coverage JSON:
-
-```json
-{
-  "summary": {
-    "totalRoutes": 1,
-    "coveredRoutes": 1,
-    "uncoveredRoutes": 0,
-    "totalSelectors": 1,
-    "coveredSelectors": 1,
-    "uncoveredSelectors": 0
-  },
-  "routes": [
-    {
-      "route": "/users/:id",
-      "file": "web/app/users/[id]/page.tsx",
-      "covered": true,
-      "tests": ["tests/e2e/users.spec.ts"],
-      "urls": ["/users/42"]
-    }
-  ],
-  "selectors": [
-    {
-      "attribute": "data-testid",
-      "value": "user-${id}",
-      "file": "web/app/users/[id]/page.tsx",
-      "covered": true,
-      "unsupportedDynamic": false,
-      "tests": ["tests/e2e/users.spec.ts"],
-      "selectors": ["getByTestId(user-42)"]
-    }
-  ]
-}
+```sh
+next-to-fetch --root web --format json
+next-to-fetch --root web /users app/shared/api.ts
 ```
 
-Edge JSON:
+## Standalone Queue, Server, And React Binaries
 
-```json
-{
-  "edges": [
-    {
-      "kind": "route",
-      "testFile": "tests/e2e/users.spec.ts",
-      "routeFile": "web/app/users/[id]/page.tsx",
-      "route": "/users/:id",
-      "url": "/users/42"
-    },
-    {
-      "kind": "selector",
-      "testFile": "tests/e2e/users.spec.ts",
-      "appFile": "web/app/users/[id]/page.tsx",
-      "attribute": "data-testid",
-      "value": "user-${id}",
-      "selector": "getByTestId(user-42)"
-    }
-  ]
-}
+The standalone binaries expose the same analyzers as `no-mistakes` subcommands:
+
+```sh
+queue-ast-hop edges --json
+queue-ast-hop related backend/jobs/email.ts --direction both
+queue-ast-hop check
+
+server-ast-routes routes --format json
+server-ast-routes edges backend/api/users.ts --depth 1
+server-ast-routes related backend/api/users.ts --format paths
+
+react-traits analyze 'app/components/**/*.tsx' --format json
+react-traits check 'app/components/**/*.tsx' --assert-no-fetch
 ```
+
+Prefer the `no-mistakes` wrapper when an agent needs one consistent command
+surface. Use standalone binaries when installing only one tool.

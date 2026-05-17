@@ -46,3 +46,6 @@ reactTraits:
 ## License
 
 MIT
+
+See the [documentation index](../../docs/README.md), [CLI reference](../../docs/cli-reference.md),
+and [AST analysis behavior](../../docs/ast-analysis.md) for full behavior notes.

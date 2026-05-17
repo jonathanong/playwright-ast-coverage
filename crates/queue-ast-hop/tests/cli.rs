@@ -22,6 +22,21 @@ fn edges_json_reports_virtual_queue_job() {
 }
 
 #[test]
+fn edges_json_outputs_array_for_wrapper_parity() {
+    let output = Command::cargo_bin("queue-ast-hop")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("basic"))
+        .arg("--json")
+        .arg("edges")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(json.as_array().is_some(), "edges JSON should be an array");
+}
+
+#[test]
 fn check_fails_for_unmatched_static_worker() {
     Command::cargo_bin("queue-ast-hop")
         .unwrap()
