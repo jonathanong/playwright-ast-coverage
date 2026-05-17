@@ -235,7 +235,7 @@ fn queues_edges_with_specific_file() {
     ]);
 
     assert!(output.status.success());
-    assert!(stdout(&output).contains("->"));
+    assert!(stdout(&output).contains("enqueue.ts ->"));
 }
 
 #[test]
@@ -252,7 +252,9 @@ fn queues_edges_json_with_specific_file() {
 
     assert!(output.status.success());
     let json: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
-    assert!(json.as_array().is_some());
+    let arr = json.as_array().expect("should be array");
+    assert!(!arr.is_empty(), "should have edges from enqueue.ts");
+    assert!(arr.iter().all(|e| e["from"].as_str() == Some("enqueue.ts")));
 }
 
 #[test]
