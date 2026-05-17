@@ -4,7 +4,7 @@ version = "0.2.0"
 edition = "2021"
 license = "MIT"
 description = "Static analysis tools for codebase dependency and symbol queries"
-repository = "https://github.com/jonathanong/playwright-ast-coverage"
+repository = "https://github.com/jonathanong/no-mistakes"
 
 [dependencies]
 anyhow = "1"

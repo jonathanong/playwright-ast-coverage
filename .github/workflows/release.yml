@@ -68,7 +68,7 @@ jobs:
           version="$(node -p "require('./package.json').version")"
           
           # Bump npm workspace versions
-          for pkg in eslint-plugin-playwright-ast-coverage no-mistakes no-mistakes-core next-to-fetch playwright-ast-coverage queue-ast-hop react-traits server-ast-routes; do
+          for pkg in eslint-plugin-next-to-fetch eslint-plugin-playwright-ast-coverage no-mistakes no-mistakes-core next-to-fetch playwright-ast-coverage queue-ast-hop react-traits server-ast-routes; do
             npm version "$version" --workspace "$pkg" --no-git-tag-version
             if [[ "$pkg" == "no-mistakes" || "$pkg" == "playwright-ast-coverage" || "$pkg" == "next-to-fetch" || "$pkg" == "queue-ast-hop" || "$pkg" == "react-traits" || "$pkg" == "server-ast-routes" ]]; then
               npm pkg set "dependencies.no-mistakes-core=^$version" --workspace "$pkg"
@@ -106,7 +106,7 @@ jobs:
           
           cargo update -w
           git add .
-          git commit -m "chore(release): v$version"
+          git commit -m "chore(release): v$version" -m "Co-authored-by: Codex <noreply@openai.com>"
           git tag -a "v$version" -m "v$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
@@ -153,10 +153,38 @@ jobs:
         run: |
           set -euo pipefail
           tag="${{ needs.prepare.outputs.version }}"
-          cargo_version="$(cargo metadata --no-deps --format-version 1 | node -e "let d=''; process.stdin.on('data', c => d += c); process.stdin.on('end', () => console.log(JSON.parse(d).packages[0].version));")"
-          npm_version="$(node -p "require('./package.json').version")"
-          test "$tag" = "$cargo_version"
-          test "$tag" = "$npm_version"
+          cargo metadata --no-deps --format-version 1 > "$RUNNER_TEMP/cargo-metadata.json"
+          node - "$tag" "$RUNNER_TEMP/cargo-metadata.json" <<'NODE'
+          const fs = require("node:fs");
+          const expected = process.argv[2];
+          const metadata = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
+          const mismatches = metadata.packages
+            .filter((pkg) => pkg.version !== expected)
+            .map((pkg) => `${pkg.name}@${pkg.version}`);
+          if (mismatches.length > 0) {
+            console.error(`Cargo version mismatch: ${mismatches.join(", ")}`);
+            process.exit(1);
+          }
+          NODE
+          node - "$tag" <<'NODE'
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const expected = process.argv[2];
+          const files = [
+            "package.json",
+            ...fs.readdirSync("packages")
+              .map((name) => path.join("packages", name, "package.json"))
+              .filter((file) => fs.existsSync(file)),
+          ];
+          const mismatches = files
+            .map((file) => [file, JSON.parse(fs.readFileSync(file, "utf8")).version])
+            .filter(([, version]) => version !== expected)
+            .map(([file, version]) => `${file}@${version}`);
+          if (mismatches.length > 0) {
+            console.error(`npm version mismatch: ${mismatches.join(", ")}`);
+            process.exit(1);
+          }
+          NODE
 
       - name: Check Rust file line limits
         run: bash scripts/check-rust-line-limit.sh
@@ -176,6 +204,9 @@ jobs:
       - name: Run Oxlint
         run: npm run lint:js
 
+      - name: Build JavaScript packages
+        run: npm run build:js
+
       - name: Run Rust tests
         run: cargo test --all-features
 
@@ -184,25 +215,25 @@ jobs:
 
       - name: Check Cargo packages
         run: |
-          for pkg in no-mistakes-core playwright-ast-coverage next-to-fetch queue-ast-hop react-traits server-ast-routes; do
-            cargo publish --dry-run --locked -p "$pkg"
+          cargo publish --dry-run --locked -p no-mistakes-core
+          for pkg in no-mistakes playwright-ast-coverage next-to-fetch queue-ast-hop react-traits server-ast-routes; do
+            cargo package --list --locked -p "$pkg" >/dev/null
           done
 
       - name: Check npm packages
         run: |
-          for pkg in playwright-ast-coverage eslint-plugin-playwright-ast-coverage no-mistakes no-mistakes-core next-to-fetch queue-ast-hop react-traits server-ast-routes; do
+          for pkg in no-mistakes-core no-mistakes playwright-ast-coverage next-to-fetch queue-ast-hop react-traits server-ast-routes eslint-plugin-next-to-fetch eslint-plugin-playwright-ast-coverage; do
             npm pack --dry-run --workspace "$pkg"
           done
 
   build:
-    name: Build ${{ matrix.target_binary }} for ${{ matrix.target }}
+    name: Build for ${{ matrix.target }}
     needs:
       - prepare
       - validate
     strategy:
       fail-fast: false
       matrix:
-        target_binary: [no-mistakes, playwright-ast-coverage, next-to-fetch, queue-ast-hop, react-traits, server-ast-routes]
         target:
           - x86_64-apple-darwin
           - aarch64-apple-darwin
@@ -239,46 +270,48 @@ jobs:
           cache-bin: "false"
 
       - name: Build binary
-        run: cargo build --release --locked --target ${{ matrix.target }} -p ${{ matrix.target_binary }}
+        run: cargo build --release --locked --target ${{ matrix.target }} -p no-mistakes -p playwright-ast-coverage -p next-to-fetch -p queue-ast-hop -p react-traits -p server-ast-routes
 
-      - name: Set artifact name
+      - name: Stage assets
         shell: bash
         run: |
           case "${{ matrix.target }}" in
             *windows*) ext=".exe" ;;
             *) ext="" ;;
           esac
-          echo "artifact=${{ matrix.target_binary }}-v${{ needs.prepare.outputs.version }}-${{ matrix.target }}$ext" >> "$GITHUB_ENV"
-          echo "binary=${{ matrix.target_binary }}$ext" >> "$GITHUB_ENV"
-
-      - name: Verify binary
-        shell: bash
-        run: target/${{ matrix.target }}/release/${{ env.binary }} --version
-
-      - name: Stage asset
-        shell: bash
-        run: cp "target/${{ matrix.target }}/release/${{ env.binary }}" "${{ env.artifact }}"
+          mkdir -p release-assets
+          for binary in no-mistakes playwright-ast-coverage next-to-fetch queue-ast-hop react-traits server-ast-routes; do
+            source="target/${{ matrix.target }}/release/$binary$ext"
+            artifact="release-assets/$binary-v${{ needs.prepare.outputs.version }}-${{ matrix.target }}$ext"
+            "$source" --version
+            cp "$source" "$artifact"
+          done
 
       - name: Generate checksum (Unix)
         if: runner.os != 'Windows'
         shell: bash
-        run: shasum -a 256 "${{ env.artifact }}" > "${{ env.artifact }}.sha256"
+        working-directory: release-assets
+        run: |
+          for artifact in *; do
+            [[ "$artifact" == *.sha256 ]] && continue
+            shasum -a 256 "$artifact" > "$artifact.sha256"
+          done
 
       - name: Generate checksum (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
+        working-directory: release-assets
         run: |
-          $artifact = "${{ env.artifact }}"
-          $hash = (Get-FileHash -Algorithm SHA256 -Path $artifact).Hash.ToLowerInvariant()
-          "$hash  $artifact" | Set-Content -Encoding ascii -NoNewline "$artifact.sha256"
+          Get-ChildItem -File | Where-Object { $_.Name -notlike "*.sha256" } | ForEach-Object {
+            $hash = (Get-FileHash -Algorithm SHA256 -Path $_.Name).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)" | Set-Content -Encoding ascii -NoNewline "$($_.Name).sha256"
+          }
 
       - name: Upload asset artifact
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ env.artifact }}
-          path: |
-            ${{ env.artifact }}
-            ${{ env.artifact }}.sha256
+          name: release-assets-${{ matrix.target }}
+          path: release-assets/*
           if-no-files-found: error
 
   publish:
@@ -302,6 +335,15 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
+
+      - name: Install latest npm
+        run: npm install -g npm@latest
+
+      - name: Install npm dependencies
+        run: SKIP_BINARY_DOWNLOAD=1 npm ci --ignore-scripts
+
+      - name: Build JavaScript packages
+        run: npm run build:js
 
       - name: Publish Cargo crates
         env:
@@ -327,6 +369,7 @@ jobs:
                   sleep 15
                 done
               fi
+              cargo publish --dry-run --locked -p "$pkg"
               cargo publish --locked -p "$pkg"
             fi
           done
@@ -358,10 +401,13 @@ jobs:
           set -euo pipefail
           if [ -n "${NPM_TOKEN:-}" ]; then
             export NODE_AUTH_TOKEN="$NPM_TOKEN"
+            echo "Publishing npm packages with NPM_TOKEN"
+          else
+            echo "Publishing npm packages with OIDC trusted publishing"
           fi
           version="${{ needs.prepare.outputs.version }}"
           # Order matters: no-mistakes-core should be first
-          for pkg in no-mistakes-core no-mistakes playwright-ast-coverage next-to-fetch queue-ast-hop react-traits server-ast-routes eslint-plugin-playwright-ast-coverage; do
+          for pkg in no-mistakes-core no-mistakes playwright-ast-coverage next-to-fetch queue-ast-hop react-traits server-ast-routes eslint-plugin-next-to-fetch eslint-plugin-playwright-ast-coverage; do
             if npm view "$pkg@$version" version >/dev/null 2>&1; then
               echo "$pkg $version is already published on npm; skipping"
             else

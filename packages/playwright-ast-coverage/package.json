@@ -9,7 +9,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jonathanong/playwright-ast-coverage.git",
+    "url": "git+https://github.com/jonathanong/no-mistakes.git",
     "directory": "packages/playwright-ast-coverage"
   },
   "bin": {
@@ -30,6 +30,6 @@
     "pack:check": "npm pack --dry-run"
   },
   "dependencies": {
-    "no-mistakes-core": "^0.1.0"
+    "no-mistakes-core": "^0.2.0"
   }
 }

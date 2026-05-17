@@ -1,9 +1,10 @@
 [package]
 name = "next-to-fetch"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 description = "Map Next.js App Router routes to fetch API calls"
+repository = "https://github.com/jonathanong/no-mistakes"
 
 [dependencies]
 anyhow = "1"
