@@ -45,7 +45,7 @@ jobs:
           tool: tokei,ripgrep
 
       - name: Validate Codecov config
-        run: cat codecov.yml | curl --data-binary @- https://codecov.io/validate
+        run: curl --data-binary @codecov.yml https://codecov.io/validate
 
       - name: Check Rust file line limits
         run: bash scripts/check-rust-line-limit.sh
