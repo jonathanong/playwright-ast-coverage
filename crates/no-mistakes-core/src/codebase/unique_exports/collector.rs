@@ -13,18 +13,26 @@ pub(super) fn collect_file_exports(
     resolver: &ImportResolver<'_>,
     workspace: &WorkspaceMap,
     visiting: &mut HashSet<PathBuf>,
+    memo: &mut HashMap<PathBuf, Vec<ExportOccurrence>>,
 ) -> Vec<ExportOccurrence> {
     let path = normalize_path(path);
+    if let Some(cached) = memo.get(&path) {
+        return cached.clone();
+    }
     if !visiting.insert(path.clone()) {
         return Vec::new();
     }
     let Some(file) = files.get(&path) else {
         visiting.remove(&path);
-        return Vec::new();
+        let out = Vec::new();
+        memo.insert(path, out.clone());
+        return out;
     };
     if file.disabled {
         visiting.remove(&path);
-        return Vec::new();
+        let out = Vec::new();
+        memo.insert(path, out.clone());
+        return out;
     }
 
     let mut out = Vec::new();
@@ -40,7 +48,7 @@ pub(super) fn collect_file_exports(
                     continue;
                 };
                 for mut occurrence in
-                    collect_file_exports(&target, files, resolver, workspace, visiting)
+                    collect_file_exports(&target, files, resolver, workspace, visiting, memo)
                 {
                     if export.is_type_only {
                         if occurrence.bucket == ExportBucket::Value {
@@ -95,6 +103,7 @@ pub(super) fn collect_file_exports(
     }
 
     visiting.remove(&path);
+    memo.insert(path, out.clone());
     out
 }
 

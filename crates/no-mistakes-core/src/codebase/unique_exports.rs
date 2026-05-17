@@ -135,6 +135,7 @@ pub fn analyze_project(
         .collect();
 
     let mut occurrences = Vec::new();
+    let mut export_memo = HashMap::new();
     for path in sorted_paths(by_path.keys()) {
         let mut visiting = HashSet::new();
         occurrences.extend(collect_file_exports(
@@ -143,6 +144,7 @@ pub fn analyze_project(
             &resolver,
             &workspace,
             &mut visiting,
+            &mut export_memo,
         ));
     }
 

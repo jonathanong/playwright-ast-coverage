@@ -260,12 +260,14 @@ fn defensive_helpers_ignore_missing_targets_and_non_matching_default_exports() {
     let workspace = WorkspaceMap::default();
 
     let mut visiting = HashSet::new();
+    let mut memo = HashMap::new();
     assert!(collector::collect_file_exports(
         &root.join("src/not-present.ts"),
         &files,
         &resolver,
         &workspace,
         &mut visiting,
+        &mut memo,
     )
     .is_empty());
 
