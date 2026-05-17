@@ -14,22 +14,29 @@ pub use graph::{DepGraph, EdgeKind, NodeId};
 
 pub use crate::cli::Format;
 
+pub(crate) const VITEST_JEST_TEST_GLOBS: &[&str] = &[
+    "**/*.test.mts",
+    "**/*.spec.mts",
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "**/*.test.tsx",
+    "**/*.spec.tsx",
+    "**/*.test.mjs",
+    "**/*.spec.mjs",
+    "**/*.test.js",
+    "**/*.spec.js",
+    "**/*.test.jsx",
+    "**/*.spec.jsx",
+    "**/__tests__/**/*.mts",
+    "**/__tests__/**/*.ts",
+    "**/__tests__/**/*.tsx",
+    "**/__tests__/**/*.mjs",
+    "**/__tests__/**/*.js",
+    "**/__tests__/**/*.jsx",
+];
+
 /// Map a `--test <framework>` value to its corresponding glob patterns.
 pub(crate) fn test_globs(framework: &str) -> Vec<String> {
-    const VITEST: &[&str] = &[
-        "**/*.test.mts",
-        "**/*.spec.mts",
-        "**/*.test.ts",
-        "**/*.spec.ts",
-        "**/*.test.tsx",
-        "**/*.spec.tsx",
-        "**/*.test.mjs",
-        "**/*.spec.mjs",
-        "**/*.test.js",
-        "**/*.spec.js",
-        "**/*.test.jsx",
-        "**/*.spec.jsx",
-    ];
     const PLAYWRIGHT: &[&str] = &[
         "**/tests/e2e/**/*.mts",
         "**/tests/e2e/**/*.ts",
@@ -47,8 +54,8 @@ pub(crate) fn test_globs(framework: &str) -> Vec<String> {
     const CARGO: &[&str] = &["**/tests/**/*.rs", "src/**/*_test.rs"];
 
     match framework {
-        "vitest" => globs_to_strings(VITEST),
-        "jest" => globs_to_strings(VITEST),
+        "vitest" => globs_to_strings(VITEST_JEST_TEST_GLOBS),
+        "jest" => globs_to_strings(VITEST_JEST_TEST_GLOBS),
         "playwright" => globs_to_strings(PLAYWRIGHT),
         "cargo" => globs_to_strings(CARGO),
         _ => vec![],

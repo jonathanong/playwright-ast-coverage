@@ -63,6 +63,32 @@ fn next_line_disable_and_unresolved_import_branches_are_reported() {
 }
 
 #[test]
+fn mocked_dynamic_import_target_skips_transitive_dependency_checks() {
+    let root = fixture();
+    let tsconfig = load_tsconfig(&root.join("tsconfig.json")).unwrap();
+    let resolver = ImportResolver::new(&tsconfig);
+    let graph = DepGraph::build_with_plan(&root, &tsconfig, GraphBuildPlan::all()).unwrap();
+    let test_file = root.join("tests").join("good.test.mts");
+    let target = root.join("src").join("lazy.mts");
+    let mut mocks = HashSet::new();
+    mocks.insert(target);
+    let mut findings = Vec::new();
+    check_dynamic_import(
+        &root,
+        &test_file,
+        ast::DynamicImport {
+            specifier: Some("../src/lazy.mts".to_string()),
+            line: 1,
+        },
+        &resolver,
+        &graph,
+        &mocks,
+        &mut findings,
+    );
+    assert!(findings.is_empty());
+}
+
+#[test]
 fn resolve_tsconfig_covers_explicit_and_default_paths() {
     let root = fixture();
     assert!(resolve_tsconfig(&root, Some(&root.join("tsconfig.json")))

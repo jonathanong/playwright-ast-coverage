@@ -6,13 +6,12 @@ use oxc_parser::Parser;
 use oxc_span::SourceType;
 use std::path::Path;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DynamicImport {
     pub specifier: Option<String>,
     pub line: usize,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Default)]
 pub struct TestFacts {
     pub dynamic_imports: Vec<DynamicImport>,
     pub mock_specifiers: Vec<String>,
@@ -20,8 +19,10 @@ pub struct TestFacts {
 
 pub fn extract(path: &Path, source: &str) -> Result<TestFacts> {
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(path)
-        .with_context(|| format!("unsupported JavaScript/TypeScript file: {}", path.display()))?;
+    let source_type = SourceType::from_path(path).context(format!(
+        "unsupported JavaScript/TypeScript file: {}",
+        path.display()
+    ))?;
     let parsed = Parser::new(&allocator, source, source_type).parse();
     let mut visitor = Collector {
         source,
@@ -97,13 +98,11 @@ fn static_template(template: &TemplateLiteral<'_>) -> Option<String> {
     if !template.expressions.is_empty() {
         return None;
     }
-    Some(
-        template
-            .quasis
-            .iter()
-            .map(|q| q.value.cooked.as_ref().unwrap_or(&q.value.raw).as_str())
-            .collect(),
-    )
+    let mut value = String::new();
+    for quasi in &template.quasis {
+        value.push_str(quasi.value.cooked.as_ref().unwrap_or(&quasi.value.raw));
+    }
+    Some(value)
 }
 
 #[cfg(test)]

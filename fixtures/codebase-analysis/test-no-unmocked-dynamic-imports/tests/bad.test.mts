@@ -1,12 +1,8 @@
-import { expect, test, vi } from 'vitest'
-
-vi.mock('@lib/unmocked-parent.mts', () => ({
-  parent: () => 'mocked',
-}))
+import { expect, test } from 'vitest'
 
 test('missing transitive mock is reported', async () => {
   const mod = await import('@lib/unmocked-parent.mts')
-  expect(mod.parent()).toBe('mocked')
+  expect(mod.parent()).toBe('parent')
 })
 
 test('non literal dynamic import is reported', async () => {

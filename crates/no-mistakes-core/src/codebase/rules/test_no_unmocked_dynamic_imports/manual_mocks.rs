@@ -4,8 +4,8 @@ use crate::codebase::ts_source::discover_files;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-pub fn discover(root: &Path) -> HashSet<PathBuf> {
-    discover_files(root, &[])
+pub fn discover(root: &Path, skip_directories: &[String]) -> HashSet<PathBuf> {
+    discover_files(root, skip_directories)
         .into_iter()
         .filter(|path| is_indexable(path))
         .filter(|path| path.components().any(|c| c.as_os_str() == "__mocks__"))

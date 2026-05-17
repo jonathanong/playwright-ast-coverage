@@ -4,27 +4,6 @@ use globset::{Glob, GlobSet, GlobSetBuilder};
 use regex::Regex;
 use std::path::{Path, PathBuf};
 
-const TEST_GLOBS: &[&str] = &[
-    "**/*.test.mts",
-    "**/*.spec.mts",
-    "**/*.test.ts",
-    "**/*.spec.ts",
-    "**/*.test.tsx",
-    "**/*.spec.tsx",
-    "**/*.test.mjs",
-    "**/*.spec.mjs",
-    "**/*.test.js",
-    "**/*.spec.js",
-    "**/*.test.jsx",
-    "**/*.spec.jsx",
-    "**/__tests__/**/*.mts",
-    "**/__tests__/**/*.ts",
-    "**/__tests__/**/*.tsx",
-    "**/__tests__/**/*.mjs",
-    "**/__tests__/**/*.js",
-    "**/__tests__/**/*.jsx",
-];
-
 pub struct TestFilter {
     include: GlobSet,
     exclude: GlobSet,
@@ -37,7 +16,7 @@ impl TestFilter {
 }
 
 pub fn test_filter(root: &Path, config: &NoMistakesConfig) -> Result<TestFilter> {
-    let mut includes = TEST_GLOBS
+    let mut includes = crate::codebase::dependencies::VITEST_JEST_TEST_GLOBS
         .iter()
         .map(|s| (*s).to_string())
         .collect::<Vec<_>>();

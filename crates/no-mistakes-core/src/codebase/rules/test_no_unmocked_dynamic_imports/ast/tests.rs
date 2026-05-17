@@ -30,3 +30,13 @@ await import(`./${name}.mts`)
     assert!(facts.mock_specifiers.is_empty());
     assert_eq!(facts.dynamic_imports[0].specifier, None);
 }
+
+#[test]
+fn rejects_unsupported_file_extensions() {
+    let Err(err) = extract(Path::new("x.txt"), "") else {
+        panic!("unsupported file should fail");
+    };
+    assert!(err
+        .to_string()
+        .contains("unsupported JavaScript/TypeScript file"));
+}

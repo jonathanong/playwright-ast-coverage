@@ -76,6 +76,9 @@ fn check_dynamic_import(
         }
         return;
     };
+    if mocks.contains(&target) {
+        return;
+    }
     let mut required = vec![target.clone()];
     required.extend(runtime_deps(graph, target));
     for dependency in required {
@@ -180,7 +183,10 @@ fn setup_mocks(
             resolver,
         ));
     }
-    mocks.extend(manual_mocks::discover(root));
+    mocks.extend(manual_mocks::discover(
+        root,
+        &config.filesystem.skip_directories,
+    ));
     Ok(mocks)
 }
 
