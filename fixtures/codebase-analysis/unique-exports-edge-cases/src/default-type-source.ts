@@ -1,1 +1,3 @@
-export default interface DefaultShape {}
+export default interface DefaultShape {
+  value: string;
+}
