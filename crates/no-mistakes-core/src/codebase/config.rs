@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
+use crate::config::resolve;
 use crate::config::v2::{find_config_root, load_v2_config, schema::NoMistakesConfig};
 use crate::config::CONFIG_EXTENSIONS;
 
@@ -120,7 +121,17 @@ pub fn load_config(start: &Path) -> Result<Config> {
 pub fn load_config_with_path(start: &Path, config_path: Option<&Path>) -> Result<Config> {
     let v2 = load_v2_config(start, config_path)?;
     let mut config = config_from_v2(v2);
-    config.augment_from_gitignore(&find_config_root(start));
+    let gitignore_root = match config_path {
+        Some(path) => {
+            let resolved = resolve(start, path);
+            resolved
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| start.to_path_buf())
+        }
+        None => find_config_root(start),
+    };
+    config.augment_from_gitignore(&gitignore_root);
     Ok(config)
 }
 

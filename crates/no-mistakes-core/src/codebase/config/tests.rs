@@ -58,6 +58,17 @@ fn load_codebase_config_uses_explicit_config_path() {
 }
 
 #[test]
+fn load_config_with_explicit_config_uses_config_parent_gitignore() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/config-v2/explicit-config-parent");
+    let nested = root.join("nested");
+
+    let config = load_config_with_path(&nested, Some(Path::new("../.no-mistakes.yml"))).unwrap();
+
+    assert_eq!(config.filesystem.skip_directories, vec!["from-config"]);
+}
+
+#[test]
 fn load_codebase_config_finds_parent_guardrails_config() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/codebase-analysis/codebase-intel");
