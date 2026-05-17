@@ -2,7 +2,9 @@ use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 use no_mistakes_core::codebase::dependencies::{self, Direction, TraverseArgs};
 use no_mistakes_core::codebase::symbols::{self, SymbolsArgs};
+use no_mistakes_core::react_traits;
 use rayon::ThreadPoolBuilder;
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 #[derive(Parser)]
@@ -24,6 +26,36 @@ enum Command {
     Related(TraverseArgs),
     /// Dump named exports and imports of TS/JS files.
     Symbols(SymbolsArgs),
+    /// Analyze React component traits.
+    React(ReactArgs),
+}
+
+#[derive(Args, Debug)]
+struct ReactArgs {
+    #[arg(long, default_value = ".", global = true)]
+    root: PathBuf,
+    #[arg(long, global = true)]
+    config: Option<PathBuf>,
+    #[arg(long, global = true)]
+    json: bool,
+    #[command(subcommand)]
+    command: ReactCommand,
+}
+
+#[derive(Subcommand, Debug)]
+enum ReactCommand {
+    /// Analyze component traits and print results.
+    Analyze {
+        #[arg(help = "Glob patterns for component files")]
+        targets: Vec<String>,
+    },
+    /// Check for violations (e.g. assert-no-fetch).
+    Check {
+        #[arg(help = "Glob patterns for component files")]
+        targets: Vec<String>,
+        #[arg(long)]
+        assert_no_fetch: bool,
+    },
 }
 
 #[derive(Args, Debug, Clone, Copy, Default)]
@@ -40,7 +72,7 @@ struct JobsArg {
 
 fn main() -> ExitCode {
     match run() {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(code) => code,
         Err(error) => {
             eprintln!("error: {error:#}");
             ExitCode::from(2)
@@ -48,15 +80,67 @@ fn main() -> ExitCode {
     }
 }
 
-fn run() -> Result<()> {
+fn run() -> Result<ExitCode> {
     let cli = Cli::parse();
     init_threads(cli.jobs);
     match cli.command {
-        Command::Dependencies(args) => dependencies::run(args, Direction::Deps),
-        Command::Dependents(args) | Command::Related(args) => {
-            dependencies::run(args, Direction::Dependents)
+        Command::Dependencies(args) => {
+            dependencies::run(args, Direction::Deps)?;
+            Ok(ExitCode::SUCCESS)
         }
-        Command::Symbols(args) => symbols::run(args),
+        Command::Dependents(args) | Command::Related(args) => {
+            dependencies::run(args, Direction::Dependents)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Symbols(args) => {
+            symbols::run(args)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::React(args) => run_react(args),
+    }
+}
+
+fn run_react(args: ReactArgs) -> Result<ExitCode> {
+    match &args.command {
+        ReactCommand::Analyze { targets } => {
+            let results =
+                react_traits::run_analyze(&args.root, args.config.as_deref(), targets, None)?;
+            if args.json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&results)
+                        .expect("serialization of Rust structs never fails")
+                );
+            } else {
+                react_traits::report::text::print_results(&results, 0);
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        ReactCommand::Check {
+            targets,
+            assert_no_fetch,
+        } => {
+            let violations = react_traits::run_check(
+                &args.root,
+                args.config.as_deref(),
+                targets,
+                *assert_no_fetch,
+            )?;
+            if violations.is_empty() {
+                Ok(ExitCode::SUCCESS)
+            } else {
+                if args.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&violations)
+                            .expect("serialization of Rust structs never fails")
+                    );
+                } else {
+                    react_traits::report::text::print_violations(&violations);
+                }
+                Ok(ExitCode::from(1))
+            }
+        }
     }
 }
 

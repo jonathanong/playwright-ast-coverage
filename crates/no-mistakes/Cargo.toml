@@ -12,6 +12,6 @@ clap = { version = "4", features = ["derive"] }
 no-mistakes-core = { path = "../no-mistakes-core", version = "0.2.0" }
 num_cpus = "1.16"
 rayon = "1.10"
+serde_json = "1"
 
 [dev-dependencies]
-serde_json = "1"
