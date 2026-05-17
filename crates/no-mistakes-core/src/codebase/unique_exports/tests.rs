@@ -214,13 +214,14 @@ fn scan_helpers_cover_filter_and_parse_edges() {
     let root = fixture("unique-exports-edge-cases");
     let files = vec![root.join("src/direct.ts"), root.join("package.json")];
     assert!(
-        scan::filter_source_files(&root, vec![root.join("src/direct.ts")], &["[".to_string()])
+        scan::filter_source_files(&root, &[root.join("src/direct.ts")], &["[".to_string()])
             .unwrap_err()
             .to_string()
             .contains("invalid skip file pattern")
     );
 
-    let filtered = scan::filter_source_files(&root, files, &["invalid\\.ts$".to_string()]).unwrap();
+    let filtered =
+        scan::filter_source_files(&root, &files, &["invalid\\.ts$".to_string()]).unwrap();
     assert_eq!(filtered.len(), 1);
     assert!(!filtered.iter().any(|path| path.ends_with("src/invalid.ts")));
 
@@ -230,6 +231,10 @@ fn scan_helpers_cover_filter_and_parse_edges() {
 
     assert!(scan::collect_source_files(&root, &[root.join("src/not-present.ts")]).is_err());
     assert!(scan::collect_source_files(&root, &[root.join("src/invalid.ts")]).is_err());
+    let disabled_invalid =
+        scan::collect_source_files(&root, &[root.join("src/disabled-invalid.ts")]).unwrap();
+    assert!(disabled_invalid[0].disabled);
+    assert!(disabled_invalid[0].symbols.exports.is_empty());
 
     let lookup = scan::NextJsProjectLookup::new(&fixture("unique-exports-nextjs"), &[]);
     assert!(!lookup.contains_file(&root.join("src/direct.ts")));
@@ -244,7 +249,7 @@ fn defensive_helpers_ignore_missing_targets_and_non_matching_default_exports() {
     let root = fixture("unique-exports-edge-cases");
     let all_files = discover_files(&root, &[]);
     let files =
-        scan::filter_source_files(&root, all_files, &["invalid\\.ts$".to_string()]).unwrap();
+        scan::filter_source_files(&root, &all_files, &["invalid\\.ts$".to_string()]).unwrap();
     let source_files = scan::collect_source_files(&root, &files).unwrap();
     let files: HashMap<PathBuf, SourceFile> = source_files
         .into_iter()

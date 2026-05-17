@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 pub(super) fn filter_source_files(
     root: &Path,
-    files: Vec<PathBuf>,
+    files: &[PathBuf],
     skip_file_patterns: &[String],
 ) -> Result<Vec<PathBuf>> {
     let patterns: Vec<Regex> = skip_file_patterns
@@ -20,7 +20,7 @@ pub(super) fn filter_source_files(
         })
         .collect::<Result<_>>()?;
     Ok(files
-        .into_iter()
+        .iter()
         .filter(|path| {
             path.extension()
                 .and_then(|ext| ext.to_str())
@@ -30,6 +30,7 @@ pub(super) fn filter_source_files(
             let rel = relative_slash_path(root, path);
             !patterns.iter().any(|pattern| pattern.is_match(&rel))
         })
+        .cloned()
         .collect())
 }
 
@@ -44,12 +45,17 @@ pub(super) fn collect_source_files(root: &Path, files: &[PathBuf]) -> Result<Vec
                 path.extension().and_then(|ext| ext.to_str()),
                 Some("tsx" | "jsx")
             );
-            let symbols = extract_symbols(&source, is_tsx)
-                .with_context(|| format!("extracting symbols from {}", path.display()))?;
+            let disabled = has_disable_file_comment(&source, RULE_ID);
+            let symbols = if disabled {
+                Default::default()
+            } else {
+                extract_symbols(&source, is_tsx)
+                    .with_context(|| format!("extracting symbols from {}", path.display()))?
+            };
             Ok(SourceFile {
                 path: normalize_path(path),
                 rel: relative_slash_path(root, path),
-                disabled: has_disable_file_comment(&source, RULE_ID),
+                disabled,
                 is_nextjs_project: nextjs_projects.contains_file(path),
                 source,
                 symbols,

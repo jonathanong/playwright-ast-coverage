@@ -107,11 +107,7 @@ pub fn analyze_project(
     }
     let options: UniqueExportsOptions = config.rule_options(RULE_ID);
     let all_files = discover_files(root, &config.filesystem.skip_directories);
-    let files = filter_source_files(
-        root,
-        all_files.clone(),
-        &config.filesystem.skip_file_patterns,
-    )?;
+    let files = filter_source_files(root, &all_files, &config.filesystem.skip_file_patterns)?;
     let tsconfig = match tsconfig_path {
         Some(path) => {
             let path = if path.is_absolute() {
