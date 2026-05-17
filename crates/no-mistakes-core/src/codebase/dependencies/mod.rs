@@ -2,7 +2,7 @@ pub mod extract;
 pub mod graph;
 pub mod output;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use is_terminal::IsTerminal;
 use std::collections::HashMap;
 use std::io;
@@ -161,7 +161,7 @@ fn parse_entrypoint(s: &str) -> Entrypoint {
 
 pub fn run(args: TraverseArgs, direction: Direction) -> Result<()> {
     let mut timings = crate::codebase::timing::PhaseTimings::start();
-    let cwd_early = std::env::current_dir().expect("current directory is available");
+    let cwd_early = std::env::current_dir().context("reading current directory")?;
     let root = match &args.root {
         Some(p) => {
             if p.is_absolute() {

@@ -409,6 +409,11 @@ fn ci_edges_include_implicit_workspace_member_bins() {
 }
 
 #[test]
+fn invalid_cargo_workspace_member_globs_are_ignored() {
+    assert!(cargo_member_globset(&["[".to_string()]).is_none());
+}
+
+#[test]
 fn build_graph_excludes_skipped_fixture_files() {
     let root = crate::codebase::ts_resolver::normalize_path(&fixture("skipped-files"));
     let source = root.join("src/source.mts");

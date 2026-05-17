@@ -1131,7 +1131,7 @@ fn cargo_member_globset(members: &[String]) -> Option<globset::GlobSet> {
         let glob = globset::GlobBuilder::new(member)
             .literal_separator(true)
             .build()
-            .expect("cargo workspace member globs are valid");
+            .ok()?;
         builder.add(glob);
     }
     builder.build().ok()

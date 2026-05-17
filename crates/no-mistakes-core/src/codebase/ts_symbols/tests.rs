@@ -65,7 +65,7 @@ fn side_effect_import_has_no_symbols() {
 }
 
 #[test]
-fn invalid_source_returns_error() {
+fn panicked_parse_returns_error() {
     let err = extract_symbols("export const = ;", false).unwrap_err();
     assert!(format!("{err:#}").contains("failed to parse TypeScript source"));
 }

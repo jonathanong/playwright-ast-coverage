@@ -64,7 +64,7 @@ pub fn extract_symbols(source: &str, is_tsx: bool) -> Result<FileSymbols> {
         SourceType::ts()
     };
     let ret = Parser::new(&allocator, source, source_type).parse();
-    if ret.panicked || !ret.errors.is_empty() {
+    if ret.panicked {
         let detail = ret
             .errors
             .first()
