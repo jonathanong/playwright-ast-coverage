@@ -1,4 +1,5 @@
 pub(crate) use no_mistakes_core::cli::Format;
+use no_mistakes_core::cli::{edge_view, root_scoped_edge_depth};
 use no_mistakes_core::queue::{Edge, ProjectReport};
 use serde::Serialize;
 
@@ -8,10 +9,17 @@ pub(crate) fn print_edges(
     depth: Option<usize>,
     format: Format,
 ) -> anyhow::Result<()> {
-    let edges = edge_view(report, roots, depth);
+    let depth = root_scoped_edge_depth(roots, depth);
+    let edges = edge_view(&report.edges, roots, depth);
     match format {
-        Format::Json => print_json(report),
-        Format::Yml => print_yml(report),
+        Format::Json => {
+            println!("{}", serde_json::to_string_pretty(&edges)?);
+            Ok(())
+        }
+        Format::Yml => {
+            println!("{}", serde_yaml::to_string(&edges)?);
+            Ok(())
+        }
         Format::Paths => {
             for edge in &edges {
                 println!("{}", edge.to);
@@ -21,7 +29,7 @@ pub(crate) fn print_edges(
         Format::Md => {
             println!("# Queue edges");
             for edge in &edges {
-                println!("- `{}` -> `{}` ({:?})", edge.from, edge.to, edge.kind);
+                println!("- `{}` -> `{}` ({})", edge.from, edge.to, edge.kind);
             }
             Ok(())
         }
@@ -37,39 +45,6 @@ pub(crate) fn print_edges(
             Ok(())
         }
     }
-}
-
-fn edge_view(report: &ProjectReport, roots: &[String], depth: Option<usize>) -> Vec<Edge> {
-    if roots.is_empty() {
-        return report.edges.clone();
-    }
-    let max_depth = depth.unwrap_or(usize::MAX);
-    let mut edges = Vec::new();
-    let mut frontier = roots
-        .iter()
-        .cloned()
-        .collect::<std::collections::BTreeSet<_>>();
-    let mut seen_nodes = frontier.clone();
-    let mut seen_edges = std::collections::BTreeSet::new();
-    for _ in 0..max_depth {
-        let mut next = std::collections::BTreeSet::new();
-        for edge in &report.edges {
-            if !frontier.contains(&edge.from) {
-                continue;
-            }
-            if seen_edges.insert((edge.from.clone(), edge.to.clone(), edge.kind)) {
-                edges.push(edge.clone());
-            }
-            if seen_nodes.insert(edge.to.clone()) {
-                next.insert(edge.to.clone());
-            }
-        }
-        if next.is_empty() {
-            break;
-        }
-        frontier = next;
-    }
-    edges
 }
 
 pub(crate) fn print_related(
@@ -141,15 +116,5 @@ pub(crate) fn print_check(report: &ProjectReport, format: Format) -> anyhow::Res
             }
         }
     }
-    Ok(())
-}
-
-fn print_json(report: &ProjectReport) -> anyhow::Result<()> {
-    println!("{}", serde_json::to_string_pretty(report)?);
-    Ok(())
-}
-
-fn print_yml(report: &ProjectReport) -> anyhow::Result<()> {
-    println!("{}", serde_yaml::to_string(report)?);
     Ok(())
 }

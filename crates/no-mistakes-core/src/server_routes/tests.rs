@@ -3,6 +3,8 @@ use crate::server_routes::model::{Binding, FileFacts, ImportBinding, MountSite, 
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+mod extra;
+
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/server-ast-routes")
@@ -404,7 +406,16 @@ fn report_builder_includes_diagnostics_and_dynamic_summary() {
         framework: Framework::Express,
     });
 
-    let report = graph::build_report(&root, &HashMap::from([(file, facts)]));
+    let report = graph::build_report(
+        &root,
+        &HashMap::from([(file, facts)]),
+        &crate::codebase::ts_resolver::TsConfig {
+            dir: root.clone(),
+            paths_dir: root.clone(),
+            paths: Vec::new(),
+            base_url: None,
+        },
+    );
     assert_eq!(report.diagnostics[0].file, "api.ts");
     assert_eq!(report.diagnostics[0].line, 3);
     assert_eq!(report.summary.dynamic_routes, 1);

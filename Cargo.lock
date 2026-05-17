@@ -592,6 +592,7 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
+ "serde_yaml",
  "tempfile",
  "walkdir",
 ]
@@ -604,6 +605,7 @@ dependencies = [
  "clap",
  "no-mistakes-core",
  "serde_json",
+ "serde_yaml",
 ]
 
 [[package]]
@@ -1388,6 +1390,7 @@ dependencies = [
  "predicates",
  "serde",
  "serde_json",
+ "serde_yaml",
  "tempfile",
  "walkdir",
 ]

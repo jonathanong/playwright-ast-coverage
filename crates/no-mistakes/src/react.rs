@@ -11,7 +11,7 @@ pub(crate) struct ReactArgs {
     pub(crate) root: PathBuf,
     #[arg(long, global = true)]
     pub(crate) config: Option<PathBuf>,
-    /// Output format: json, paths, human (md/yml use JSON serialization).
+    /// Output format: json, yml, md, paths, human.
     #[arg(
         long,
         value_enum,
@@ -20,8 +20,8 @@ pub(crate) struct ReactArgs {
         conflicts_with = "json"
     )]
     pub(crate) format: Format,
-    /// Shorthand for --format json (deprecated, use --format json).
-    #[arg(long, global = true, hide = true, conflicts_with = "format")]
+    /// Shorthand for --format json.
+    #[arg(long, global = true, conflicts_with = "format")]
     pub(crate) json: bool,
     #[command(subcommand)]
     pub(crate) command: ReactCommand,
@@ -58,13 +58,21 @@ pub(crate) fn run(args: ReactArgs) -> Result<ExitCode> {
         ReactCommand::Analyze { targets } => {
             let results = react_traits::run_analyze(&root, config.as_deref(), targets, None)?;
             match effective_format {
-                Format::Json | Format::Md | Format::Yml => {
+                Format::Json => {
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&results)
                             .expect("serialization of Rust structs never fails")
                     );
                 }
+                Format::Yml => {
+                    println!(
+                        "{}",
+                        serde_yaml::to_string(&results)
+                            .expect("serialization of Rust structs never fails")
+                    );
+                }
+                Format::Md => react_traits::print_results_md(&results),
                 Format::Paths => {
                     for r in &results {
                         println!("{}", r.file);
@@ -86,13 +94,21 @@ pub(crate) fn run(args: ReactArgs) -> Result<ExitCode> {
                 return Ok(ExitCode::SUCCESS);
             }
             match effective_format {
-                Format::Json | Format::Md | Format::Yml => {
+                Format::Json => {
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&violations)
                             .expect("serialization of Rust structs never fails")
                     );
                 }
+                Format::Yml => {
+                    println!(
+                        "{}",
+                        serde_yaml::to_string(&violations)
+                            .expect("serialization of Rust structs never fails")
+                    );
+                }
+                Format::Md => react_traits::print_violations_md(&violations),
                 Format::Paths => {
                     for v in &violations {
                         println!("{}", v.file);

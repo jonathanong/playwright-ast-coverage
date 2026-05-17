@@ -67,6 +67,7 @@ selectorExclude:
 
 ## References
 
+- [Documentation index](../../docs/README.md)
 - [CLI reference](../../docs/cli-reference.md)
 - [AST analysis behavior](../../docs/ast-analysis.md)
 - [Agent guide](../../docs/agent-guide.md)

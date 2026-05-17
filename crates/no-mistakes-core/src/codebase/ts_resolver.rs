@@ -212,7 +212,7 @@ pub fn find_tsconfig(start: &Path) -> Option<PathBuf> {
     }
 }
 
-const EXTENSIONS: &[&str] = &[".mts", ".ts", ".tsx", ".mjs", ".js", ".jsx"];
+const EXTENSIONS: &[&str] = &[".mts", ".ts", ".tsx", ".mjs", ".js", ".jsx", ".cjs", ".cts"];
 
 /// Resolve `specifier` (as it appears in an import in `importing_file`) to an
 /// absolute path on disk. Returns `None` for bare npm specifiers or if no file
@@ -310,7 +310,12 @@ impl<'a> ImportResolver<'a> {
             if let Some(capture) = match_alias(pattern, specifier) {
                 for replacement in replacements {
                     let resolved = replacement.replace('*', &capture);
-                    let base = self.tsconfig.paths_dir.join(&resolved);
+                    let base = self
+                        .tsconfig
+                        .base_url
+                        .as_ref()
+                        .unwrap_or(&self.tsconfig.paths_dir)
+                        .join(&resolved);
                     if let Some(p) = self.try_path(&base) {
                         return Some(p);
                     }

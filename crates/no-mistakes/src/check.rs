@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::Args;
 use no_mistakes_core::cli::{resolve_root, Format};
-use no_mistakes_core::queue::analyze_project as analyze_queues;
+use no_mistakes_core::queue::{analyze_project as analyze_queues, CheckFinding};
 use no_mistakes_core::react_traits;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -17,9 +17,18 @@ pub(crate) struct CheckArgs {
     /// Path to tsconfig.json for queue import alias resolution.
     #[arg(long, global = true)]
     tsconfig: Option<PathBuf>,
-    /// Output format: json, paths, human (md/yml use JSON serialization).
-    #[arg(long, value_enum, default_value = "human", global = true)]
+    /// Output format: json, yml, md, paths, human.
+    #[arg(
+        long,
+        value_enum,
+        default_value = "human",
+        global = true,
+        conflicts_with = "json"
+    )]
     format: Format,
+    /// Shorthand for --format json.
+    #[arg(long, global = true, conflicts_with = "format")]
+    json: bool,
 }
 
 pub(crate) fn run(args: CheckArgs) -> Result<ExitCode> {
@@ -43,17 +52,25 @@ pub(crate) fn run(args: CheckArgs) -> Result<ExitCode> {
 
     let any_violations = !react_violations.is_empty() || !queue_findings.is_empty();
 
-    match args.format {
-        Format::Json | Format::Md | Format::Yml => {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&serde_json::json!({
-                    "react": react_violations,
-                    "queues": queue_findings,
-                }))
-                .expect("serialization of Rust structs never fails")
-            );
-        }
+    let format = if args.json { Format::Json } else { args.format };
+    match format {
+        Format::Json => println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "react": react_violations,
+                "queues": queue_findings,
+            }))
+            .expect("serialization of Rust structs never fails")
+        ),
+        Format::Yml => println!(
+            "{}",
+            serde_yaml::to_string(&serde_json::json!({
+                "react": react_violations,
+                "queues": queue_findings,
+            }))
+            .expect("serialization of Rust structs never fails")
+        ),
+        Format::Md => print_check_md(&react_violations, queue_findings),
         Format::Paths => {
             for v in &react_violations {
                 println!("{}", v.file);
@@ -84,4 +101,16 @@ pub(crate) fn run(args: CheckArgs) -> Result<ExitCode> {
     } else {
         ExitCode::SUCCESS
     })
+}
+
+fn print_check_md(react: &[react_traits::Violation], queues: &[CheckFinding]) {
+    println!("# no-mistakes check");
+    println!("## react");
+    for v in react {
+        println!("- `{}` `{}`: {}", v.file, v.component, v.rule);
+    }
+    println!("## queues");
+    for f in queues {
+        println!("- `{}`:{} {}", f.file, f.line, f.message);
+    }
 }

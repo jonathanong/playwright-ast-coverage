@@ -43,3 +43,66 @@ fn check_json_output_with_violations() {
         .assert()
         .failure();
 }
+
+#[test]
+fn check_format_paths_outputs_violation_files() {
+    let root = common::fixture("react-traits-config", "assert-no-fetch");
+    let output = cmd()
+        .arg("--format")
+        .arg("paths")
+        .arg("check")
+        .arg("app/components/Fetcher.tsx")
+        .arg("--root")
+        .arg(&root)
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let out = String::from_utf8(output).unwrap();
+    assert!(
+        out.contains("Fetcher.tsx"),
+        "expected violation file path in output: {out}"
+    );
+}
+
+#[test]
+fn check_format_markdown_outputs_violation_files() {
+    let root = common::fixture("react-traits-config", "assert-no-fetch");
+    let output = cmd()
+        .arg("--format")
+        .arg("md")
+        .arg("check")
+        .arg("app/components/Fetcher.tsx")
+        .arg("--root")
+        .arg(&root)
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let out = String::from_utf8(output).unwrap();
+    assert!(
+        out.contains("# React trait violations") && out.contains("Fetcher.tsx"),
+        "expected markdown violation output: {out}"
+    );
+}
+
+#[test]
+fn check_format_yaml_outputs_violation_files() {
+    let root = common::fixture("react-traits-config", "assert-no-fetch");
+    let output = cmd()
+        .arg("--format")
+        .arg("yml")
+        .arg("check")
+        .arg("app/components/Fetcher.tsx")
+        .arg("--root")
+        .arg(&root)
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let out = String::from_utf8(output).unwrap();
+    assert!(out.contains("file: app/components/Fetcher.tsx"));
+}

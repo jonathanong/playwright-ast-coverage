@@ -1,17 +1,18 @@
-# ESLint and Oxlint Plugin
+# ESLint and Oxlint Plugins
 
-`eslint-plugin-playwright-ast-coverage` catches test-hook issues while editing:
-non-literal IDs, empty IDs, duplicate IDs within a file, inconsistent attributes,
-missing interactive IDs, CSS selectors that should be `getByTestId`, and naming
-convention violations.
+The lint plugins enforce file-local code shapes that keep the CLI analyzers
+deterministic. Use them in editors and CI; use the CLIs for project-wide graph
+checks.
 
-## Install
+## `eslint-plugin-playwright-ast-coverage`
+
+Rules for Playwright test IDs and selector conventions.
 
 ```sh
 npm install --save-dev eslint-plugin-playwright-ast-coverage
 ```
 
-## ESLint
+ESLint flat config:
 
 ```js
 const playwrightAstCoverage = require("eslint-plugin-playwright-ast-coverage");
@@ -25,7 +26,7 @@ module.exports = [
 ];
 ```
 
-## Oxlint
+Oxlint:
 
 ```jsonc
 {
@@ -33,56 +34,84 @@ module.exports = [
   "rules": {
     "playwright-ast-coverage/literals": "error",
     "playwright-ast-coverage/defaults": "error",
-    "playwright-ast-coverage/unique": "error",
-  },
+    "playwright-ast-coverage/unique": "error"
+  }
 }
 ```
+
+### Rules
+
+| Rule | Purpose |
+| --- | --- |
+| `playwright-ast-coverage/literals` | Requires JSX test IDs and `getByTestId()` arguments to be static. |
+| `playwright-ast-coverage/defaults` | Requires prop-passed test IDs to have string-literal defaults. |
+| `playwright-ast-coverage/unique` | Requires literal test IDs to be unique within a file. |
+| `playwright-ast-coverage/no-empty` | Disallows empty literal test IDs. |
+| `playwright-ast-coverage/consistent-attribute` | Requires one canonical test ID attribute. |
+| `playwright-ast-coverage/require-interactive-test-id` | Requires test IDs on interactive JSX elements. |
+| `playwright-ast-coverage/prefer-get-by-test-id` | Reports exact CSS test ID selectors passed to Playwright APIs. |
+| `playwright-ast-coverage/naming-convention` | Requires literal test IDs to match a regex. |
 
 `configs.recommended` enables `literals`, `defaults`, `no-empty`, and `unique`.
 `configs.strict` also enables canonical attribute, naming, interactive element,
 and `getByTestId` preference rules.
 
-## Rule Options
-
-All rules default to checking both `data-testid` and `data-pw`. Override that
-with `selectorAttributes`:
+All rules default to `data-testid` and `data-pw`. Override selectors per rule:
 
 ```js
 {
   "playwright-ast-coverage/literals": ["error", {
-    selectorAttributes: ["data-pw", "data-qa"]
+    selectorAttributes: ["data-pw", "data-qa"],
+    allowDefaultedProps: true,
+    allowStaticTemplates: false
   }]
 }
 ```
 
-`playwright-ast-coverage/literals` also supports:
-
-- `allowDefaultedProps`: boolean. Defaults to `true`. Allows a test ID passed
-  through a function prop when that prop has a string-literal default. This
-  includes function parameter defaults and local `const` destructuring defaults,
-  such as `const { "data-pw": dataPw = "save" } = props`. Local destructuring
-  defaults are only accepted when the source is rooted in a function parameter
-  whose name ends in `props`, case-insensitively, such as `props`, `buttonProps`,
-  or `variantProps`. The local const declaration must appear before the test ID
-  reference and must be in the function body or an `if`/`else` block; loop,
-  switch, try/catch, and labeled statement containers are intentionally not
-  treated as passthrough assertions.
-- `allowStaticTemplates`: boolean. Defaults to `false`. Allows template literals
-  with at least one static text segment, such as `` `user-${id}` ``.
-
-## Rules
-
-| Rule                                                  | Purpose                                                                         |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `playwright-ast-coverage/literals`                    | Requires JSX test-id attributes and `getByTestId()` arguments to be static.     |
-| `playwright-ast-coverage/defaults`                    | Requires prop-passed test IDs to have string-literal defaults.                  |
-| `playwright-ast-coverage/unique`                      | Requires literal test IDs to be unique within the same file.                    |
-| `playwright-ast-coverage/no-empty`                    | Disallows empty literal test IDs.                                               |
-| `playwright-ast-coverage/consistent-attribute`        | Requires a canonical test-id attribute when multiple attributes are recognized. |
-| `playwright-ast-coverage/require-interactive-test-id` | Requires test IDs on interactive JSX elements.                                  |
-| `playwright-ast-coverage/prefer-get-by-test-id`       | Reports exact CSS test-id selectors passed to Playwright selector APIs.         |
-| `playwright-ast-coverage/naming-convention`           | Requires literal test IDs to match a configurable regular expression.           |
-
-Use `playwright-ast-coverage check --assert-unique-test-ids` and, when needed,
-`--assert-unique-html-ids` for project-wide uniqueness in CI. Lint rules are
+Use `playwright-ast-coverage check --assert-unique-test-ids` and
+`--assert-unique-html-ids` for project-wide uniqueness. The lint rule is
 file-local.
+
+## `eslint-plugin-next-to-fetch`
+
+Rules for statically analyzable `fetch()` calls.
+
+```sh
+npm install --save-dev eslint-plugin-next-to-fetch
+```
+
+ESLint flat config:
+
+```js
+const nextToFetch = require("eslint-plugin-next-to-fetch");
+
+module.exports = [
+  {
+    files: ["**/*.{js,jsx,ts,tsx,mjs,mts}"],
+    plugins: { "next-to-fetch": nextToFetch },
+    rules: nextToFetch.configs.recommended.rules,
+  },
+];
+```
+
+Oxlint:
+
+```jsonc
+{
+  "jsPlugins": ["eslint-plugin-next-to-fetch"],
+  "rules": {
+    "next-to-fetch/static-fetch-url": "error",
+    "next-to-fetch/static-fetch-method": "error"
+  }
+}
+```
+
+### Rules
+
+| Rule | Purpose |
+| --- | --- |
+| `next-to-fetch/static-fetch-url` | Requires `fetch()` URL arguments to be string literals or expression-free templates. |
+| `next-to-fetch/static-fetch-method` | Requires `fetch()` `method` options to be string literals. |
+
+These rules prevent dynamic forms that `next-to-fetch` cannot safely map to
+Next.js routes and backend API paths.

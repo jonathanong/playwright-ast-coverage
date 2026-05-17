@@ -1,72 +1,88 @@
 ---
 name: no-mistakes
-description: Answer structural TS/JS questions deterministically — what a file imports, who imports it, what it exports. Use for transitive dep graphs, blast-radius, test selection, public-API dumps.
+description: Answer structural TS/JS and app-graph questions deterministically. Use for imports, dependents, named exports/imports, test impact, React traits, queue producer/worker hops, server routes, and global no-mistakes checks.
 allowed-tools: Bash(no-mistakes:*) Bash(rg:*) Read Glob
 version: 0.2.0
 ---
 
 # No Mistakes
 
-Three scoped subcommands answer structural questions about TS/JS module graphs: `no-mistakes dependencies`, `no-mistakes dependents`, `no-mistakes symbols`. They are resolution-correct (tsconfig paths, workspace packages, extension fallback, barrel re-exports) and deterministic. Use them instead of `rg`/`sg` whenever the question is about **what a file imports or who imports it**.
+Use `no-mistakes` before grep when the question is structural: what a TS/JS file
+imports, who imports it, what it exports, which tests are related, whether a
+queue job is connected, which server route owns an endpoint, or what React
+traits a component has.
 
-## When to use these tools vs file-search
+## Command Selection
 
 | Question | Tool |
-|----------|------|
-| What does **this file** transitively import? | `no-mistakes dependencies <file>` |
-| Which files would be affected by touching **this file**? | `no-mistakes dependents <file>` |
-| Which files import **this specific named export**? | `no-mistakes dependents <file>#SYMBOL` |
-| What does **this file export / import** (its public API)? | `no-mistakes symbols <file>` |
-| Which tests should rerun after changing this file? | `no-mistakes dependents <file> --test vitest` |
-| Plain-text search (log messages, comments, strings)? | file-search (`rg`) |
-| Exact line numbers where a symbol is called? | `rg` on the files `no-mistakes dependents` returns |
+| --- | --- |
+| What does this file transitively import? | `no-mistakes dependencies <file>` |
+| Which files are affected by touching this file? | `no-mistakes dependents <file>` |
+| Which files import this named export? | `no-mistakes dependents <file>#SYMBOL` |
+| Which tests should rerun? | `no-mistakes dependents <file> --test vitest --format paths` |
+| What does this module export/import? | `no-mistakes symbols <file> --include both` |
+| What React traits does this component have? | `no-mistakes react analyze <glob>` |
+| Does this component tree call fetch? | `no-mistakes react check <glob> --assert-no-fetch` |
+| Which queue producer/worker files are connected? | `no-mistakes queues related <file>` |
+| Are queue producers/workers unmatched? | `no-mistakes queues check` |
+| What server routes exist? | `no-mistakes server routes` |
+| Which server route files are related? | `no-mistakes server related <file>` |
+| Run configured project checks | `no-mistakes check` |
+| Plain text, comments, log messages, exact call lines | `rg` |
 
-## Quick examples
-
-```bash
-# All files this module transitively imports (JSON — machine-readable)
-no-mistakes dependencies src/main.mts --root /path/to/project --json
-
-# All files that would be affected by touching this module
-no-mistakes dependents src/utils.mts --root /path/to/project --json
-
-# Only files that import the `sendEmail` export
-no-mistakes dependents src/queues.mts#sendEmail --root /path/to/project --json
-
-# What does this module export?
-no-mistakes symbols src/queues.mts --root /path/to/project --json
-```
-
-Pass `--timings` when you need phase timings on stderr. Common labels include `search: Nms`, `ingest: Nms`, `parse: Nms`, `analysis: Nms`, and `output: Nms`; some binaries combine phases (e.g. `parse+analysis: Nms`). Stdout is reserved for the selected data format.
-
-Use `no-mistakes <subcommand> --help` for the full flag reference — `references/*.md` covers the most common patterns.
-
-## Monorepo: no root tsconfig.json
-
-When the project has per-package `tsconfig.json` files (no root tsconfig), pass the relevant one explicitly:
+## Quick Workflow
 
 ```bash
-no-mistakes dependents backend/services/auth.mts --root /path/to/project --tsconfig backend/tsconfig.json
+# Machine-readable graph query
+no-mistakes dependents src/utils.mts --root /path/to/project --format json
+
+# Shell-friendly affected test list
+no-mistakes dependents src/utils.mts --test vitest --format paths
+
+# Public API and imports
+no-mistakes symbols src/api.mts --include both --format json
+
+# Queue and server graph checks
+no-mistakes queues check --format json
+no-mistakes server routes --format json
 ```
 
-Auto-discovery walks upward from `--root`. In a monorepo with multiple tsconfigs, the wrong tsconfig may be picked — specify `--tsconfig` explicitly if you get wrong or empty results. Note: `tsconfig.extends` chains are followed, so passing a workspace tsconfig that extends a base config with `paths` will resolve aliases correctly.
+Prefer `--format json` for agent parsing and `--format paths` for command
+substitution. Use `--timings` on graph, queue, and server commands when you need
+to explain cost.
 
-## Hard limits
+## Graph Options
 
-- **`baseUrl`-only imports** are not resolved (only `paths` mappings are).
-- **`package.json#exports` subpaths** support exact keys and single-`*` patterns only.
-- **Dynamic `import()`** and **CJS `require()`** are tracked only when the specifier is a string literal.
-- **Bare npm specifiers** (`express`, `node:path`) are silently ignored.
+`dependencies`, `dependents`, and `related` support:
 
-See `references/limits-and-fallbacks.md` for workarounds.
+- `--root <PATH>` for the project root.
+- `--tsconfig <FILE>` for path aliases; pass this explicitly in monorepos.
+- `--depth <N>` or `--max-depth <N>` to limit traversal.
+- `--filter <GLOB>` to include only matching files; repeatable.
+- `--test vitest|playwright|cargo` to filter to test files.
+- `--relationship import|workspace|test|route|queue|md|ci|http|process|all`.
+- `--format json|md|yml|paths|human`, `--json`, `--timings`, and `--jobs`.
 
-## References
+`FILE#SYMBOL` works only for `dependents`/`related`, not `dependencies`.
+Namespace imports match all symbols; use `rg` on returned files to confirm exact
+member usage.
 
-| File | What it covers |
-|------|----------------|
-| `references/decision-tree.md` | Routing table: edge cases, relationship flags, output formats |
-| `references/dependencies.md` | Full `no-mistakes dependencies` flag reference and JSON schema |
-| `references/dependents.md` | Full `no-mistakes dependents` flag reference, `#SYMBOL` semantics |
-| `references/symbols.md` | Full `no-mistakes symbols` flag reference and JSON schema |
-| `references/monorepo-resolution.md` | tsconfig paths, workspace packages, `--tsconfig` flag |
-| `references/limits-and-fallbacks.md` | Unsupported patterns and `rg`/`sg` workarounds |
+## When To Read References
+
+- `references/decision-tree.md`: choosing commands, relationships, filters, and
+  outputs.
+- `references/dependencies.md`: full `dependencies` reference.
+- `references/dependents.md`: full `dependents`/`related` reference and
+  `FILE#SYMBOL` behavior.
+- `references/symbols.md`: full `symbols` reference.
+- `references/monorepo-resolution.md`: tsconfig paths and workspace packages.
+- `references/limits-and-fallbacks.md`: unsupported forms and `rg` fallbacks.
+
+## Hard Limits
+
+- `baseUrl`-only imports are not resolved; use `compilerOptions.paths`.
+- Dynamic `import()` and `require()` are tracked only with string literals.
+- Bare external specifiers such as `react` and `node:path` are ignored.
+- Graph tools answer file/symbol relationships, not exact call locations.
+- Dynamic queue names, route paths, fetch URLs, and selectors should be made
+  static when agent-readable analysis is required.

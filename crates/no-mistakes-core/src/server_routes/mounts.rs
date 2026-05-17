@@ -1,9 +1,8 @@
+use crate::codebase::ts_resolver::ImportResolver;
 use crate::server_routes::model::{FileFacts, ImportBinding, RouteSite};
 use crate::server_routes::normalize::join_paths;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-
-const SOURCE_EXTENSIONS: &[&str] = &["ts", "tsx", "js", "jsx", "mjs", "mts", "cjs", "cts"];
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) struct ResolvedMount {
@@ -14,11 +13,33 @@ pub(crate) struct ResolvedMount {
     pub prefix: String,
 }
 
+#[cfg(test)]
 pub(crate) fn resolve_mounts(facts: &HashMap<PathBuf, FileFacts>) -> Vec<ResolvedMount> {
+    let visible = facts.keys().cloned().collect::<HashSet<_>>();
+    let root = facts
+        .keys()
+        .filter_map(|path| path.parent())
+        .min_by_key(|path| path.components().count())
+        .unwrap_or(Path::new(""));
+    let tsconfig = crate::codebase::ts_resolver::TsConfig {
+        dir: root.to_path_buf(),
+        paths_dir: root.to_path_buf(),
+        paths: Vec::new(),
+        base_url: None,
+    };
+    let resolver = ImportResolver::new(&tsconfig).with_visible(&visible);
+    resolve_mounts_with_resolver(facts, &resolver)
+}
+
+pub(crate) fn resolve_mounts_with_resolver(
+    facts: &HashMap<PathBuf, FileFacts>,
+    resolver: &ImportResolver<'_>,
+) -> Vec<ResolvedMount> {
     let mut mounts = Vec::new();
     for (path, file_facts) in facts {
         for mount in &file_facts.mounts {
-            if let Some((child_file, child)) = resolve_child(path, file_facts, &mount.child, facts)
+            if let Some((child_file, child)) =
+                resolve_child(path, file_facts, &mount.child, facts, resolver)
             {
                 mounts.push(ResolvedMount {
                     parent_file: path.clone(),
@@ -66,6 +87,7 @@ fn resolve_child(
     file_facts: &FileFacts,
     child: &str,
     facts: &HashMap<PathBuf, FileFacts>,
+    resolver: &ImportResolver<'_>,
 ) -> Option<(PathBuf, String)> {
     if file_facts.bindings.contains_key(child) {
         return Some((path.to_path_buf(), child.to_string()));
@@ -74,7 +96,7 @@ fn resolve_child(
         .imports
         .iter()
         .find(|import| import.local == child)?;
-    let target = resolve_import_path(path, &import.source, facts)?;
+    let target = resolver.resolve(&import.source, path)?;
     let target_facts = facts.get(&target)?;
     let child = imported_binding(import, target_facts)?;
     Some((target, child))
@@ -97,37 +119,6 @@ fn imported_binding(import: &ImportBinding, facts: &FileFacts) -> Option<String>
         return facts.exports.values().next().cloned();
     }
     None
-}
-
-fn resolve_import_path(
-    from: &Path,
-    source: &str,
-    facts: &HashMap<PathBuf, FileFacts>,
-) -> Option<PathBuf> {
-    if !source.starts_with('.') {
-        return None;
-    }
-    let base = from.parent()?.join(source);
-    candidate_paths(&base)
-        .into_iter()
-        .filter_map(|candidate| candidate.canonicalize().ok().or(Some(candidate)))
-        .find(|candidate| facts.contains_key(candidate))
-}
-
-fn candidate_paths(base: &Path) -> Vec<PathBuf> {
-    if base.extension().is_some() {
-        return vec![base.to_path_buf()];
-    }
-    let mut paths = SOURCE_EXTENSIONS
-        .iter()
-        .map(|ext| base.with_extension(ext))
-        .collect::<Vec<_>>();
-    paths.extend(
-        SOURCE_EXTENSIONS
-            .iter()
-            .map(|ext| base.join("index").with_extension(ext)),
-    );
-    paths
 }
 
 fn mount_prefixes(

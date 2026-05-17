@@ -1,4 +1,5 @@
 pub(crate) use no_mistakes_core::cli::Format;
+use no_mistakes_core::cli::{edge_view, root_scoped_edge_depth};
 use no_mistakes_core::server_routes::{Edge, ProjectReport, ServerRoute};
 use serde::Serialize;
 
@@ -44,7 +45,8 @@ pub(crate) fn print_edges(
         depth: Option<usize>,
         edges: &'a [Edge],
     }
-    let edges = edge_view(report, roots, depth);
+    let depth = root_scoped_edge_depth(roots, depth);
+    let edges = edge_view(&report.edges, roots, depth);
     match format {
         Format::Json => println!(
             "{}",
@@ -70,7 +72,7 @@ pub(crate) fn print_edges(
         Format::Md => {
             println!("# Server route edges");
             for edge in &edges {
-                println!("- `{}` -> `{}` ({:?})", edge.from, edge.to, edge.kind);
+                println!("- `{}` -> `{}` ({})", edge.from, edge.to, edge.kind);
             }
         }
         Format::Human => {
@@ -134,37 +136,4 @@ fn route_view(report: &ProjectReport, files: &[String]) -> Vec<ServerRoute> {
         })
         .cloned()
         .collect()
-}
-
-fn edge_view(report: &ProjectReport, roots: &[String], depth: Option<usize>) -> Vec<Edge> {
-    if roots.is_empty() {
-        return report.edges.clone();
-    }
-    let max_depth = depth.unwrap_or(usize::MAX);
-    let mut edges = Vec::new();
-    let mut frontier = roots
-        .iter()
-        .cloned()
-        .collect::<std::collections::BTreeSet<_>>();
-    let mut seen_nodes = frontier.clone();
-    let mut seen_edges = std::collections::BTreeSet::new();
-    for _ in 0..max_depth {
-        let mut next = std::collections::BTreeSet::new();
-        for edge in &report.edges {
-            if !frontier.contains(&edge.from) {
-                continue;
-            }
-            if seen_edges.insert((edge.from.clone(), edge.to.clone(), edge.kind)) {
-                edges.push(edge.clone());
-            }
-            if seen_nodes.insert(edge.to.clone()) {
-                next.insert(edge.to.clone());
-            }
-        }
-        if next.is_empty() {
-            break;
-        }
-        frontier = next;
-    }
-    edges
 }
