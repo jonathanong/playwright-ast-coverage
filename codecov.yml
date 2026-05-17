@@ -5,14 +5,12 @@ coverage:
       rust:
         target: 100%
         threshold: 0%
-        require_base: false
         flags:
           - rust
         if_not_found: failure
       javascript:
         target: 100%
         threshold: 0%
-        require_base: false
         flags:
           - javascript
         if_not_found: failure
@@ -37,10 +35,7 @@ flag_management:
   individual_flags:
     - name: rust
       paths:
-        - src/
-        - tests/
+        - crates/
     - name: javascript
       paths:
-        - bin/
-        - scripts/
-        - packages/eslint-plugin-playwright-ast-coverage/src/
+        - packages/
