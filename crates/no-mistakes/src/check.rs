@@ -29,14 +29,14 @@ pub(crate) fn run(args: CheckArgs) -> Result<ExitCode> {
 
     // Run react check; skip gracefully when no config is present, log genuine errors.
     // assert_no_fetch defaults to false; enable it via project config.
-    let react_violations =
-        match react_traits::run_check(&root, args.config.as_deref(), &[], false) {
-            Ok(v) => v,
-            Err(err) => {
-                eprintln!("warning: react check skipped: {err:#}");
-                vec![]
-            }
-        };
+    let react_violations = match react_traits::run_check(&root, args.config.as_deref(), &[], false)
+    {
+        Ok(v) => v,
+        Err(err) => {
+            eprintln!("warning: react check skipped: {err:#}");
+            vec![]
+        }
+    };
 
     // Run queues check.
     let queue_report = analyze_queues(&root, None, &[])?;
