@@ -58,7 +58,7 @@ pub fn test_filter(root: &Path, config: &NoMistakesConfig) -> Result<TestFilter>
         ));
     }
     if has_project_includes {
-        includes.extend(config_includes);
+        include_regex.clear();
     } else if !config_includes.is_empty() || !include_regex.is_empty() {
         includes = config_includes;
     } else {

@@ -67,6 +67,31 @@ fn project_include_restricts_default_test_globs() {
 }
 
 #[test]
+fn project_include_does_not_widen_to_config_test_globs() {
+    let root = crate::codebase::ts_resolver::normalize_path(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/codebase-analysis/test-no-unmocked-dynamic-imports"),
+    );
+    let mut config = NoMistakesConfig::default();
+    config.projects.insert(
+        "focused".to_string(),
+        Project {
+            root: Some("tests".to_string()),
+            include: vec!["good.test.mts".to_string()],
+            rules: vec![super::super::RULE_ID.to_string()],
+            ..Default::default()
+        },
+    );
+    config.tests.vitest.configs = Some(crate::config::v2::schema::StringOrList::One(
+        "vitest.config.mts".to_string(),
+    ));
+
+    let filter = test_filter(&root, &config).unwrap();
+    assert!(filter.is_match("tests/good.test.mts".to_string()));
+    assert!(!filter.is_match("tests/bad.test.mts".to_string()));
+}
+
+#[test]
 fn scoped_glob_leaves_root_project_includes_unprefixed() {
     let mut config = NoMistakesConfig::default();
     config.projects.insert(

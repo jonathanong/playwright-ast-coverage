@@ -1,6 +1,6 @@
 use super::types::CallTarget;
 use crate::ast;
-use oxc_ast::ast::{Argument, CallExpression};
+use oxc_ast::ast::{Argument, CallExpression, Expression};
 use oxc_ast_visit::{walk, Visit};
 use oxc_span::Span;
 use std::path::Path;
@@ -19,7 +19,7 @@ pub(super) fn callback_argument<'a>(
 }
 
 pub(super) fn test_name(call: &CallExpression<'_>) -> Option<String> {
-    let path = ast::expression_path(&call.callee)?;
+    let path = callee_path(call)?;
     let first = path.first()?.as_str();
     if first != "test" && first != "it" {
         return None;
@@ -34,7 +34,7 @@ pub(super) fn test_name(call: &CallExpression<'_>) -> Option<String> {
 }
 
 pub(super) fn describe_name(call: &CallExpression<'_>) -> Option<String> {
-    let path = ast::expression_path(&call.callee)?;
+    let path = callee_path(call)?;
     if is_skipped_describe_path(&path) {
         return None;
     }
@@ -46,7 +46,14 @@ pub(super) fn describe_name(call: &CallExpression<'_>) -> Option<String> {
 }
 
 pub(super) fn is_skipped_describe(call: &CallExpression<'_>) -> bool {
-    ast::expression_path(&call.callee).is_some_and(|path| is_skipped_describe_path(&path))
+    callee_path(call).is_some_and(|path| is_skipped_describe_path(&path))
+}
+
+fn callee_path(call: &CallExpression<'_>) -> Option<Vec<String>> {
+    match &call.callee {
+        Expression::CallExpression(inner) => callee_path(inner),
+        callee => ast::expression_path(callee),
+    }
 }
 
 fn is_skipped_describe_path(path: &[String]) -> bool {
@@ -162,11 +169,21 @@ pub(super) fn integration_annotation_before(source: &str, span: Span) -> Option<
         return None;
     }
     let start = trimmed[..end].rfind("/*")?;
-    let body = &trimmed[start + 2..end];
+    let body = normalize_block_comment(&trimmed[start + 2..end]);
     let directive = body.trim();
     let rest = directive.strip_prefix("no-mistakes:")?.trim();
-    let value = rest.strip_prefix("integration=")?.trim();
+    let value = rest
+        .strip_prefix("integration=")
+        .or_else(|| rest.strip_prefix("integration:"))?
+        .trim();
     valid_integration_name(value).then(|| value.to_string())
+}
+
+fn normalize_block_comment(body: &str) -> String {
+    body.lines()
+        .map(|line| line.trim().strip_prefix('*').unwrap_or(line.trim()).trim())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn valid_integration_name(value: &str) -> bool {

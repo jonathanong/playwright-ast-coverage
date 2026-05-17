@@ -1,7 +1,7 @@
 use super::*;
 use oxc_ast_visit::{walk, Visit};
 use oxc_span::Span;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn fixture(name: &str) -> PathBuf {
     crate::codebase::ts_resolver::normalize_path(
@@ -106,6 +106,14 @@ fn annotation_requires_one_valid_value() {
         Some("openai")
     );
 
+    let jsdoc = "/**\n * no-mistakes: integration: aws\n */\nasync function f() {}";
+    let jsdoc_start = jsdoc.find("async").unwrap() as u32;
+    assert_eq!(
+        calls::integration_annotation_before(jsdoc, Span::new(jsdoc_start, jsdoc_start + 5))
+            .as_deref(),
+        Some("aws")
+    );
+
     let invalid = "const f = /* no-mistakes: integration=openai,anthropic */ async () => {}";
     let invalid_start = invalid.find("async").unwrap() as u32;
     assert!(calls::integration_annotation_before(
@@ -113,6 +121,26 @@ fn annotation_requires_one_valid_value() {
         Span::new(invalid_start, invalid_start + 5)
     )
     .is_none());
+}
+
+#[test]
+fn conditional_vitest_wrappers_are_detected_as_tests() {
+    let source = "it.skipIf(!process.env.OPENAI_API_KEY)('real openai', async () => {})";
+    crate::ast::with_program(Path::new("conditional.test.mts"), source, |program, _| {
+        let mut names = Vec::new();
+        struct Collector<'a>(&'a mut Vec<String>);
+        impl<'a> Visit<'a> for Collector<'_> {
+            fn visit_call_expression(&mut self, call: &oxc_ast::ast::CallExpression<'a>) {
+                if let Some(name) = calls::test_name(call) {
+                    self.0.push(name);
+                }
+                walk::walk_call_expression(self, call);
+            }
+        }
+        Collector(&mut names).visit_program(program);
+        assert_eq!(names, vec!["real openai"]);
+    })
+    .unwrap();
 }
 
 #[test]

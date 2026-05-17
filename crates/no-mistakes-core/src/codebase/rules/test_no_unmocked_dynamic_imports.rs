@@ -1,10 +1,15 @@
 mod ast;
+mod checker;
 mod config;
 mod manual_mocks;
+mod reachable;
 mod runtime;
 
 use super::RuleFinding;
 use crate::codebase::dependencies::graph::{DepGraph, GraphBuildPlan};
+use crate::codebase::rules::test_no_unmocked_dynamic_imports::checker::{
+    check_dynamic_import, DynamicCheckContext,
+};
 use crate::codebase::ts_resolver::{load_tsconfig, normalize_path, ImportResolver, TsConfig};
 use crate::codebase::ts_source::{discover_files, has_disable_comment, has_disable_file_comment};
 use crate::config::v2::NoMistakesConfig;
@@ -57,91 +62,24 @@ pub fn check(
             }
             check_dynamic_import(&mut check_context, import);
         }
+        let reachable_context = reachable::ReachableContext {
+            root,
+            config,
+            resolver: &resolver,
+            graph: &graph,
+        };
+        let reachable_result = reachable::check(
+            reachable_context,
+            &file,
+            &mocks,
+            &mut dependency_cache,
+            &mut findings,
+        );
+        reachable_result?;
     }
 
     findings.sort_by_key(|f| (f.file.clone(), f.line, f.target.clone()));
     Ok(findings)
-}
-
-struct DynamicCheckContext<'a> {
-    root: &'a Path,
-    file: &'a Path,
-    resolver: &'a ImportResolver<'a>,
-    graph: &'a DepGraph,
-    mocks: &'a HashSet<PathBuf>,
-    dependency_cache: &'a mut HashMap<PathBuf, Vec<PathBuf>>,
-    findings: &'a mut Vec<RuleFinding>,
-}
-
-fn check_dynamic_import(ctx: &mut DynamicCheckContext<'_>, import: ast::DynamicImport) {
-    let Some(specifier) = import.specifier else {
-        push_finding(ctx.root, ctx.file, import.line, None, None, ctx.findings);
-        return;
-    };
-    let Some(target) = ctx.resolver.resolve(&specifier, ctx.file) else {
-        if !ctx.mocks.contains(&PathBuf::from(&specifier)) {
-            push_finding(
-                ctx.root,
-                ctx.file,
-                import.line,
-                Some(specifier),
-                None,
-                ctx.findings,
-            );
-        }
-        return;
-    };
-    if ctx.mocks.contains(&target) {
-        return;
-    }
-    let mut required = vec![target.clone()];
-    let dependencies = if let Some(dependencies) = ctx.dependency_cache.get(&target) {
-        dependencies.clone()
-    } else {
-        let dependencies = runtime_deps(ctx.graph, target.clone());
-        ctx.dependency_cache.insert(target, dependencies.clone());
-        dependencies
-    };
-    required.extend(dependencies);
-    for dependency in required {
-        if !ctx.mocks.contains(&dependency) {
-            push_finding(
-                ctx.root,
-                ctx.file,
-                import.line,
-                Some(specifier.clone()),
-                Some(dependency),
-                ctx.findings,
-            );
-        }
-    }
-}
-
-fn push_finding(
-    root: &Path,
-    file: &Path,
-    line: usize,
-    specifier: Option<String>,
-    target: Option<PathBuf>,
-    findings: &mut Vec<RuleFinding>,
-) {
-    let rel_file = crate::codebase::ts_source::relative_slash_path(root, file);
-    let rel_target = target
-        .as_ref()
-        .map(|path| crate::codebase::ts_source::relative_slash_path(root, path));
-    let label = rel_target
-        .as_deref()
-        .or(specifier.as_deref())
-        .unwrap_or("dynamic import")
-        .to_string();
-    findings.push(RuleFinding {
-        rule: RULE_ID.to_string(),
-        file: rel_file,
-        line,
-        import: specifier,
-        target: rel_target,
-        message: format!("dynamic import dependency `{label}` must be mocked"),
-    });
 }
 
 fn resolve_tsconfig(root: &Path, tsconfig_path: Option<&Path>) -> Result<TsConfig> {

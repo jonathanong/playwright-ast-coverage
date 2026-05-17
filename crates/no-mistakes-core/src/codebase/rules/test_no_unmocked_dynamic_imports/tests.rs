@@ -28,6 +28,10 @@ fn fixture_reports_unmocked_transitive_and_nonliteral_dynamic_imports() {
         f.file == "tests/jest-setup-leak.test.mts"
             && f.target.as_deref() == Some("src/jest-setup-target.mts")
     }));
+    assert!(findings.iter().any(|f| {
+        f.file == "src/next-dynamic-component.mts"
+            && f.target.as_deref() == Some("src/dynamic-leaf.mts")
+    }));
 }
 
 #[test]
@@ -101,6 +105,58 @@ fn mocked_dynamic_import_target_skips_transitive_dependency_checks() {
         },
     );
     assert!(findings.is_empty());
+}
+
+#[test]
+fn reachable_dependencies_respect_skips_and_disable_comments() {
+    let root = fixture();
+    let tsconfig = load_tsconfig(&root.join("tsconfig.json")).unwrap();
+    let resolver = ImportResolver::new(&tsconfig);
+    let mocks = HashSet::new();
+
+    for (case, dependency, skip_directories) in [
+        (
+            "reachable-disabled-file",
+            "src/reachable-disabled-file.mts",
+            Vec::new(),
+        ),
+        (
+            "reachable-disabled-line",
+            "src/reachable-disabled-line.mts",
+            Vec::new(),
+        ),
+        (
+            "reachable-skipped-prefix",
+            "src/generated/reachable-skipped.mts",
+            vec!["src/generated".to_string()],
+        ),
+    ] {
+        let test_file = root.join("cases").join(format!("{case}.case.mts"));
+        let dependency = root.join(dependency);
+        let mut forward = HashMap::new();
+        forward.insert(test_file.clone(), vec![dependency]);
+        let graph = DepGraph::from_raw_maps(root.clone(), forward, Default::default());
+        let mut config = NoMistakesConfig::default();
+        config.filesystem.skip_directories = skip_directories;
+        let mut dependency_cache = HashMap::new();
+        let mut findings = Vec::new();
+
+        reachable::check(
+            reachable::ReachableContext {
+                root: &root,
+                config: &config,
+                resolver: &resolver,
+                graph: &graph,
+            },
+            &test_file,
+            &mocks,
+            &mut dependency_cache,
+            &mut findings,
+        )
+        .unwrap();
+
+        assert!(findings.is_empty(), "{case} should not report findings");
+    }
 }
 
 #[test]
