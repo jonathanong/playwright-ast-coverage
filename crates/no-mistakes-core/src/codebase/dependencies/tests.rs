@@ -166,8 +166,15 @@ fn cargo_globs_include_tests_dir() {
 
 #[test]
 fn unknown_framework_returns_empty() {
-    let globs = test_globs("jest");
+    let globs = test_globs("unknown");
     assert!(globs.is_empty());
+}
+
+#[test]
+fn jest_globs_match_vitest_style_test_files() {
+    let globs = test_globs("jest");
+    assert!(globs.iter().any(|g| g == "**/*.test.mts"));
+    assert!(globs.iter().any(|g| g == "**/*.spec.ts"));
 }
 
 // ── --relationship / relationship_filter ─────────────────────────────────

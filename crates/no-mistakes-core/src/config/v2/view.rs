@@ -47,6 +47,21 @@ impl<'a> ConfigView<'a> {
             .map(|c| c.values())
     }
 
+    /// Vitest config file glob(s), or `None` when not configured.
+    pub fn vitest_configs(&self) -> Option<Vec<String>> {
+        self.config
+            .tests
+            .vitest
+            .configs
+            .as_ref()
+            .map(|c| c.values())
+    }
+
+    /// Jest config file glob(s), or `None` when not configured.
+    pub fn jest_configs(&self) -> Option<Vec<String>> {
+        self.config.tests.jest.configs.as_ref().map(|c| c.values())
+    }
+
     /// Test-ID selector attributes (e.g. `["data-testid", "data-pw"]`).
     pub fn test_id_attributes(&self) -> &[String] {
         &self.config.tests.playwright.selectors.test_ids

@@ -208,6 +208,41 @@ fn global_check_warns_when_react_config_is_invalid() {
 }
 
 #[test]
+fn global_check_runs_test_no_unmocked_dynamic_imports_rule() {
+    let root = fixture("codebase-analysis", "test-no-unmocked-dynamic-imports");
+    let json = run(&["check", "--root", root.to_str().unwrap(), "--json"]);
+    assert_eq!(json.status.code(), Some(1));
+    let value: serde_json::Value = serde_json::from_str(&stdout(&json)).unwrap();
+    let rules = value["rules"].as_array().unwrap();
+    assert!(rules.iter().any(|finding| {
+        finding["target"].as_str() == Some("src/unmocked-child.mts")
+            && finding["rule"].as_str() == Some("test-no-unmocked-dynamic-imports")
+    }));
+
+    let paths = run(&[
+        "check",
+        "--root",
+        root.to_str().unwrap(),
+        "--format",
+        "paths",
+    ]);
+    assert_eq!(paths.status.code(), Some(1));
+    assert!(stdout(&paths).contains("tests/bad.test.mts"));
+
+    for format in ["human", "md"] {
+        let output = run(&[
+            "check",
+            "--root",
+            root.to_str().unwrap(),
+            "--format",
+            format,
+        ]);
+        assert_eq!(output.status.code(), Some(1));
+        assert!(stdout(&output).contains("test-no-unmocked-dynamic-imports"));
+    }
+}
+
+#[test]
 fn dependencies_cli_covers_relative_roots_cwd_root_and_absolute_entrypoint() {
     let workspace = fixture("codebase-analysis", "simple")
         .parent()

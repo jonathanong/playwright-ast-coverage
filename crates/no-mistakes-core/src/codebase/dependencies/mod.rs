@@ -48,6 +48,7 @@ pub(crate) fn test_globs(framework: &str) -> Vec<String> {
 
     match framework {
         "vitest" => globs_to_strings(VITEST),
+        "jest" => globs_to_strings(VITEST),
         "playwright" => globs_to_strings(PLAYWRIGHT),
         "cargo" => globs_to_strings(CARGO),
         _ => vec![],

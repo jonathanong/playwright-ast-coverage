@@ -234,6 +234,22 @@ fn config_view_playwright_configs_none() {
 }
 
 #[test]
+fn config_view_vitest_and_jest_configs() {
+    let yaml = r#"
+tests:
+  vitest:
+    configs: vitest.config.mts
+  jest:
+    configs:
+      - jest.config.mjs
+"#;
+    let cfg: NoMistakesConfig = serde_yaml::from_str(yaml).unwrap();
+    let view = ConfigView::new(&cfg);
+    assert_eq!(view.vitest_configs().unwrap(), vec!["vitest.config.mts"]);
+    assert_eq!(view.jest_configs().unwrap(), vec!["jest.config.mjs"]);
+}
+
+#[test]
 fn config_view_test_id_attributes() {
     let cfg = load_v2_config(&fixture("multi-project"), None).unwrap();
     let view = ConfigView::new(&cfg);

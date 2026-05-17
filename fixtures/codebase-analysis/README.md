@@ -39,3 +39,4 @@ file whenever you add a new fixture so orphans are immediately visible.
 | `symbol-export/` | `src/dependencies/tests.rs` — `dependents` with symbol filter |
 | `test-correspondence/` | `src/guardrails/rules/test_correspondence/tests.rs` |
 | `test-framework/` | `src/dependencies/graph/tests.rs`; `src/dependencies/tests.rs` — Vitest/Playwright globs |
+| `test-no-unmocked-dynamic-imports/` | `src/codebase/rules/test_no_unmocked_dynamic_imports/tests.rs`; `tests/cli_extra.rs` |

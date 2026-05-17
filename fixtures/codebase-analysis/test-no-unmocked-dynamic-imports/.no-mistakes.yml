@@ -1,0 +1,14 @@
+projects:
+  tests:
+    type: tests
+    root: .
+    rules:
+      - test-no-unmocked-dynamic-imports
+tests:
+  vitest:
+    configs: vitest.config.mts
+  jest:
+    configs: jest.config.mjs
+rules:
+  test-no-unmocked-dynamic-imports:
+    message: Dynamic imports in tests must be mocked

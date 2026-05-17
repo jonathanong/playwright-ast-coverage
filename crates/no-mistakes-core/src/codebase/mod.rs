@@ -3,6 +3,7 @@ pub mod config;
 pub mod dependencies;
 pub mod md_links;
 pub mod playwright_coverage;
+pub mod rules;
 pub mod symbols;
 pub mod timing;
 pub mod ts_http_calls;

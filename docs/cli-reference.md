@@ -109,7 +109,8 @@ no-mistakes check --format json
 no-mistakes check --json
 ```
 
-Runs configured React and queue checks. Options: `--root`, `--config`,
+Runs configured React, queue, and codebase rules such as
+`test-no-unmocked-dynamic-imports`. Options: `--root`, `--config`,
 `--tsconfig`, `--format`, and `--json`. `--jobs` is a global wrapper option,
 for example `no-mistakes --jobs 4 check ...`.
 

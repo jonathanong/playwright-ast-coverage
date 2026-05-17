@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use clap::Args;
 use no_mistakes_core::cli::{resolve_root, Format};
+use no_mistakes_core::codebase::rules::{self, RuleFinding};
 use no_mistakes_core::queue::{analyze_project as analyze_queues, CheckFinding};
 use no_mistakes_core::react_traits;
 use std::path::PathBuf;
@@ -49,8 +50,17 @@ pub(crate) fn run(args: CheckArgs) -> Result<ExitCode> {
     // Run queues check.
     let queue_report = analyze_queues(&root, args.tsconfig.as_deref(), &[])?;
     let queue_findings = &queue_report.check;
+    let rule_findings =
+        match rules::run_check(&root, args.config.as_deref(), args.tsconfig.as_deref()) {
+            Ok(findings) => findings,
+            Err(err) => {
+                eprintln!("warning: rules check skipped: {err:#}");
+                vec![]
+            }
+        };
 
-    let any_violations = !react_violations.is_empty() || !queue_findings.is_empty();
+    let any_violations =
+        !react_violations.is_empty() || !queue_findings.is_empty() || !rule_findings.is_empty();
 
     let format = if args.json { Format::Json } else { args.format };
     match format {
@@ -59,6 +69,7 @@ pub(crate) fn run(args: CheckArgs) -> Result<ExitCode> {
             serde_json::to_string_pretty(&serde_json::json!({
                 "react": react_violations,
                 "queues": queue_findings,
+                "rules": rule_findings,
             }))
             .expect("serialization of Rust structs never fails")
         ),
@@ -67,15 +78,19 @@ pub(crate) fn run(args: CheckArgs) -> Result<ExitCode> {
             serde_yaml::to_string(&serde_json::json!({
                 "react": react_violations,
                 "queues": queue_findings,
+                "rules": rule_findings,
             }))
             .expect("serialization of Rust structs never fails")
         ),
-        Format::Md => print_check_md(&react_violations, queue_findings),
+        Format::Md => print_check_md(&react_violations, queue_findings, &rule_findings),
         Format::Paths => {
             for v in &react_violations {
                 println!("{}", v.file);
             }
             for f in queue_findings {
+                println!("{}:{}", f.file, f.line);
+            }
+            for f in &rule_findings {
                 println!("{}:{}", f.file, f.line);
             }
         }
@@ -93,6 +108,9 @@ pub(crate) fn run(args: CheckArgs) -> Result<ExitCode> {
                     f.message
                 );
             }
+            for f in &rule_findings {
+                println!("{} {}:{} {}", f.rule, f.file, f.line, f.message);
+            }
         }
     }
 
@@ -103,7 +121,11 @@ pub(crate) fn run(args: CheckArgs) -> Result<ExitCode> {
     })
 }
 
-fn print_check_md(react: &[react_traits::Violation], queues: &[CheckFinding]) {
+fn print_check_md(
+    react: &[react_traits::Violation],
+    queues: &[CheckFinding],
+    rules: &[RuleFinding],
+) {
     println!("# no-mistakes check");
     println!("## react");
     for v in react {
@@ -112,5 +134,9 @@ fn print_check_md(react: &[react_traits::Violation], queues: &[CheckFinding]) {
     println!("## queues");
     for f in queues {
         println!("- `{}`:{} {}", f.file, f.line, f.message);
+    }
+    println!("## rules");
+    for f in rules {
+        println!("- `{}`:{} {} {}", f.file, f.line, f.rule, f.message);
     }
 }
