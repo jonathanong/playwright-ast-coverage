@@ -55,6 +55,7 @@ fn playwright_to_v2(source: &str, path: &Path) -> Result<NoMistakesConfig> {
     );
     cfg.tests.playwright = PlaywrightTestConfig {
         configs: fc.playwright_config,
+        suites: Vec::new(),
         selectors: PlaywrightSelectors {
             html_ids: fc.html_ids,
             test_ids,
