@@ -603,8 +603,6 @@ dependencies = [
  "anyhow",
  "clap",
  "no-mistakes-core",
- "num_cpus",
- "rayon",
  "serde_json",
 ]
 
@@ -1331,9 +1329,7 @@ dependencies = [
  "assert_cmd",
  "clap",
  "no-mistakes-core",
- "num_cpus",
  "predicates",
- "rayon",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -1566,9 +1562,7 @@ dependencies = [
  "assert_cmd",
  "clap",
  "no-mistakes-core",
- "num_cpus",
  "predicates",
- "rayon",
  "serde",
  "serde_json",
  "serde_yaml",

@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
-use no_mistakes_core::cli::Format;
+use no_mistakes_core::cli::{resolve_root, Format};
 use no_mistakes_core::server_routes::{
     analyze_project, related, Edge, ProjectReport, RelatedDirection, ServerRoute,
 };
@@ -72,11 +72,7 @@ impl From<ServerDirection> for RelatedDirection {
 
 pub(crate) fn run(args: ServerArgs) -> Result<ExitCode> {
     let base = std::env::current_dir().context("cwd must be accessible")?;
-    let root = if args.root.is_absolute() {
-        args.root.clone()
-    } else {
-        base.join(&args.root)
-    };
+    let root = resolve_root(&args.root, &base);
     let format = if args.json { Format::Json } else { args.format };
     let report = analyze_project(&root, None, &args.filters)?;
     match &args.command {

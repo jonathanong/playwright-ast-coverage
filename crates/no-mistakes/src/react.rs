@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
-use no_mistakes_core::cli::Format;
+use no_mistakes_core::cli::{resolve_root, Format};
 use no_mistakes_core::react_traits;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -53,11 +53,7 @@ pub(crate) fn run(args: ReactArgs) -> Result<ExitCode> {
     } = args;
     let effective_format = if json { Format::Json } else { format };
     let cwd = std::env::current_dir().context("cwd must be accessible")?;
-    let root = if root.is_absolute() {
-        root
-    } else {
-        cwd.join(root)
-    };
+    let root = resolve_root(&root, &cwd);
     match &command {
         ReactCommand::Analyze { targets } => {
             let results = react_traits::run_analyze(&root, config.as_deref(), targets, None)?;

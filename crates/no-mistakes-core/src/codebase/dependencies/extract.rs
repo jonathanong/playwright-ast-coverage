@@ -2,7 +2,8 @@ use anyhow::Result;
 use oxc::allocator::Allocator;
 use oxc::ast::ast::{
     Argument, CallExpression, ExportAllDeclaration, ExportNamedDeclaration, ExportSpecifier,
-    Expression, ImportDeclaration, ImportDeclarationSpecifier, ImportExpression, TSImportType,
+    Expression, ImportDeclaration, ImportDeclarationSpecifier, ImportExpression, Program,
+    TSImportType,
 };
 use oxc::ast_visit::{walk, Visit};
 use oxc::parser::Parser;
@@ -54,10 +55,14 @@ impl ImportExtractor {
         };
         let ret = Parser::new(&allocator, source, source_type).parse();
 
-        let mut collector = ImportCollector::default();
-        collector.visit_program(&ret.program);
-        Ok(collector.imports)
+        Ok(extract_imports_from_program(&ret.program))
     }
+}
+
+pub fn extract_imports_from_program<'a>(program: &Program<'a>) -> Vec<ExtractedImport> {
+    let mut collector = ImportCollector::default();
+    collector.visit_program(program);
+    collector.imports
 }
 
 #[derive(Default)]

@@ -2,6 +2,7 @@ use crate::react_traits::analyze::file::analyze_file;
 use crate::react_traits::pipeline::glob::expand_globs;
 use crate::react_traits::report::types::{AggregatedFacts, ComponentFacts, FileConfig, RootConfig};
 use anyhow::Result;
+use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -43,13 +44,16 @@ pub(crate) fn run_analyze_inner(
         expand_globs(&frontend_root, targets)?
     };
 
-    let mut results = Vec::new();
     let mut file_cache: HashMap<PathBuf, Vec<ComponentFacts>> = HashMap::new();
+    let analyses = files
+        .par_iter()
+        .map(|file| analyze_file(file, root).map(|analysis| (file.clone(), analysis.components)))
+        .collect::<Result<Vec<_>>>()?;
 
-    for file in &files {
-        let analysis = analyze_file(file, root)?;
-        file_cache.insert(file.clone(), analysis.components.clone());
-        results.extend(analysis.components);
+    let mut results = Vec::new();
+    for (file, components) in analyses {
+        file_cache.insert(file, components.clone());
+        results.extend(components);
     }
 
     let mut all_results = Vec::new();

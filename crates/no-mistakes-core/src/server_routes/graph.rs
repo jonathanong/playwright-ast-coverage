@@ -5,6 +5,7 @@ use crate::server_routes::normalize::{join_paths, normalize_route};
 use crate::server_routes::source::{discover_source_files, relative_string};
 use crate::server_routes::types::{Diagnostic, Edge, EdgeKind, ServerRoute, Severity, Summary};
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
+use rayon::prelude::*;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -31,7 +32,7 @@ pub fn analyze_project(
         })
         .collect::<Vec<_>>();
     let facts = files
-        .iter()
+        .par_iter()
         .filter_map(|path| extract_file(path).ok().map(|facts| (path.clone(), facts)))
         .collect::<HashMap<_, _>>();
     Ok(build_report(&root, &facts))

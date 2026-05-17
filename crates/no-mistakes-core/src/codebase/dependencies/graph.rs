@@ -2,6 +2,7 @@ pub(crate) mod playwright;
 
 use super::extract::{is_indexable, is_tsx_file, ExtractedImport, ImportExtractor, ImportKind};
 use crate::codebase::ts_resolver::{ImportResolver, TsConfig};
+use crate::codebase::ts_source::facts::{collect_ts_facts, TsFactMap, TsFactPlan};
 use anyhow::Result;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use rayon::prelude::*;
@@ -258,6 +259,16 @@ impl DepGraph {
         plan: GraphBuildPlan,
         graph_files: &GraphFiles,
     ) -> Result<Self> {
+        Self::build_with_plan_files_and_facts(root, tsconfig, plan, graph_files, None)
+    }
+
+    pub(crate) fn build_with_plan_files_and_facts(
+        root: &Path,
+        tsconfig: &TsConfig,
+        plan: GraphBuildPlan,
+        graph_files: &GraphFiles,
+        facts: Option<&TsFactMap>,
+    ) -> Result<Self> {
         let ts_ex = ImportExtractor::for_typescript()?;
         let tsx_ex = ImportExtractor::for_tsx()?;
         let resolver = ImportResolver::new(tsconfig).with_visible(graph_files.visible());
@@ -273,7 +284,10 @@ impl DepGraph {
         }
 
         let parsed_imports = if plan.imports || plan.workspace {
-            collect_parsed_imports(files, &ts_ex, &tsx_ex)
+            match facts {
+                Some(facts) => collect_parsed_imports_from_facts(files, facts),
+                None => collect_parsed_imports(files, &ts_ex, &tsx_ex),
+            }
         } else {
             Vec::new()
         };
@@ -670,6 +684,17 @@ fn collect_parsed_imports(
             let extractor = if is_tsx_file(path) { tsx_ex } else { ts_ex };
             let imports = extractor.extract(&source).unwrap_or_default();
             Some((path.clone(), imports))
+        })
+        .collect()
+}
+
+fn collect_parsed_imports_from_facts(files: &[PathBuf], facts: &TsFactMap) -> ParsedImports {
+    files
+        .par_iter()
+        .filter_map(|path| {
+            facts
+                .get(path)
+                .map(|file_facts| (path.clone(), file_facts.imports.clone()))
         })
         .collect()
 }
@@ -1863,7 +1888,15 @@ impl SymbolIndex {
     }
 
     pub(crate) fn build_from_files(tsconfig: &TsConfig, graph_files: &GraphFiles) -> Result<Self> {
-        use crate::codebase::ts_symbols::extract_symbols;
+        let facts = collect_ts_facts(graph_files.indexable(), TsFactPlan::imports_and_symbols());
+        Self::build_from_facts(tsconfig, graph_files, &facts)
+    }
+
+    pub(crate) fn build_from_facts(
+        tsconfig: &TsConfig,
+        graph_files: &GraphFiles,
+        facts: &TsFactMap,
+    ) -> Result<Self> {
         type SymEntry = (PathBuf, String, String, bool);
 
         let resolver = ImportResolver::new(tsconfig).with_visible(graph_files.visible());
@@ -1872,9 +1905,7 @@ impl SymbolIndex {
             .indexable()
             .par_iter()
             .filter_map(|path| {
-                let source = std::fs::read_to_string(path).ok()?;
-                let is_tsx = is_tsx_file(path);
-                let symbols = extract_symbols(&source, is_tsx).ok()?;
+                let symbols = facts.get(path)?.symbols.as_ref()?;
 
                 let mut imports_for_file = Vec::new();
                 for ni in &symbols.imports {

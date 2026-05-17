@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::Args;
-use no_mistakes_core::cli::Format;
+use no_mistakes_core::cli::{resolve_root, Format};
 use no_mistakes_core::queue::analyze_project as analyze_queues;
 use no_mistakes_core::react_traits;
 use std::path::PathBuf;
@@ -24,11 +24,7 @@ pub(crate) struct CheckArgs {
 
 pub(crate) fn run(args: CheckArgs) -> Result<ExitCode> {
     let cwd = std::env::current_dir().context("cwd must be accessible")?;
-    let root = if args.root.is_absolute() {
-        args.root.clone()
-    } else {
-        cwd.join(&args.root)
-    };
+    let root = resolve_root(&args.root, &cwd);
 
     // Run react check; skip gracefully when no config is present, log genuine errors.
     // assert_no_fetch defaults to false; enable it via project config.

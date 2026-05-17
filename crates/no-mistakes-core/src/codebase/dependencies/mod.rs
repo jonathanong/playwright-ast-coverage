@@ -257,17 +257,38 @@ pub fn run(args: TraverseArgs, direction: Direction) -> Result<()> {
             }
         }
         Direction::Dependents => {
-            let graph = graph::DepGraph::build_with_plan_and_files(
-                &root,
-                &tsconfig,
-                build_plan,
-                &graph_files,
-            )
-            .context("building dependency graph")?;
             let any_symbol = entrypoints.iter().any(|e| e.symbol.is_some());
+            let symbol_facts = any_symbol.then(|| {
+                crate::codebase::ts_source::facts::collect_ts_facts(
+                    graph_files.indexable(),
+                    crate::codebase::ts_source::facts::TsFactPlan::imports_and_symbols(),
+                )
+            });
+            let graph = match symbol_facts.as_ref() {
+                Some(facts) => graph::DepGraph::build_with_plan_files_and_facts(
+                    &root,
+                    &tsconfig,
+                    build_plan,
+                    &graph_files,
+                    Some(facts),
+                ),
+                None => graph::DepGraph::build_with_plan_and_files(
+                    &root,
+                    &tsconfig,
+                    build_plan,
+                    &graph_files,
+                ),
+            }
+            .context("building dependency graph")?;
             if any_symbol {
                 let mut all_entries: HashMap<NodeId, graph::NodeEntry> = HashMap::new();
-                let symbol_index = graph::SymbolIndex::build_from_files(&tsconfig, &graph_files)?;
+                let symbol_index = graph::SymbolIndex::build_from_facts(
+                    &tsconfig,
+                    &graph_files,
+                    symbol_facts
+                        .as_ref()
+                        .expect("symbol facts are collected for symbol queries"),
+                )?;
                 for ep in &entrypoints {
                     if let Some(sym) = &ep.symbol {
                         let entries = graph.dependents_of_symbol(

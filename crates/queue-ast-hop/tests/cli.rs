@@ -120,8 +120,6 @@ fn timings_and_jobs_env_are_accepted() {
         .arg("--root")
         .arg(fixture("basic"))
         .arg("--timings")
-        .arg("-j")
-        .arg("1")
         .arg("edges")
         .assert()
         .success()

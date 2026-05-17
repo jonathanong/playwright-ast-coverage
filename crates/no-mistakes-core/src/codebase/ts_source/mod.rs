@@ -4,7 +4,10 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+pub mod facts;
 pub mod jsx;
+
+pub const TS_JS_EXTENSIONS: &[&str] = &["js", "jsx", "mjs", "mts", "cjs", "cts", "ts", "tsx"];
 
 pub const SKIP_DIRS: &[&str] = &[
     "node_modules",
@@ -13,6 +16,8 @@ pub const SKIP_DIRS: &[&str] = &[
     ".next",
     "coverage",
     "fixtures",
+    "target",
+    "build",
 ];
 
 pub fn is_skipped_dir(name: &str) -> bool {
@@ -75,6 +80,28 @@ pub fn discover_files(root: &Path, extra_skip: &[String]) -> Vec<PathBuf> {
             .collect(),
         None => walk_files(&root, extra_skip),
     }
+}
+
+pub fn discover_source_files(root: &Path, extra_skip: &[String]) -> Vec<PathBuf> {
+    discover_files(root, extra_skip)
+        .into_iter()
+        .filter(|path| {
+            path.extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| TS_JS_EXTENSIONS.contains(&ext))
+        })
+        .collect()
+}
+
+pub fn relative_slash_path(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+pub fn line_number(source: &str, start: u32) -> usize {
+    byte_offset_to_line(source, start as usize) as usize
 }
 
 fn normalize_discovery_path(path: &Path) -> PathBuf {

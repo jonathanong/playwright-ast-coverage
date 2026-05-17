@@ -1,7 +1,9 @@
 use crate::codebase::ts_source::byte_offset_to_line;
 use anyhow::Result;
 use oxc::allocator::Allocator;
-use oxc::ast::ast::{BindingPattern, Declaration, ExportDefaultDeclarationKind, Statement};
+use oxc::ast::ast::{
+    BindingPattern, Declaration, ExportDefaultDeclarationKind, Program, Statement,
+};
 use oxc::parser::Parser;
 use oxc::span::SourceType;
 
@@ -63,13 +65,15 @@ pub fn extract_symbols(source: &str, is_tsx: bool) -> Result<FileSymbols> {
     };
     let ret = Parser::new(&allocator, source, source_type).parse();
 
-    let mut symbols = FileSymbols::default();
+    Ok(extract_symbols_from_program(&ret.program, source))
+}
 
-    for stmt in &ret.program.body {
+pub fn extract_symbols_from_program(program: &Program<'_>, source: &str) -> FileSymbols {
+    let mut symbols = FileSymbols::default();
+    for stmt in &program.body {
         process_statement(stmt, source, &mut symbols);
     }
-
-    Ok(symbols)
+    symbols
 }
 
 fn process_statement(stmt: &Statement, source: &str, out: &mut FileSymbols) {

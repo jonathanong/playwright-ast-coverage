@@ -252,7 +252,12 @@ fn invalid_tsconfig_returns_parse_error() {
 fn discovery_skips_dependency_and_build_directories() {
     let root = fixture("syntax");
     let files = discover_source_files(&root);
-    assert!(!files
-        .iter()
-        .any(|file| file.to_string_lossy().contains("node_modules")));
+    for skipped in ["node_modules", "target", "build"] {
+        assert!(
+            !files
+                .iter()
+                .any(|file| file.to_string_lossy().contains(skipped)),
+            "discovered file under {skipped}"
+        );
+    }
 }

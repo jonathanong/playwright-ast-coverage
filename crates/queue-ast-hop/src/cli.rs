@@ -1,8 +1,8 @@
 use crate::report::{print_check, print_edges, print_related, Format};
 use anyhow::{Context, Result};
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum};
+use no_mistakes_core::cli::{init_rayon_threads, resolve_root, JobsArg};
 use no_mistakes_core::queue::{analyze_project, related, RelatedDirection};
-use rayon::ThreadPoolBuilder;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -50,21 +50,11 @@ enum DirectionArg {
     Both,
 }
 
-#[derive(Args, Debug, Clone, Copy, Default)]
-struct JobsArg {
-    #[arg(short = 'j', long = "jobs", default_value_t = 0)]
-    jobs: usize,
-}
-
 pub fn run_cli() -> Result<ExitCode> {
     let cli = Cli::parse();
-    init_threads(cli.jobs)?;
+    init_rayon_threads(cli.jobs);
     let base = std::env::current_dir().context("current working directory must be accessible")?;
-    let root = if cli.root.is_absolute() {
-        cli.root.clone()
-    } else {
-        base.join(&cli.root)
-    };
+    let root = resolve_root(&cli.root, &base);
     if cli.timings {
         eprintln!("search: 0.000ms");
     }
@@ -105,16 +95,4 @@ impl From<DirectionArg> for RelatedDirection {
             DirectionArg::Both => RelatedDirection::Both,
         }
     }
-}
-
-fn init_threads(args: JobsArg) -> Result<()> {
-    let threads = if args.jobs > 0 {
-        args.jobs
-    } else if let Ok(raw) = std::env::var("RAYON_NUM_THREADS") {
-        raw.parse().unwrap_or_else(|_| num_cpus::get())
-    } else {
-        num_cpus::get()
-    };
-    let _ = ThreadPoolBuilder::new().num_threads(threads).build_global();
-    Ok(())
 }

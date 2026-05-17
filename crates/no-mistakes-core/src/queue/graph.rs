@@ -4,6 +4,7 @@ use crate::queue::graph_model::{build_filter, InternalProducer, InternalWorker, 
 use crate::queue::resolver::{load_tsconfig, resolve_import};
 use crate::queue::source::discover_source_files;
 use crate::queue::types::QueueKey;
+use rayon::prelude::*;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -31,7 +32,7 @@ pub fn analyze_project(
         })
         .collect::<Vec<_>>();
     let facts = files
-        .iter()
+        .par_iter()
         .filter_map(|path| {
             extract_file(path, &root)
                 .ok()
