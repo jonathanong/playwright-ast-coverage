@@ -110,7 +110,7 @@ test("formats release base URLs", () => {
     delete process.env.PLAYWRIGHT_AST_COVERAGE_RELEASE_BASE_URL;
     assert.equal(
       releaseBaseUrl("1.2.3"),
-      "https://github.com/jonathanong/playwright-ast-coverage/releases/download/v1.2.3",
+      "https://github.com/jonathanong/no-mistakes/releases/download/v1.2.3",
     );
     process.env.PLAYWRIGHT_AST_COVERAGE_RELEASE_BASE_URL = "https://example.test/releases";
     assert.equal(releaseBaseUrl("1.2.3"), "https://example.test/releases");

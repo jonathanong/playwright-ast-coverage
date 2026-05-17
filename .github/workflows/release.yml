@@ -29,6 +29,7 @@ jobs:
     name: Prepare release
     runs-on: ubuntu-latest
     outputs:
+      base-sha: ${{ steps.bump.outputs.base-sha }}
       version: ${{ steps.bump.outputs.version }}
     steps:
       - name: Check RELEASE_TOKEN is set
@@ -61,67 +62,91 @@ jobs:
 
       - name: Bump versions, commit, and tag
         id: bump
+        env:
+          SKIP_BINARY_DOWNLOAD: "1"
         shell: bash
         run: |
           set -euo pipefail
+          base_sha="$(git rev-parse HEAD)"
           npm version "${{ inputs.bump }}" --no-git-tag-version
           version="$(node -p "require('./package.json').version")"
-          
-          # Bump npm workspace versions
+
           for pkg in eslint-plugin-next-to-fetch eslint-plugin-playwright-ast-coverage no-mistakes no-mistakes-core next-to-fetch playwright-ast-coverage queue-ast-hop react-traits server-ast-routes; do
-            npm version "$version" --workspace "$pkg" --no-git-tag-version
+            npm pkg set "version=$version" --workspace "$pkg"
             if [[ "$pkg" == "no-mistakes" || "$pkg" == "playwright-ast-coverage" || "$pkg" == "next-to-fetch" || "$pkg" == "queue-ast-hop" || "$pkg" == "react-traits" || "$pkg" == "server-ast-routes" ]]; then
               npm pkg set "dependencies.no-mistakes-core=^$version" --workspace "$pkg"
             fi
           done
-          npm install --package-lock-only
+          npm install --package-lock-only --ignore-scripts
 
-          # Bump Rust crate versions
           node - "$version" <<'NODE'
-            const fs = require("node:fs");
-            const version = process.argv[2];
-            const crates = [
-              "Cargo.toml",
-              "crates/no-mistakes/Cargo.toml",
-              "crates/no-mistakes-core/Cargo.toml",
-              "crates/next-to-fetch/Cargo.toml",
-              "crates/playwright-ast-coverage/Cargo.toml",
-              "crates/queue-ast-hop/Cargo.toml",
-              "crates/react-traits/Cargo.toml",
-              "crates/server-ast-routes/Cargo.toml",
-            ];
-            for (const file of crates) {
-              if (!fs.existsSync(file)) continue;
-              let cargo = fs.readFileSync(file, "utf8").replace(
-                /^version = ".*"$/m,
-                `version = "${version}"`,
-              );
-              cargo = cargo.replace(
-                /(\s*no-mistakes-core\s*=\s*\{[^{}]*\bversion\s*=\s*)"[^"]*"/g,
-                `$1"${version}"`,
-              );
-              fs.writeFileSync(file, cargo);
-            }
+          const fs = require("node:fs");
+          const version = process.argv[2];
+          const crates = [
+            "Cargo.toml",
+            "crates/no-mistakes/Cargo.toml",
+            "crates/no-mistakes-core/Cargo.toml",
+            "crates/next-to-fetch/Cargo.toml",
+            "crates/playwright-ast-coverage/Cargo.toml",
+            "crates/queue-ast-hop/Cargo.toml",
+            "crates/react-traits/Cargo.toml",
+            "crates/server-ast-routes/Cargo.toml",
+          ];
+          for (const file of crates) {
+            if (!fs.existsSync(file)) continue;
+            let cargo = fs.readFileSync(file, "utf8").replace(
+              /^version = ".*"$/m,
+              `version = "${version}"`,
+            );
+            cargo = cargo.replace(
+              /(\s*no-mistakes-core\s*=\s*\{[^{}]*\bversion\s*=\s*)"[^"]*"/g,
+              `$1"${version}"`,
+            );
+            fs.writeFileSync(file, cargo);
+          }
           NODE
-          
+
           cargo update -w
           git add .
           git commit -m "chore(release): v$version" -m "Co-authored-by: Codex <noreply@openai.com>"
           git tag -a "v$version" -m "v$version"
+          echo "base-sha=$base_sha" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Push release commit and tag
-        run: git push origin HEAD:main --follow-tags
+      - name: Create prepared release artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git archive --format=tar HEAD | gzip > "$RUNNER_TEMP/release-source.tgz"
+          git format-patch -1 HEAD --stdout > "$RUNNER_TEMP/release.patch"
+
+      - name: Upload prepared source
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-source
+          path: ${{ runner.temp }}/release-source.tgz
+          if-no-files-found: error
+
+      - name: Upload release patch
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-patch
+          path: ${{ runner.temp }}/release.patch
+          if-no-files-found: error
 
   validate:
     name: Validate
     needs: prepare
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - name: Download prepared source
+        uses: actions/download-artifact@v8
         with:
-          ref: v${{ needs.prepare.outputs.version }}
+          name: release-source
+          path: prepared-release
+
+      - name: Extract prepared source
+        run: tar -xzf prepared-release/release-source.tgz
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -253,10 +278,14 @@ jobs:
             os: windows-2025
     runs-on: ${{ matrix.os }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - name: Download prepared source
+        uses: actions/download-artifact@v8
         with:
-          ref: v${{ needs.prepare.outputs.version }}
+          name: release-source
+          path: prepared-release
+
+      - name: Extract prepared source
+        run: tar -xzf prepared-release/release-source.tgz
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -322,10 +351,55 @@ jobs:
       - build
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout main
         uses: actions/checkout@v6
         with:
-          ref: v${{ needs.prepare.outputs.version }}
+          fetch-depth: 0
+          ref: main
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Download release patch
+        uses: actions/download-artifact@v8
+        with:
+          name: release-patch
+          path: prepared-release
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Apply release commit and tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          base_sha="${{ needs.prepare.outputs.base-sha }}"
+          version="${{ needs.prepare.outputs.version }}"
+          current_sha="$(git rev-parse HEAD)"
+          release_subject="chore(release): v$version"
+          if [ "$current_sha" = "$base_sha" ]; then
+            git am prepared-release/release.patch
+          elif [ "$(git log -1 --format=%s)" = "$release_subject" ] && [ "$(git rev-parse HEAD^)" = "$base_sha" ]; then
+            echo "Release commit v$version is already applied to main; continuing."
+          else
+            echo "::error::main moved from $base_sha to $current_sha while this release was running. Re-run the release workflow from current main." >&2
+            exit 1
+          fi
+          release_sha="$(git rev-parse HEAD)"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null 2>&1; then
+            git fetch origin "refs/tags/v$version:refs/tags/v$version"
+          fi
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            tag_sha="$(git rev-list -n 1 "v$version")"
+            if [ "$tag_sha" != "$release_sha" ]; then
+              echo "::error::tag v$version points at $tag_sha, expected $release_sha." >&2
+              exit 1
+            fi
+            echo "Tag v$version already points at the release commit; continuing."
+          else
+            git tag -a "v$version" -m "v$version"
+          fi
+          git push origin HEAD:main "v$version"
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -377,6 +451,7 @@ jobs:
       - name: Download release assets
         uses: actions/download-artifact@v8
         with:
+          pattern: release-assets-*
           path: dist
           merge-multiple: true
 
@@ -406,7 +481,6 @@ jobs:
             echo "Publishing npm packages with OIDC trusted publishing"
           fi
           version="${{ needs.prepare.outputs.version }}"
-          # Order matters: no-mistakes-core should be first
           for pkg in no-mistakes-core no-mistakes playwright-ast-coverage next-to-fetch queue-ast-hop react-traits server-ast-routes eslint-plugin-next-to-fetch eslint-plugin-playwright-ast-coverage; do
             if npm view "$pkg@$version" version >/dev/null 2>&1; then
               echo "$pkg $version is already published on npm; skipping"

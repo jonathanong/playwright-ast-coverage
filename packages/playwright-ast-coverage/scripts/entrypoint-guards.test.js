@@ -51,9 +51,12 @@ function childProcessMock() {
   };
 }
 
-function coreMock() {
+function coreMock(calls = []) {
   return {
-    install: async () => "/tmp/native-bin",
+    install: async (...args) => {
+      calls.push(args);
+      return "/tmp/native-bin";
+    },
   };
 }
 
@@ -73,17 +76,23 @@ test("package entrypoint guards execute their CLI path", async () => {
 });
 
 test("install entrypoint guards execute their main path", async () => {
-  for (const relativePath of [
-    "packages/no-mistakes/scripts/install.js",
-    "packages/next-to-fetch/scripts/install.js",
-    "packages/queue-ast-hop/scripts/install.js",
-    "packages/react-traits/scripts/install.js",
-    "packages/server-ast-routes/scripts/install.js",
-  ]) {
+  const installers = [
+    ["packages/no-mistakes/scripts/install.js", "no-mistakes"],
+    ["packages/next-to-fetch/scripts/install.js", "next-to-fetch"],
+    ["packages/queue-ast-hop/scripts/install.js", "queue-ast-hop"],
+    ["packages/react-traits/scripts/install.js", "react-traits"],
+    ["packages/server-ast-routes/scripts/install.js", "server-ast-routes"],
+  ];
+  for (const [relativePath, binary] of installers) {
+    const calls = [];
     const exports = await runEntrypoint(relativePath, {
-      "no-mistakes-core": coreMock(),
+      "no-mistakes-core": coreMock(calls),
     });
     assert.equal(typeof exports.main, "function");
+    assert.deepEqual(
+      calls.map(([bin, repository]) => [bin, repository]),
+      [[binary, "jonathanong/no-mistakes"]],
+    );
   }
 });
 
@@ -96,11 +105,12 @@ test("playwright package entrypoint guards execute", async () => {
   );
   assert.equal(typeof binExports.main, "function");
 
+  const calls = [];
   const installExports = await runEntrypoint(
     "packages/playwright-ast-coverage/scripts/install.js",
     {
       "no-mistakes-core": {
-        ...coreMock(),
+        ...coreMock(calls),
         assetName: (bin, version, target) => `${bin}-${version}-${target}`,
         releaseBaseUrl: () => "https://example.test",
         unsupportedPlatformMessage: () => "unsupported",
@@ -108,4 +118,8 @@ test("playwright package entrypoint guards execute", async () => {
     },
   );
   assert.equal(typeof installExports.main, "function");
+  assert.deepEqual(
+    calls.map(([bin, repository]) => [bin, repository]),
+    [["playwright-ast-coverage", "jonathanong/no-mistakes"]],
+  );
 });

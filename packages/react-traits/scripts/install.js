@@ -9,7 +9,7 @@ const PACKAGE_ROOT = join(__dirname, "..");
 async function main(installFn = install, io = process, logger = console) {
   try {
     const pkg = require(join(PACKAGE_ROOT, "package.json"));
-    const destination = await installFn("react-traits", "jonathanong/playwright-ast-coverage", {
+    const destination = await installFn("react-traits", "jonathanong/no-mistakes", {
       version: pkg.version,
       vendorDir: join(PACKAGE_ROOT, "vendor"),
       envVar: "REACT_TRAITS_RELEASE_BASE_URL",

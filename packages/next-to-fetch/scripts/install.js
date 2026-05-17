@@ -9,7 +9,7 @@ const PACKAGE_ROOT = join(__dirname, "..");
 async function main(installFn = install, io = process, logger = console) {
   try {
     const pkg = require(join(PACKAGE_ROOT, "package.json"));
-    const destination = await installFn("next-to-fetch", "jonathanong/playwright-ast-coverage", {
+    const destination = await installFn("next-to-fetch", "jonathanong/no-mistakes", {
       version: pkg.version,
       vendorDir: join(PACKAGE_ROOT, "vendor"),
       envVar: "NEXT_TO_FETCH_RELEASE_BASE_URL",
