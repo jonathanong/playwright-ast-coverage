@@ -253,6 +253,7 @@ fn deps_fixture_simple_json_output() {
         dir: root.clone(),
         paths: vec![],
         paths_dir: root.clone(),
+        base_url: None,
     };
     let g = graph::DepGraph::build(&root, &tsconfig).unwrap();
     let a = root.join("a.mts");
@@ -280,6 +281,7 @@ fn deps_fixture_format_output() {
         dir: root.clone(),
         paths: vec![],
         paths_dir: root.clone(),
+        base_url: None,
     };
     let g = graph::DepGraph::build(&root, &tsconfig).unwrap();
     let a = root.join("a.mts");
@@ -309,6 +311,7 @@ fn deps_test_framework_vitest_filter() {
         dir: root.clone(),
         paths: vec![],
         paths_dir: root.clone(),
+        base_url: None,
     };
     let g = graph::DepGraph::build(&root, &tsconfig).unwrap();
     let idx = root.join("src").join("index.mts");
@@ -342,6 +345,7 @@ fn filter_fixture_excludes_test_files() {
         dir: root.clone(),
         paths: vec![],
         paths_dir: root.clone(),
+        base_url: None,
     };
     let g = graph::DepGraph::build(&root, &tsconfig).unwrap();
     let main = root.join("src").join("main.mts");
@@ -383,6 +387,7 @@ fn symbol_export_fixture_alpha_dependents() {
         dir: root.clone(),
         paths: vec![],
         paths_dir: root.clone(),
+        base_url: None,
     };
     let g = graph::DepGraph::build(&root, &tsconfig).unwrap();
     let source = root.join("source.mts");
@@ -418,6 +423,7 @@ fn folder_suffix_fixture() {
         dir: root.clone(),
         paths: vec![],
         paths_dir: root.clone(),
+        base_url: None,
     };
     let g = graph::DepGraph::build(&root, &tsconfig).unwrap();
     let main = root.join("main.mts");

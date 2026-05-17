@@ -11,7 +11,7 @@ When a `tsconfig.json` is present, the binaries load `compilerOptions.paths` and
   "compilerOptions": {
     "paths": {
       "@services/*": ["./backend/services/*"],
-      "@ts-shared/*": ["./ts-shared/*"]
+      "@shared/*": ["./shared/*"]
     }
   }
 }

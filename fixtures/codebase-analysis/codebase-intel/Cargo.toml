@@ -3,3 +3,4 @@ name = "guardrails"
 
 [[bin]]
 name = "pg-schema"
+path = "src/bin/pg_schema.rs"

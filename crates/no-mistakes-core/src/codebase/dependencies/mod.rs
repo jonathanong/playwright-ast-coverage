@@ -177,6 +177,7 @@ pub fn run(args: TraverseArgs, direction: Direction) -> Result<()> {
                 dir: root.clone(),
                 paths: vec![],
                 paths_dir: root.clone(),
+                base_url: None,
             },
         },
     };

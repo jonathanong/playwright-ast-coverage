@@ -128,9 +128,10 @@ fn bfs_reachable_visits_fixture_queue_files() {
         dir: fixture.clone(),
         paths: vec![
             ("@systems/*".to_string(), vec!["./systems/*".to_string()]),
-            ("@voucha/api/*".to_string(), vec!["./api/*".to_string()]),
+            ("@example/api/*".to_string(), vec!["./api/*".to_string()]),
         ],
         paths_dir: fixture.clone(),
+        base_url: None,
     };
     let entrypoint = fixture.join("server/glidemq-dashboard.mts");
     let result = bfs_reachable(&entrypoint, &tsconfig);

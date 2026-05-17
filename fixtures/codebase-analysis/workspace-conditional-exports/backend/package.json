@@ -1,9 +1,9 @@
 {
-  "name": "@voucha/backend",
+  "name": "@example/backend",
   "version": "1.0.0",
   "private": true,
   "dependencies": {
-    "@ts-shared/session-jwt": "*"
+    "@shared/session-token": "*"
   },
   "devDependencies": {
     "vitest": "^4.1.0"

@@ -2,7 +2,7 @@
   "compilerOptions": {
     "paths": {
       "@systems/*": ["./systems/*"],
-      "@voucha/api/*": ["./api/*"]
+      "@example/api/*": ["./api/*"]
     }
   }
 }

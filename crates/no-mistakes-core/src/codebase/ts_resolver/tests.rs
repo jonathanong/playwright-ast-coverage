@@ -91,6 +91,7 @@ fn resolves_relative_with_extension() {
         dir: dir.path().to_path_buf(),
         paths: vec![],
         paths_dir: dir.path().to_path_buf(),
+        base_url: None,
     };
     assert_eq!(resolve_import("./utils.mts", &importer, &tc), Some(target));
 }
@@ -105,6 +106,7 @@ fn resolves_relative_no_ext_tries_mts() {
         dir: dir.path().to_path_buf(),
         paths: vec![],
         paths_dir: dir.path().to_path_buf(),
+        base_url: None,
     };
     assert_eq!(resolve_import("./utils", &importer, &tc), Some(target));
 }
@@ -119,6 +121,7 @@ fn resolves_relative_no_ext_falls_back_to_ts() {
         dir: dir.path().to_path_buf(),
         paths: vec![],
         paths_dir: dir.path().to_path_buf(),
+        base_url: None,
     };
     assert_eq!(resolve_import("./utils", &importer, &tc), Some(target));
 }
@@ -136,6 +139,7 @@ fn resolves_relative_parent() {
         dir: dir.path().to_path_buf(),
         paths: vec![],
         paths_dir: dir.path().to_path_buf(),
+        base_url: None,
     };
     assert_eq!(resolve_import("../lib.mts", &importer, &tc), Some(target));
 }
@@ -150,6 +154,7 @@ fn resolves_relative_index_fallback() {
         dir: dir.path().to_path_buf(),
         paths: vec![],
         paths_dir: dir.path().to_path_buf(),
+        base_url: None,
     };
     assert_eq!(resolve_import("./utils", &importer, &tc), Some(target));
 }
@@ -162,6 +167,7 @@ fn relative_nonexistent_returns_none() {
         dir: dir.path().to_path_buf(),
         paths: vec![],
         paths_dir: dir.path().to_path_buf(),
+        base_url: None,
     };
     assert!(resolve_import("./ghost", &importer, &tc).is_none());
 }
@@ -219,6 +225,7 @@ fn bare_npm_returns_none() {
         dir: dir.path().to_path_buf(),
         paths: vec![],
         paths_dir: dir.path().to_path_buf(),
+        base_url: None,
     };
     let importer = dir.path().join("main.mts");
     assert!(resolve_import("express", &importer, &tc).is_none());
@@ -242,6 +249,7 @@ fn import_resolver_uses_visible_file_set() {
         dir: dir.path().to_path_buf(),
         paths: vec![],
         paths_dir: dir.path().to_path_buf(),
+        base_url: None,
     };
     let visible: HashSet<PathBuf> = [target.clone()].into();
     let resolver = ImportResolver::new(&tc).with_visible(&visible);
@@ -258,6 +266,7 @@ fn import_resolver_cache_preserves_missing_result() {
         dir: dir.path().to_path_buf(),
         paths: vec![],
         paths_dir: dir.path().to_path_buf(),
+        base_url: None,
     };
     let resolver = ImportResolver::new(&tc);
 
@@ -348,6 +357,44 @@ fn load_tsconfig_child_paths_override_extends() {
 }
 
 #[test]
+fn load_tsconfig_inherits_base_url_without_paths() {
+    let dir = TempDir::new().unwrap();
+    let base_p = dir.path().join("tsconfig.base.json");
+    write(&base_p, r#"{"compilerOptions": {"baseUrl": "."}}"#);
+    let child_p = dir.path().join("tsconfig.json");
+    write(&child_p, r#"{"extends": "./tsconfig.base.json"}"#);
+    let target = dir.path().join("lib").join("thing.mts");
+    write(&target, "");
+
+    let tc = load_tsconfig(&child_p).unwrap();
+    assert_eq!(tc.base_url, Some(dir.path().to_path_buf()));
+    assert_eq!(
+        resolve_import("lib/thing", &dir.path().join("src").join("main.mts"), &tc),
+        Some(target)
+    );
+}
+
+#[test]
+fn load_tsconfig_child_paths_override_extends_but_inherit_base_url() {
+    let dir = TempDir::new().unwrap();
+    let base_p = dir.path().join("tsconfig.base.json");
+    write(
+        &base_p,
+        r#"{"compilerOptions": {"baseUrl": ".", "paths": {"@base/*": ["./base/*"]}}}"#,
+    );
+    let child_p = dir.path().join("tsconfig.json");
+    write(
+        &child_p,
+        r#"{"extends": "./tsconfig.base.json", "compilerOptions": {"paths": {"@child/*": ["./child/*"]}}}"#,
+    );
+
+    let tc = load_tsconfig(&child_p).unwrap();
+    assert_eq!(tc.paths.len(), 1);
+    assert_eq!(tc.paths[0].0, "@child/*");
+    assert_eq!(tc.base_url, Some(dir.path().to_path_buf()));
+}
+
+#[test]
 fn load_tsconfig_extends_missing_target_errors() {
     let dir = TempDir::new().unwrap();
     let child_p = dir.path().join("tsconfig.json");
@@ -391,6 +438,29 @@ fn load_tsconfig_follows_extends_array() {
     assert_eq!(tc.paths.len(), 1);
     assert_eq!(tc.paths[0].0, "@base/*");
     assert_eq!(tc.paths_dir, dir.path().to_path_buf());
+}
+
+#[test]
+fn load_tsconfig_extends_array_inherits_paths_and_base_url_independently() {
+    let dir = TempDir::new().unwrap();
+    let paths_p = dir.path().join("tsconfig.paths.json");
+    write(
+        &paths_p,
+        r#"{"compilerOptions": {"paths": {"@base/*": ["./base/*"]}}}"#,
+    );
+    let base_url_p = dir.path().join("tsconfig.base-url.json");
+    write(&base_url_p, r#"{"compilerOptions": {"baseUrl": "."}}"#);
+    let child_p = dir.path().join("tsconfig.json");
+    write(
+        &child_p,
+        r#"{"extends": ["./tsconfig.paths.json", "./tsconfig.base-url.json"]}"#,
+    );
+
+    let tc = load_tsconfig(&child_p).unwrap();
+    assert_eq!(tc.paths.len(), 1);
+    assert_eq!(tc.paths[0].0, "@base/*");
+    assert_eq!(tc.paths_dir, dir.path().to_path_buf());
+    assert_eq!(tc.base_url, Some(dir.path().to_path_buf()));
 }
 
 #[test]

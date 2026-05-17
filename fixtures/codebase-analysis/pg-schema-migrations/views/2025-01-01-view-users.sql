@@ -1,4 +1,4 @@
--- Pruned from filaments/backend/data-stores/psql/views/2025-01-01-view-users.sql
+-- Derived from sample/backend/data-stores/psql/views/2025-01-01-view-users.sql
 -- Exercises: CREATE OR REPLACE VIEW
 
 -- Lightweight embedded view for nesting in posts/topics JSON.

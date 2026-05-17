@@ -191,6 +191,7 @@ fn build_graph_from_fixture() {
         dir: root.clone(),
         paths: vec![],
         paths_dir: root.clone(),
+        base_url: None,
     };
     let graph = DepGraph::build(&root, &tsconfig).unwrap();
 
@@ -240,6 +241,7 @@ fn ci_edges_include_workspace_member_bins() {
         dir: root.clone(),
         paths: vec![],
         paths_dir: root.clone(),
+        base_url: None,
     };
     let graph = DepGraph::build(&root, &tsconfig).unwrap();
 
@@ -313,6 +315,7 @@ fn ci_edges_include_implicit_workspace_member_bins() {
         dir: root.clone(),
         paths: vec![],
         paths_dir: root.clone(),
+        base_url: None,
     };
     let graph = DepGraph::build(&root, &tsconfig).unwrap();
 
@@ -345,6 +348,7 @@ fn build_graph_excludes_skipped_fixture_files() {
         dir: root.clone(),
         paths: vec![],
         paths_dir: root.clone(),
+        base_url: None,
     };
     let graph = DepGraph::build(&root, &tsconfig).unwrap();
 
@@ -390,6 +394,7 @@ fn lazy_import_deps_walks_only_reachable_import_graph() {
         dir: root.clone(),
         paths: vec![],
         paths_dir: root.clone(),
+        base_url: None,
     };
 
     let deps = lazy_import_deps_of(&[NodeId::File(entry)], &root, &tsconfig, None).unwrap();
@@ -662,6 +667,7 @@ fn test_edges_source_finds_test_file() {
         dir: root.clone(),
         paths: vec![],
         paths_dir: root.clone(),
+        base_url: None,
     };
     let graph = DepGraph::build(&root, &tsconfig).unwrap();
 
@@ -704,6 +710,7 @@ fn md_edges_added_for_codebase_intel_fixture() {
         dir: root.clone(),
         paths: vec![],
         paths_dir: root.clone(),
+        base_url: None,
     };
     let graph = DepGraph::build(&root, &tsconfig).unwrap();
 

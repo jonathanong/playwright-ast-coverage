@@ -1,4 +1,4 @@
--- Pruned from filaments/backend/data-stores/psql/migrations/0001-00-00-users-and-auth.sql
+-- Derived from sample/backend/data-stores/psql/migrations/0001-00-00-users-and-auth.sql
 -- Exercises: UUID PK, FK columns, CHECK constraints, triggers, timestamp columns, ENUMs
 -- pg-schema: no-table-comments
 

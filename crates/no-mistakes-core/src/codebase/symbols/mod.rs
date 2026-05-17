@@ -160,6 +160,7 @@ fn resolve_tsconfig(arg: Option<&Path>, root: &Path) -> Result<TsConfig> {
         dir: root.to_path_buf(),
         paths: vec![],
         paths_dir: root.to_path_buf(),
+        base_url: None,
     })
 }
 

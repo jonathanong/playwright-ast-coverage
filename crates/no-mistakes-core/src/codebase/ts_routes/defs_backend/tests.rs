@@ -122,8 +122,8 @@ fn empty_source_produces_no_routes() {
 }
 
 #[test]
-fn fixture_routes_backend_extracts_real_filaments_pattern() {
-    // fixtures/routes-backend mirrors the filaments pattern:
+fn fixture_routes_backend_extracts_nested_router_pattern() {
+    // fixtures/routes-backend mirrors the generic backend route pattern:
     //   import app from '../../app.mts'
     //   app.route('/api/v1/users/:idOrSlug').get(...).patch(...).delete(...)
     let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))

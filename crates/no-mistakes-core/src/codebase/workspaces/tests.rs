@@ -343,14 +343,14 @@ fn resolve_specifier_prefers_more_specific_star_export() {
     );
 }
 
-// ── filaments-workspace fixture ──────────────────────────────────────────
+// ── workspace-conditional-exports fixture ──────────────────────────────────────────
 
 #[test]
-fn fixture_filaments_workspace_session_jwt_conditional_exports() {
-    // fixtures/filaments-workspace/ts-shared/session-jwt/package.json uses
+fn fixture_workspace_conditional_exports() {
+    // fixtures/workspace-conditional-exports/shared/session-token/package.json uses
     // the conditional exports object form: { ".": { "types", "import", "default" } }
     let pkg_json = std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(
-        "../../fixtures/codebase-analysis/filaments-workspace/ts-shared/session-jwt/package.json",
+        "../../fixtures/codebase-analysis/workspace-conditional-exports/shared/session-token/package.json",
     ))
     .unwrap();
     let pkg: serde_json::Value = serde_json::from_str(&pkg_json).unwrap();

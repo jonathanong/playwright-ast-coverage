@@ -13,6 +13,8 @@ pub struct TsConfig {
     /// Directory of the tsconfig that *defines* `paths`. May differ from `dir` when the
     /// entry tsconfig inherits `paths` via `extends`. Used to anchor alias substitution.
     pub paths_dir: PathBuf,
+    /// Absolute directory used for TypeScript `baseUrl` bare-specifier resolution.
+    pub base_url: Option<PathBuf>,
 }
 
 /// Load and parse a `tsconfig.json` at `path`, following `extends` chains.
@@ -78,27 +80,17 @@ fn load_tsconfig_inner(
                 })
                 .collect()
         });
+    let own_base_url = v
+        .get("compilerOptions")
+        .and_then(|co| co.get("baseUrl"))
+        .and_then(|p| p.as_str())
+        .map(|base_url| normalize_path(&dir.join(base_url)));
 
-    // Child defines its own paths (even if empty) — done, no need to follow extends.
-    // An explicit `paths: {}` overrides any paths from the extends chain.
-    if let Some(paths) = own_paths {
-        let paths_dir = dir.clone();
-        visited.remove(&canonical);
-        return Ok(TsConfigFound {
-            inner: TsConfig {
-                dir,
-                paths,
-                paths_dir,
-            },
-            paths_found: true,
-        });
-    }
-
-    // No local paths — check for an extends chain.
+    // Check for an extends chain.
     // `extends` may be a string (pre-TS 5.0) or an array of strings (TS 5.0+).
     // For arrays, TS 5.0 applies them left-to-right; the rightmost definition wins
-    // for any given property. We collect candidates in order and take the last one
-    // that explicitly defines `paths` (including an empty `paths: {}`).
+    // for any given property. `paths` and `baseUrl` inherit independently, so a
+    // later config that only defines `baseUrl` must not discard earlier `paths`.
     let extends_list: Vec<&str> = match v.get("extends") {
         None => vec![],
         Some(serde_json::Value::String(s)) => vec![s.as_str()],
@@ -124,8 +116,9 @@ fn load_tsconfig_inner(
         ),
     };
 
+    let mut inherited_paths: Option<TsConfigFound> = None;
+    let mut inherited_base_url: Option<PathBuf> = None;
     if !extends_list.is_empty() {
-        let mut inherited: Option<TsConfigFound> = None;
         for extends_raw in &extends_list {
             // Bare specifiers (npm packages like "@scope/tsconfig") cannot be resolved
             // without a node_modules lookup. Emit a warning and skip — the caller may
@@ -150,21 +143,44 @@ fn load_tsconfig_inner(
             };
             let base = load_tsconfig_inner(&base_path, visited)
                 .with_context(|| format!("loading extended tsconfig {}", base_path.display()))?;
+            if let Some(base_url) = &base.inner.base_url {
+                inherited_base_url = Some(base_url.clone());
+            }
             if base.paths_found {
-                inherited = Some(base);
+                inherited_paths = Some(base);
             }
         }
-        if let Some(base) = inherited {
-            visited.remove(&canonical);
-            return Ok(TsConfigFound {
-                inner: TsConfig {
-                    dir,
-                    paths: base.inner.paths,
-                    paths_dir: base.inner.paths_dir,
-                },
-                paths_found: true,
-            });
-        }
+    }
+
+    let base_url = own_base_url.or(inherited_base_url);
+
+    // Child defines its own paths (even if empty). An explicit `paths: {}`
+    // overrides any paths from the extends chain, but not an inherited baseUrl.
+    if let Some(paths) = own_paths {
+        let paths_dir = dir.clone();
+        visited.remove(&canonical);
+        return Ok(TsConfigFound {
+            inner: TsConfig {
+                dir,
+                paths,
+                paths_dir,
+                base_url,
+            },
+            paths_found: true,
+        });
+    }
+
+    if let Some(base) = inherited_paths {
+        visited.remove(&canonical);
+        return Ok(TsConfigFound {
+            inner: TsConfig {
+                dir,
+                paths: base.inner.paths,
+                paths_dir: base.inner.paths_dir,
+                base_url,
+            },
+            paths_found: true,
+        });
     }
 
     visited.remove(&canonical);
@@ -173,6 +189,7 @@ fn load_tsconfig_inner(
             dir: dir.clone(),
             paths: vec![],
             paths_dir: dir,
+            base_url,
         },
         paths_found: false,
     })
@@ -299,6 +316,12 @@ impl<'a> ImportResolver<'a> {
                         return Some(p);
                     }
                 }
+            }
+        }
+
+        if let Some(base_url) = &self.tsconfig.base_url {
+            if let Some(p) = self.try_path(&base_url.join(specifier)) {
+                return Some(p);
             }
         }
 

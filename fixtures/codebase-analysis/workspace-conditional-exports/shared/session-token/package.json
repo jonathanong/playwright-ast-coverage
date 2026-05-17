@@ -1,5 +1,5 @@
 {
-  "name": "@ts-shared/session-jwt",
+  "name": "@shared/session-token",
   "version": "1.0.0",
   "private": true,
   "description": "",

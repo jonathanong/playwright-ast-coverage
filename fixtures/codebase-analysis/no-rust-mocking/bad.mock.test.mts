@@ -1,8 +1,8 @@
 import { vi, describe, it } from 'vitest'
-import * as rustNapi from '@voucha/rust-napi'
+import * as rustNapi from '@example/rust-napi'
 
 // Violation: vi.mock on a Rust module
-vi.mock('@voucha/rust-napi', () => ({
+vi.mock('@example/rust-napi', () => ({
   compute: vi.fn(),
 }))
 
