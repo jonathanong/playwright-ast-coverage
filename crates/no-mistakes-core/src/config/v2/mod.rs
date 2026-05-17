@@ -3,7 +3,7 @@ pub mod legacy;
 pub mod schema;
 pub mod view;
 
-pub use discover::load_v2_config;
+pub use discover::{find_config_root, load_v2_config};
 pub use schema::NoMistakesConfig;
 pub use view::ConfigView;
 

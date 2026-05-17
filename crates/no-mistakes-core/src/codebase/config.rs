@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::config::v2::{load_v2_config, schema::NoMistakesConfig};
+use crate::config::v2::{find_config_root, load_v2_config, schema::NoMistakesConfig};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -115,7 +115,7 @@ impl Config {
 pub fn load_config(start: &Path) -> Result<Config> {
     let v2 = load_v2_config(start, None)?;
     let mut config = config_from_v2(v2);
-    config.augment_from_gitignore(start);
+    config.augment_from_gitignore(&find_config_root(start));
     Ok(config)
 }
 

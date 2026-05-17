@@ -63,6 +63,39 @@ fn detect_and_parse(source: &str, path: &Path) -> Result<NoMistakesConfig> {
     }
 }
 
+/// Return the directory that contains the effective config for `root`.
+///
+/// Mirrors the discovery order in [`load_v2_config`] without reading file
+/// contents: v2 stems → tool stems (both in `root`) → `.guardrailsrc`
+/// walking upward.  Falls back to `root` when nothing is found.
+pub fn find_config_root(root: &Path) -> PathBuf {
+    for stem in V2_STEMS {
+        for ext in CONFIG_EXTENSIONS {
+            if root.join(format!("{stem}.{ext}")).exists() {
+                return root.to_path_buf();
+            }
+        }
+    }
+    for (stem, _) in TOOL_STEMS {
+        for ext in CONFIG_EXTENSIONS {
+            if root.join(format!("{stem}.{ext}")).exists() {
+                return root.to_path_buf();
+            }
+        }
+    }
+    let mut current = root.to_path_buf();
+    loop {
+        for ext in CONFIG_EXTENSIONS {
+            if current.join(format!("{GUARDRAILS_STEM}.{ext}")).exists() {
+                return current;
+            }
+        }
+        if !current.pop() {
+            return root.to_path_buf();
+        }
+    }
+}
+
 pub(super) fn find_by_stems(root: &Path, stems: &[&str]) -> Result<Option<(PathBuf, String)>> {
     let mut found = Vec::new();
     for stem in stems {
