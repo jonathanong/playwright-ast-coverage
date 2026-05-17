@@ -396,6 +396,16 @@ fn fixture_refs_walker_covers_router_jsx_fetch_and_scope_shapes() {
 }
 
 #[test]
+fn fixture_refs_walker_covers_angle_bracket_type_assertions() {
+    let source = route_fixture_source("refs-type-assertion.ts");
+    let refs = extract_route_refs(&source, "refs-type-assertion.ts");
+
+    assert!(refs
+        .iter()
+        .any(|route_ref| route_ref.pattern == "/asserted-route"));
+}
+
+#[test]
 fn extracts_from_default_exports_and_jsx_edge_shapes() {
     let cases = [
         (

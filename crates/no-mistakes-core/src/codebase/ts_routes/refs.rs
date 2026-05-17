@@ -9,6 +9,7 @@ use oxc::ast::ast::{
 use oxc::parser::Parser;
 use oxc::span::SourceType;
 use std::collections::HashSet;
+use std::path::Path;
 
 /// A route reference found in source code.
 #[derive(Debug, Clone, PartialEq)]
@@ -21,7 +22,7 @@ pub struct RouteRef {
 /// Scan `source` for route references. Returns a Vec of RouteRef.
 pub fn extract_route_refs(source: &str, file: &str) -> Vec<RouteRef> {
     let allocator = Allocator::default();
-    let source_type = SourceType::tsx();
+    let source_type = SourceType::from_path(Path::new(file)).unwrap_or(SourceType::tsx());
     let ret = Parser::new(&allocator, source, source_type).parse();
 
     let mut router_bindings = collect_import_bindings(&ret.program.body);
@@ -514,6 +515,15 @@ fn collect_from_expression<'a>(
         Expression::TSAsExpression(ts_as) => {
             collect_from_expression(&ts_as.expression, source, file, router_bindings, refs);
         }
+        Expression::TSTypeAssertion(ts_assertion) => {
+            collect_from_expression(
+                &ts_assertion.expression,
+                source,
+                file,
+                router_bindings,
+                refs,
+            );
+        }
         Expression::TSNonNullExpression(ts_nn) => {
             collect_from_expression(&ts_nn.expression, source, file, router_bindings, refs);
         }
@@ -713,6 +723,9 @@ fn extract_pattern_from_expression(expr: &Expression) -> Option<String> {
         Expression::StringLiteral(s) => Some(normalize_next_pathname_pattern(s.value.as_str())),
         Expression::TemplateLiteral(tpl) => Some(normalize_template(tpl)),
         Expression::ObjectExpression(obj) => object_pathname(obj),
+        Expression::TSTypeAssertion(ts_assertion) => {
+            extract_pattern_from_expression(&ts_assertion.expression)
+        }
         _ => None,
     }
 }
