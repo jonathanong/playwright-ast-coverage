@@ -2,12 +2,11 @@
 name: no-mistakes
 description: Answer structural TS/JS and app-graph questions deterministically. Use for imports, dependents, named exports/imports, test impact, React traits, queue producer/worker hops, server routes, and global no-mistakes checks.
 allowed-tools: Bash(no-mistakes:*) Bash(rg:*) Read Glob
-version: 0.2.0
 ---
 
 # No Mistakes
 
-Use `no-mistakes` before grep when the question is structural: what a TS/JS file
+Use `no-mistakes` before `rg` when the question is structural: what a TS/JS file
 imports, who imports it, what it exports, which tests are related, whether a
 queue job is connected, which server route owns an endpoint, or what React
 traits a component has.

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Playwright AST Coverage"
-  short_description: "Check App Router route and selector coverage"
-  default_prompt: "Use $playwright-ast-coverage to find and fix uncovered App Router routes and Playwright test-hook selectors."

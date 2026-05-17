@@ -1,0 +1,4 @@
+interface:
+  display_name: "No Mistakes"
+  short_description: "Deterministic TS/JS graph and codebase checks."
+  default_prompt: "Use $no-mistakes for structural codebase questions, affected tests, React traits, queue hops, server routes, and exact-line rg fallbacks."
