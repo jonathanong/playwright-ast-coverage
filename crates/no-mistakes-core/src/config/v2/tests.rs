@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use super::discover::load_v2_config;
-use super::schema::{NoMistakesConfig, ProjectType, StringOrList};
+use super::schema::{NoMistakesConfig, ProjectType, RuleDef, StringOrList};
 use super::view::ConfigView;
 
 fn fixture(sub: &str) -> std::path::PathBuf {
@@ -14,6 +14,8 @@ fn fixture(sub: &str) -> std::path::PathBuf {
         .join(sub)
 }
 
+// ── discovery ─────────────────────────────────────────────────────────────────
+
 #[test]
 fn empty_config_returns_default() {
     let cfg = load_v2_config(&fixture("empty"), None).unwrap();
@@ -22,14 +24,40 @@ fn empty_config_returns_default() {
 
 #[test]
 fn missing_dir_returns_default() {
-    let cfg = load_v2_config(Path::new("/tmp/no-mistakes-test-nonexistent-xyz"), None).unwrap();
+    let cfg = load_v2_config(Path::new("/tmp/no-mistakes-nonexistent-xyz"), None).unwrap();
     assert_eq!(cfg, NoMistakesConfig::default());
 }
 
 #[test]
+fn explicit_config_path_overrides_discovery() {
+    let dir = fixture("multi-project");
+    let explicit = dir.join(".no-mistakes.yml");
+    let cfg = load_v2_config(&dir, Some(&explicit)).unwrap();
+    assert!(cfg.projects.contains_key("web"));
+}
+
+#[test]
+fn explicit_legacy_guardrails_path_parsed() {
+    let dir = fixture("legacy-guardrails");
+    let explicit = dir.join(".guardrailsrc.yml");
+    let cfg = load_v2_config(&dir, Some(&explicit)).unwrap();
+    assert!(cfg.projects.contains_key("backend"));
+}
+
+#[test]
+fn explicit_nonexistent_config_errors() {
+    let dir = fixture("basic");
+    let err = load_v2_config(&dir, Some(Path::new("nonexistent.yml")))
+        .err()
+        .unwrap();
+    assert!(err.to_string().contains("does not exist"));
+}
+
+// ── v2 format ─────────────────────────────────────────────────────────────────
+
+#[test]
 fn basic_v2_config_parsed() {
     let cfg = load_v2_config(&fixture("basic"), None).unwrap();
-    assert!(cfg.projects.contains_key("backend"));
     let backend = &cfg.projects["backend"];
     assert_eq!(backend.type_, Some(ProjectType::Server));
     assert_eq!(backend.root.as_deref(), Some("backend"));
@@ -40,8 +68,6 @@ fn basic_v2_config_parsed() {
 #[test]
 fn multi_project_config_parsed() {
     let cfg = load_v2_config(&fixture("multi-project"), None).unwrap();
-    assert!(cfg.projects.contains_key("backend"));
-    assert!(cfg.projects.contains_key("web"));
     assert_eq!(cfg.projects["web"].type_, Some(ProjectType::Nextjs));
     let queues = &cfg.projects["backend"].queues;
     assert_eq!(queues.enqueues, vec!["backend/queues/**"]);
@@ -69,10 +95,11 @@ fn storybook_config_parsed() {
     assert!(cfg.tests.vitest.configs.is_some());
 }
 
+// ── legacy conversions ────────────────────────────────────────────────────────
+
 #[test]
 fn legacy_playwright_converted() {
     let cfg = load_v2_config(&fixture("legacy-playwright"), None).unwrap();
-    assert!(cfg.projects.contains_key("web"));
     assert_eq!(cfg.projects["web"].type_, Some(ProjectType::Nextjs));
     assert_eq!(cfg.projects["web"].root.as_deref(), Some("web/app"));
     let pw = &cfg.tests.playwright;
@@ -85,8 +112,6 @@ fn legacy_playwright_converted() {
 #[test]
 fn legacy_guardrails_converted() {
     let cfg = load_v2_config(&fixture("legacy-guardrails"), None).unwrap();
-    assert!(cfg.projects.contains_key("backend"));
-    assert!(cfg.projects.contains_key("web"));
     assert_eq!(cfg.projects["backend"].root.as_deref(), Some("backend"));
     assert_eq!(
         cfg.projects["backend"].rules,
@@ -100,55 +125,39 @@ fn legacy_guardrails_converted() {
 }
 
 #[test]
-fn explicit_config_path_overrides_discovery() {
-    let dir = fixture("multi-project");
-    let explicit = dir.join(".no-mistakes.yml");
-    let cfg = load_v2_config(&dir, Some(&explicit)).unwrap();
+fn legacy_react_traits_converted() {
+    let cfg = load_v2_config(&fixture("legacy-react-traits"), None).unwrap();
     assert!(cfg.projects.contains_key("web"));
+    assert_eq!(cfg.projects["web"].type_, Some(ProjectType::Nextjs));
+    assert_eq!(cfg.projects["web"].root.as_deref(), Some("src/app"));
 }
 
 #[test]
-fn explicit_nonexistent_config_errors() {
-    let dir = fixture("basic");
-    let err = load_v2_config(&dir, Some(Path::new("nonexistent.yml")))
-        .err()
-        .unwrap();
-    assert!(err.to_string().contains("does not exist"));
+fn legacy_next_to_fetch_converted() {
+    let cfg = load_v2_config(&fixture("legacy-next-to-fetch"), None).unwrap();
+    assert!(cfg.projects.contains_key("web"));
+    assert_eq!(cfg.projects["web"].root.as_deref(), Some("app"));
+}
+
+// ── schema ────────────────────────────────────────────────────────────────────
+
+#[test]
+fn string_or_list_values_single() {
+    let s = StringOrList::One("foo".to_string());
+    assert_eq!(s.values(), vec!["foo"]);
 }
 
 #[test]
-fn config_view_nextjs_root() {
-    let cfg = load_v2_config(&fixture("multi-project"), None).unwrap();
-    let view = ConfigView::new(&cfg);
-    assert_eq!(view.nextjs_root(), "web");
+fn string_or_list_values_many() {
+    let s = StringOrList::Many(vec!["a".to_string(), "b".to_string()]);
+    assert_eq!(s.values(), vec!["a", "b"]);
 }
 
 #[test]
-fn config_view_project_rules() {
-    let cfg = load_v2_config(&fixture("multi-project"), None).unwrap();
-    let view = ConfigView::new(&cfg);
-    assert!(view
-        .project_rules("backend")
-        .contains(&"http-route-static-paths".to_string()));
-    assert!(view.project_rules("nonexistent").is_empty());
-}
-
-#[test]
-fn config_view_enabled_rules() {
-    let cfg = load_v2_config(&fixture("multi-project"), None).unwrap();
-    let view = ConfigView::new(&cfg);
-    let rules = view.enabled_rules_for("backend");
-    assert!(!rules.is_empty());
-    assert!(rules.iter().any(|(id, _)| *id == "http-route-static-paths"));
-}
-
-#[test]
-fn config_view_playwright_selectors() {
-    let cfg = load_v2_config(&fixture("multi-project"), None).unwrap();
-    let view = ConfigView::new(&cfg);
-    assert_eq!(view.test_id_attributes(), &["data-testid", "data-pw"]);
-    assert!(!view.html_ids());
-    assert_eq!(view.selector_roots(), &["web/app", "web/components"]);
+fn rule_def_enabled_defaults_to_true() {
+    let yaml = "{}";
+    let def: RuleDef = serde_yaml::from_str(yaml).unwrap();
+    assert!(def.enabled);
 }
 
 #[test]
@@ -168,4 +177,124 @@ fn rule_def_options_deserialized() {
     }
     let opts: Opts = rule.rule_options();
     assert_eq!(opts.backend_pattern, "backend/api/**");
+}
+
+#[test]
+fn rule_def_options_returns_default_on_bad_type() {
+    let rule = RuleDef::default();
+
+    #[derive(serde::Deserialize, Default, PartialEq, Debug)]
+    struct Opts {
+        foo: String,
+    }
+    let opts: Opts = rule.rule_options();
+    assert_eq!(opts, Opts::default());
+}
+
+// ── ConfigView ────────────────────────────────────────────────────────────────
+
+#[test]
+fn config_view_projects_of_type_filter() {
+    let cfg = load_v2_config(&fixture("multi-project"), None).unwrap();
+    let view = ConfigView::new(&cfg);
+    let nextjs = view.projects_of_type(Some(&ProjectType::Nextjs));
+    assert_eq!(nextjs.len(), 1);
+    assert_eq!(nextjs[0].0, "web");
+    let all = view.projects_of_type(None);
+    assert_eq!(all.len(), 2);
+}
+
+#[test]
+fn config_view_nextjs_root() {
+    let cfg = load_v2_config(&fixture("multi-project"), None).unwrap();
+    let view = ConfigView::new(&cfg);
+    assert_eq!(view.nextjs_root(), "web");
+}
+
+#[test]
+fn config_view_nextjs_root_default() {
+    let cfg = NoMistakesConfig::default();
+    let view = ConfigView::new(&cfg);
+    assert_eq!(view.nextjs_root(), "app");
+}
+
+#[test]
+fn config_view_playwright_configs() {
+    let cfg = load_v2_config(&fixture("multi-project"), None).unwrap();
+    let view = ConfigView::new(&cfg);
+    let configs = view.playwright_configs().unwrap();
+    assert_eq!(configs, vec!["playwright.config.ts"]);
+}
+
+#[test]
+fn config_view_playwright_configs_none() {
+    let cfg = NoMistakesConfig::default();
+    let view = ConfigView::new(&cfg);
+    assert!(view.playwright_configs().is_none());
+}
+
+#[test]
+fn config_view_test_id_attributes() {
+    let cfg = load_v2_config(&fixture("multi-project"), None).unwrap();
+    let view = ConfigView::new(&cfg);
+    assert_eq!(view.test_id_attributes(), &["data-testid", "data-pw"]);
+}
+
+#[test]
+fn config_view_html_ids() {
+    let cfg = load_v2_config(&fixture("multi-project"), None).unwrap();
+    let view = ConfigView::new(&cfg);
+    assert!(!view.html_ids());
+}
+
+#[test]
+fn config_view_component_selector_attributes() {
+    let cfg = load_v2_config(&fixture("multi-project"), None).unwrap();
+    let view = ConfigView::new(&cfg);
+    let attrs = view.component_selector_attributes();
+    assert_eq!(attrs["dataPw"], "data-pw");
+}
+
+#[test]
+fn config_view_selector_roots_and_exclude() {
+    let cfg = load_v2_config(&fixture("multi-project"), None).unwrap();
+    let view = ConfigView::new(&cfg);
+    assert_eq!(view.selector_roots(), &["web/app", "web/components"]);
+    assert!(view
+        .selector_exclude()
+        .contains(&"**/*.test.tsx".to_string()));
+}
+
+#[test]
+fn config_view_filesystem() {
+    let cfg = load_v2_config(&fixture("multi-project"), None).unwrap();
+    let view = ConfigView::new(&cfg);
+    assert_eq!(view.skip_directories(), &[".next", "node_modules"]);
+    assert!(view.skip_file_patterns().is_empty());
+}
+
+#[test]
+fn config_view_project_rules() {
+    let cfg = load_v2_config(&fixture("multi-project"), None).unwrap();
+    let view = ConfigView::new(&cfg);
+    assert!(view
+        .project_rules("backend")
+        .contains(&"http-route-static-paths".to_string()));
+    assert!(view.project_rules("nonexistent").is_empty());
+}
+
+#[test]
+fn config_view_rule_lookup() {
+    let cfg = load_v2_config(&fixture("multi-project"), None).unwrap();
+    let view = ConfigView::new(&cfg);
+    assert!(view.rule("http-route-static-paths").is_some());
+    assert!(view.rule("nonexistent-rule").is_none());
+}
+
+#[test]
+fn config_view_enabled_rules() {
+    let cfg = load_v2_config(&fixture("multi-project"), None).unwrap();
+    let view = ConfigView::new(&cfg);
+    let rules = view.enabled_rules_for("backend");
+    assert!(rules.iter().any(|(id, _)| *id == "http-route-static-paths"));
 }
