@@ -111,7 +111,14 @@ pub fn analyze_project(
         &config.filesystem.skip_file_patterns,
     );
     let tsconfig = match tsconfig_path {
-        Some(path) => load_tsconfig(path)?,
+        Some(path) => {
+            let path = if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                root.join(path)
+            };
+            load_tsconfig(&path)?
+        }
         None => find_tsconfig(root)
             .map(|path| load_tsconfig(&path))
             .transpose()?
@@ -153,7 +160,6 @@ pub fn analyze_project(
     let mut findings = Vec::new();
     for ((name, bucket), mut occurrences) in buckets {
         occurrences.sort_by(|a, b| (&a.file, a.line, &a.kind).cmp(&(&b.file, b.line, &b.kind)));
-        occurrences.dedup_by(|a, b| a.file == b.file && a.line == b.line);
         if occurrences.len() < 2 {
             continue;
         }

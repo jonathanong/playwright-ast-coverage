@@ -262,7 +262,11 @@ fn process_statement(stmt: &Statement, source: &str, out: &mut FileSymbols) {
             let source_str = export.source.value.as_str().to_string();
             let line = byte_offset_to_line(source, export.span.start as usize);
             out.exports.push(Export {
-                name: "*".to_string(),
+                name: export
+                    .exported
+                    .as_ref()
+                    .map(|name| name.name().to_string())
+                    .unwrap_or_else(|| "*".to_string()),
                 kind: ExportKind::ReExport {
                     source: source_str,
                     imported: "*".to_string(),

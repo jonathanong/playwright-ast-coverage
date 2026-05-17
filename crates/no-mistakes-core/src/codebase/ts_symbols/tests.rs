@@ -233,6 +233,19 @@ fn export_star_reexport() {
     }
 }
 
+#[test]
+fn export_namespace_reexport_preserves_exported_name() {
+    let s = syms("export * as Namespace from './module.mts';");
+    assert_eq!(s.exports[0].name, "Namespace");
+    match &s.exports[0].kind {
+        ExportKind::ReExport { source, imported } => {
+            assert_eq!(source, "./module.mts");
+            assert_eq!(imported, "*");
+        }
+        _ => panic!("expected namespace ReExport"),
+    }
+}
+
 // ── Multiple and mixed ───────────────────────────────────────────────────
 
 #[test]

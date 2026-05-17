@@ -142,15 +142,14 @@ pub fn load_codebase_config_with_path(start: &Path, config_path: Option<&Path>) 
 }
 
 fn find_codebase_config_path(start: &Path) -> Option<std::path::PathBuf> {
-    for ext in CONFIG_EXTENSIONS {
-        let path = start.join(format!(".no-mistakes.{ext}"));
-        if path.exists() {
-            return Some(path);
-        }
-    }
-
     let mut current = start.to_path_buf();
     loop {
+        for ext in CONFIG_EXTENSIONS {
+            let path = current.join(format!(".no-mistakes.{ext}"));
+            if path.exists() {
+                return Some(path);
+            }
+        }
         for ext in CONFIG_EXTENSIONS {
             let path = current.join(format!(".guardrailsrc.{ext}"));
             if path.exists() {

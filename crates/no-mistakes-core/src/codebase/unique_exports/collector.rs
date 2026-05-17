@@ -34,7 +34,7 @@ pub(super) fn collect_file_exports(
         }
         match &export.kind {
             ExportKind::Default => {}
-            ExportKind::ReExport { source, imported } if imported == "*" => {
+            ExportKind::ReExport { source, imported } if export.name == "*" && imported == "*" => {
                 let Some(target) = resolve_export_source(source, &file.path, resolver, workspace)
                 else {
                     continue;
@@ -61,8 +61,13 @@ pub(super) fn collect_file_exports(
                 }
             }
             ExportKind::ReExport { source, imported } => {
+                if export.name == "default" {
+                    continue;
+                }
                 let bucket = if export.is_type_only {
                     ExportBucket::Type
+                } else if imported == "*" {
+                    ExportBucket::Value
                 } else {
                     resolve_export_source(source, &file.path, resolver, workspace)
                         .and_then(|target| {
@@ -148,7 +153,7 @@ pub(super) fn find_target_export_bucket(
             ExportKind::ReExport {
                 source,
                 imported: reimported,
-            } if reimported == "*" => resolve_export_source(
+            } if export.name == "*" && reimported == "*" => resolve_export_source(
                 source, &file.path, resolver, workspace,
             )
             .and_then(|resolved| {

@@ -69,3 +69,14 @@ fn load_codebase_config_finds_parent_guardrails_config() {
     assert_eq!(routes.backend_pattern, "packages/api/src/**/*.mts");
     assert_eq!(routes.frontend_root, "packages/web/app");
 }
+
+#[test]
+fn load_codebase_config_finds_parent_no_mistakes_config() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/codebase-analysis/unique-exports-config-disabled");
+    let nested = root.join("src/nested");
+
+    let config = load_codebase_config_with_path(&nested, None).unwrap();
+
+    assert!(!config.is_rule_enabled("unique-exports"));
+}

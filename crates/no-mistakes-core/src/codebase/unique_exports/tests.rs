@@ -138,6 +138,17 @@ fn explicit_tsconfig_resolves_path_aliases() {
 }
 
 #[test]
+fn relative_explicit_tsconfig_resolves_from_project_root() {
+    let root = fixture("unique-exports-tsconfig-paths");
+    let findings = analyze_project(&root, None, Some(Path::new("tsconfig.json"))).unwrap();
+
+    assert_eq!(findings.len(), 2);
+    assert!(findings
+        .iter()
+        .all(|finding| finding.export_name == "ViaConfig"));
+}
+
+#[test]
 fn nearest_tsconfig_is_discovered_and_explicit_errors_are_reported() {
     let root = fixture("unique-exports-tsconfig-paths");
     let findings = analyze_project(&root, None, None).unwrap();
@@ -159,8 +170,12 @@ fn covers_reexport_resolution_edge_cases() {
     assert!(names.contains(&("StarResolved".to_string(), "value".to_string())));
     assert!(names.contains(&("TypeStarOnly".to_string(), "type".to_string())));
     assert!(!names.contains(&("TypeStarValue".to_string(), "value".to_string())));
+    assert!(names.contains(&("Namespace".to_string(), "value".to_string())));
+    assert!(!names.contains(&("NamespacedOnly".to_string(), "value".to_string())));
+    assert!(!names.contains(&("default".to_string(), "value".to_string())));
     assert!(names.contains(&("Hidden".to_string(), "value".to_string())));
     assert!(names.contains(&("Skipped".to_string(), "value".to_string())));
+    assert!(names.contains(&("SameLine".to_string(), "value".to_string())));
 }
 
 #[test]
