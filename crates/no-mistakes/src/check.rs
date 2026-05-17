@@ -14,6 +14,9 @@ pub(crate) struct CheckArgs {
     /// Path to config file.
     #[arg(long, global = true)]
     config: Option<PathBuf>,
+    /// Path to tsconfig.json for queue import alias resolution.
+    #[arg(long, global = true)]
+    tsconfig: Option<PathBuf>,
     /// Output format: json, paths, human (md/yml use JSON serialization).
     #[arg(long, value_enum, default_value = "human", global = true)]
     format: Format,
@@ -39,7 +42,7 @@ pub(crate) fn run(args: CheckArgs) -> Result<ExitCode> {
     };
 
     // Run queues check.
-    let queue_report = analyze_queues(&root, None, &[])?;
+    let queue_report = analyze_queues(&root, args.tsconfig.as_deref(), &[])?;
     let queue_findings = &queue_report.check;
 
     let any_violations = !react_violations.is_empty() || !queue_findings.is_empty();
