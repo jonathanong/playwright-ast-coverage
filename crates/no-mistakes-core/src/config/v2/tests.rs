@@ -298,3 +298,20 @@ fn config_view_enabled_rules() {
     let rules = view.enabled_rules_for("backend");
     assert!(rules.iter().any(|(id, _)| *id == "http-route-static-paths"));
 }
+
+#[test]
+fn config_view_disabled_rule_excluded() {
+    let cfg = load_v2_config(&fixture("disabled-rule"), None).unwrap();
+    let view = ConfigView::new(&cfg);
+    let rules = view.enabled_rules_for("backend");
+    assert!(rules.iter().any(|(id, _)| *id == "active-rule"));
+    assert!(!rules.iter().any(|(id, _)| *id == "disabled-rule"));
+}
+
+#[test]
+fn duplicate_stems_errors() {
+    let err = load_v2_config(&fixture("duplicate-stems"), None)
+        .err()
+        .unwrap();
+    assert!(err.to_string().contains("multiple config files found"));
+}
