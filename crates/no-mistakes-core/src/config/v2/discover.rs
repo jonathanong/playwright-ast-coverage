@@ -53,9 +53,7 @@ pub fn load_v2_config(root: &Path, cli_config: Option<&Path>) -> Result<NoMistak
 fn detect_and_parse(source: &str, path: &Path) -> Result<NoMistakesConfig> {
     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
     match stem {
-        ".playwright-ast-coverage" => {
-            legacy::from_tool_config(source, path, ToolKind::Playwright)
-        }
+        ".playwright-ast-coverage" => legacy::from_tool_config(source, path, ToolKind::Playwright),
         ".react-traits" => legacy::from_tool_config(source, path, ToolKind::ReactTraits),
         ".next-to-fetch" => legacy::from_tool_config(source, path, ToolKind::NextToFetch),
         s if s == ".guardrailsrc" || s == "guardrailsrc" => {

@@ -46,7 +46,10 @@ fn multi_project_config_parsed() {
     let queues = &cfg.projects["backend"].queues;
     assert_eq!(queues.enqueues, vec!["backend/queues/**"]);
     assert_eq!(queues.workers, vec!["backend/workers/**"]);
-    assert_eq!(cfg.filesystem.skip_directories, vec![".next", "node_modules"]);
+    assert_eq!(
+        cfg.filesystem.skip_directories,
+        vec![".next", "node_modules"]
+    );
     let pw = &cfg.tests.playwright;
     assert!(matches!(&pw.configs, Some(StringOrList::One(s)) if s == "playwright.config.ts"));
     assert!(!pw.selectors.html_ids);
@@ -89,7 +92,10 @@ fn legacy_guardrails_converted() {
         cfg.projects["backend"].rules,
         vec!["http-route-static-paths"]
     );
-    assert_eq!(cfg.filesystem.skip_directories, vec![".next", "node_modules"]);
+    assert_eq!(
+        cfg.filesystem.skip_directories,
+        vec![".next", "node_modules"]
+    );
     assert!(cfg.rules.contains_key("http-route-static-paths"));
 }
 
@@ -121,7 +127,9 @@ fn config_view_nextjs_root() {
 fn config_view_project_rules() {
     let cfg = load_v2_config(&fixture("multi-project"), None).unwrap();
     let view = ConfigView::new(&cfg);
-    assert!(view.project_rules("backend").contains(&"http-route-static-paths".to_string()));
+    assert!(view
+        .project_rules("backend")
+        .contains(&"http-route-static-paths".to_string()));
     assert!(view.project_rules("nonexistent").is_empty());
 }
 
@@ -147,7 +155,10 @@ fn config_view_playwright_selectors() {
 fn rule_def_options_deserialized() {
     let cfg = load_v2_config(&fixture("multi-project"), None).unwrap();
     let rule = cfg.rules.get("http-route-static-paths").unwrap();
-    assert_eq!(rule.message.as_deref(), Some("Route paths must be static literals"));
+    assert_eq!(
+        rule.message.as_deref(),
+        Some("Route paths must be static literals")
+    );
     assert!(rule.enabled);
 
     #[derive(serde::Deserialize, Default)]

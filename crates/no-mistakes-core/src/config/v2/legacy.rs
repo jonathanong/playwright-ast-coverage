@@ -37,10 +37,12 @@ fn playwright_to_v2(source: &str, path: &Path) -> Result<NoMistakesConfig> {
     let root_cfg: PlaywrightRootConfig = parse_config(source, path)?;
     let fc = root_cfg.playwright_ast_coverage.unwrap_or(root_cfg.legacy);
     let frontend_root = fc.frontend_root.unwrap_or_else(|| "app".to_string());
-    let selector_roots = fc.selector_roots.unwrap_or_else(|| vec![frontend_root.clone()]);
-    let test_ids = fc.selector_attributes.unwrap_or_else(|| {
-        vec!["data-testid".to_string(), "data-pw".to_string()]
-    });
+    let selector_roots = fc
+        .selector_roots
+        .unwrap_or_else(|| vec![frontend_root.clone()]);
+    let test_ids = fc
+        .selector_attributes
+        .unwrap_or_else(|| vec!["data-testid".to_string(), "data-pw".to_string()]);
 
     let mut cfg = NoMistakesConfig::default();
     cfg.projects.insert(
@@ -114,7 +116,14 @@ fn guardrails_to_v2(source: &str, path: &Path) -> Result<NoMistakesConfig> {
                 .and_then(|m| m.get("message"))
                 .and_then(|v| v.as_str())
                 .map(str::to_string);
-            (id, RuleDef { message, enabled, options: opts })
+            (
+                id,
+                RuleDef {
+                    message,
+                    enabled,
+                    options: opts,
+                },
+            )
         })
         .collect();
 

@@ -102,7 +102,11 @@ impl<'a> ConfigView<'a> {
             .iter()
             .filter_map(|id| {
                 let def = self.config.rules.get(id.as_str())?;
-                if def.enabled { Some((id.as_str(), def)) } else { None }
+                if def.enabled {
+                    Some((id.as_str(), def))
+                } else {
+                    None
+                }
             })
             .collect()
     }
