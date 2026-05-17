@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use clap::Args;
 use no_mistakes_core::cli::{resolve_root, Format};
 use no_mistakes_core::codebase::rules::{self, RuleFinding};
+use no_mistakes_core::codebase::unique_exports::{self, UniqueExportFinding};
 use no_mistakes_core::integration_tests::{self, IntegrationFinding};
 use no_mistakes_core::queue::{analyze_project as analyze_queues, CheckFinding};
 use no_mistakes_core::react_traits;
@@ -60,11 +61,14 @@ pub(crate) fn run(args: CheckArgs) -> Result<ExitCode> {
             }
         };
     let integration_findings = integration_tests::check(&root, args.config.as_deref())?;
+    let codebase_findings =
+        unique_exports::analyze_project(&root, args.config.as_deref(), args.tsconfig.as_deref())?;
 
     let any_violations = !react_violations.is_empty()
         || !queue_findings.is_empty()
         || !rule_findings.is_empty()
-        || !integration_findings.is_empty();
+        || !integration_findings.is_empty()
+        || !codebase_findings.is_empty();
 
     let format = if args.json { Format::Json } else { args.format };
     match format {
@@ -75,6 +79,7 @@ pub(crate) fn run(args: CheckArgs) -> Result<ExitCode> {
                 "queues": queue_findings,
                 "rules": rule_findings,
                 "integration": integration_findings,
+                "codebase": codebase_findings,
             }))
             .expect("serialization of Rust structs never fails")
         ),
@@ -85,6 +90,7 @@ pub(crate) fn run(args: CheckArgs) -> Result<ExitCode> {
                 "queues": queue_findings,
                 "rules": rule_findings,
                 "integration": integration_findings,
+                "codebase": codebase_findings,
             }))
             .expect("serialization of Rust structs never fails")
         ),
@@ -93,6 +99,7 @@ pub(crate) fn run(args: CheckArgs) -> Result<ExitCode> {
             queue_findings,
             &rule_findings,
             &integration_findings,
+            &codebase_findings,
         ),
         Format::Paths => {
             for v in &react_violations {
@@ -106,6 +113,9 @@ pub(crate) fn run(args: CheckArgs) -> Result<ExitCode> {
             }
             for f in &integration_findings {
                 println!("{}:{}", f.file, f.line);
+            }
+            for f in &codebase_findings {
+                println!("{}:{}:{}", f.file, f.line, f.export_name);
             }
         }
         Format::Human => {
@@ -131,6 +141,12 @@ pub(crate) fn run(args: CheckArgs) -> Result<ExitCode> {
                     f.framework, f.suite, f.file, f.line, f.message
                 );
             }
+            for f in &codebase_findings {
+                println!(
+                    "{}[{}] {}:{} {}",
+                    f.rule, f.export_name, f.file, f.line, f.message
+                );
+            }
         }
     }
 
@@ -146,6 +162,7 @@ fn print_check_md(
     queues: &[CheckFinding],
     rules: &[RuleFinding],
     integration: &[IntegrationFinding],
+    codebase: &[UniqueExportFinding],
 ) {
     println!("# no-mistakes check");
     println!("## react");
@@ -163,5 +180,12 @@ fn print_check_md(
     println!("## integration");
     for f in integration {
         println!("- `{}`:{} {}", f.file, f.line, f.message);
+    }
+    println!("## codebase");
+    for f in codebase {
+        println!(
+            "- `{}`:{} `{}` {}",
+            f.file, f.line, f.export_name, f.message
+        );
     }
 }

@@ -115,7 +115,7 @@ fn ignored_export_declaration_has_no_symbol() {
 #[test]
 fn unnamed_inline_exports_are_ignored() {
     let mut out = FileSymbols::default();
-    push_export_if_named(&mut out, None, ExportKind::Function, 1);
+    push_export_if_named(&mut out, None, ExportKind::Function, 1, false);
     assert!(out.exports.is_empty());
 }
 
@@ -126,6 +126,7 @@ fn export_type_alias() {
     let s = syms("export type MyType = string;");
     assert_eq!(s.exports[0].kind, ExportKind::TypeAlias);
     assert_eq!(s.exports[0].name, "MyType");
+    assert!(s.exports[0].is_type_only);
 }
 
 #[test]
@@ -133,6 +134,7 @@ fn export_interface() {
     let s = syms("export interface IFoo { x: number; }");
     assert_eq!(s.exports[0].kind, ExportKind::Interface);
     assert_eq!(s.exports[0].name, "IFoo");
+    assert!(s.exports[0].is_type_only);
 }
 
 #[test]
@@ -140,6 +142,7 @@ fn export_enum() {
     let s = syms("export enum Color { Red, Green }");
     assert_eq!(s.exports[0].kind, ExportKind::Enum);
     assert_eq!(s.exports[0].name, "Color");
+    assert!(!s.exports[0].is_type_only);
 }
 
 // ── Exports — default ───────────────────────────────────────────────────
@@ -176,6 +179,7 @@ export default value;
 
     let interface_symbols = syms("export default interface DefaultShape {}");
     assert_eq!(interface_symbols.exports[0].name, "DefaultShape");
+    assert!(interface_symbols.exports[0].is_type_only);
 }
 
 // ── Exports — re-exports ─────────────────────────────────────────────────
@@ -191,6 +195,19 @@ fn export_named_reexport() {
         }
         _ => panic!("expected ReExport"),
     }
+}
+
+#[test]
+fn export_type_reexport_forms_are_type_only() {
+    let s = syms(
+        r#"
+export type { Foo } from './foo.mts';
+export { type Bar } from './bar.mts';
+export type * from './types.mts';
+"#,
+    );
+    assert_eq!(s.exports.len(), 3);
+    assert!(s.exports.iter().all(|export| export.is_type_only));
 }
 
 #[test]
@@ -213,6 +230,19 @@ fn export_star_reexport() {
             assert_eq!(imported, "*");
         }
         _ => panic!("expected star ReExport"),
+    }
+}
+
+#[test]
+fn export_namespace_reexport_preserves_exported_name() {
+    let s = syms("export * as Namespace from './module.mts';");
+    assert_eq!(s.exports[0].name, "Namespace");
+    match &s.exports[0].kind {
+        ExportKind::ReExport { source, imported } => {
+            assert_eq!(source, "./module.mts");
+            assert_eq!(imported, "*");
+        }
+        _ => panic!("expected namespace ReExport"),
     }
 }
 

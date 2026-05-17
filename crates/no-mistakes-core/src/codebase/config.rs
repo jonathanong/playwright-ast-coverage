@@ -3,7 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
+use crate::config::resolve;
 use crate::config::v2::{find_config_root, load_v2_config, schema::NoMistakesConfig};
+use crate::config::CONFIG_EXTENSIONS;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -113,10 +115,76 @@ impl Config {
 }
 
 pub fn load_config(start: &Path) -> Result<Config> {
-    let v2 = load_v2_config(start, None)?;
+    load_config_with_path(start, None)
+}
+
+pub fn load_config_with_path(start: &Path, config_path: Option<&Path>) -> Result<Config> {
+    let v2 = load_v2_config(start, config_path)?;
     let mut config = config_from_v2(v2);
-    config.augment_from_gitignore(&find_config_root(start));
+    let gitignore_root = match config_path {
+        Some(path) => {
+            let resolved = resolve(start, path);
+            resolved
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| start.to_path_buf())
+        }
+        None => find_config_root(start),
+    };
+    config.augment_from_gitignore(&gitignore_root);
     Ok(config)
+}
+
+pub fn load_codebase_config_with_path(start: &Path, config_path: Option<&Path>) -> Result<Config> {
+    if config_path.is_some() {
+        return load_config_with_path(start, config_path);
+    }
+
+    let Some(path) = find_codebase_config_path(start)? else {
+        let mut config = Config::default();
+        config.augment_from_gitignore(start);
+        return Ok(config);
+    };
+
+    let v2 = load_v2_config(start, Some(&path))?;
+    let mut config = config_from_v2(v2);
+    config.augment_from_gitignore(path.parent().unwrap_or(start));
+    Ok(config)
+}
+
+fn find_codebase_config_path(start: &Path) -> Result<Option<std::path::PathBuf>> {
+    let mut current = start.to_path_buf();
+    loop {
+        if let Some(path) = find_config_for_stem(&current, ".no-mistakes")? {
+            return Ok(Some(path));
+        }
+        if let Some(path) = find_config_for_stem(&current, ".guardrailsrc")? {
+            return Ok(Some(path));
+        }
+        if !current.pop() {
+            return Ok(None);
+        }
+    }
+}
+
+fn find_config_for_stem(root: &Path, stem: &str) -> Result<Option<std::path::PathBuf>> {
+    let found = CONFIG_EXTENSIONS
+        .iter()
+        .map(|ext| root.join(format!("{stem}.{ext}")))
+        .filter(|path| path.exists())
+        .collect::<Vec<_>>();
+    match found.len() {
+        0 => Ok(None),
+        1 => Ok(found.into_iter().next()),
+        _ => {
+            let files = found
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            anyhow::bail!("multiple config files found under --root: {files}");
+        }
+    }
 }
 
 fn config_from_v2(v2: NoMistakesConfig) -> Config {

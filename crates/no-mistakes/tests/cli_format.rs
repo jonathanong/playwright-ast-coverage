@@ -30,6 +30,14 @@ fn react_fixture(category: &str, name: &str) -> PathBuf {
     )
 }
 
+fn codebase_fixture(name: &str) -> PathBuf {
+    no_mistakes_core::codebase::ts_resolver::normalize_path(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/codebase-analysis")
+            .join(name),
+    )
+}
+
 fn run(args: &[&str]) -> Output {
     Command::new(bin())
         .args(args)
@@ -294,6 +302,43 @@ fn global_check_format_json_on_bad_queue_fixture() {
     assert!(!output.status.success());
     let json: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
     assert!(json.get("queues").and_then(|q| q.as_array()).is_some());
+}
+
+#[test]
+fn global_check_reports_unique_exports_in_all_formats() {
+    let root = codebase_fixture("unique-exports-basic");
+    let json_output = run(&[
+        "check",
+        "--root",
+        root.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+    assert_eq!(json_output.status.code(), Some(1));
+    let json: serde_json::Value = serde_json::from_str(&stdout(&json_output)).unwrap();
+    let codebase = json["codebase"].as_array().unwrap();
+    assert_eq!(codebase.len(), 2);
+    assert!(codebase
+        .iter()
+        .any(|finding| finding["exportName"].as_str() == Some("shared")));
+
+    for format in ["human", "paths", "md", "yml"] {
+        let output = run(&[
+            "check",
+            "--root",
+            root.to_str().unwrap(),
+            "--format",
+            format,
+        ]);
+        assert_eq!(output.status.code(), Some(1));
+        let stdout = stdout(&output);
+        if format == "paths" {
+            assert!(stdout.contains("src/"));
+            assert!(stdout.contains(":shared"));
+        } else {
+            assert!(stdout.contains("shared"));
+        }
+    }
 }
 
 #[test]

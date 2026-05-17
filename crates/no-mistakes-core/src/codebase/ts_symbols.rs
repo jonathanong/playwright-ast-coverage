@@ -33,6 +33,7 @@ pub struct Export {
     pub name: String,
     pub kind: ExportKind,
     pub line: u32,
+    pub is_type_only: bool,
 }
 
 /// A named import statement.
@@ -133,6 +134,7 @@ fn process_statement(stmt: &Statement, source: &str, out: &mut FileSymbols) {
 
         Statement::ExportNamedDeclaration(export) => {
             let line = byte_offset_to_line(source, export.span.start as usize);
+            let export_is_type = export.export_kind.is_type();
 
             // Re-export with source: `export { X } from './y'`
             if let Some(src) = &export.source {
@@ -147,6 +149,7 @@ fn process_statement(stmt: &Statement, source: &str, out: &mut FileSymbols) {
                             imported,
                         },
                         line,
+                        is_type_only: export_is_type || spec.export_kind.is_type(),
                     });
                 }
                 return;
@@ -161,6 +164,7 @@ fn process_statement(stmt: &Statement, source: &str, out: &mut FileSymbols) {
                             func.id.as_ref().map(|id| id.name.as_str()),
                             ExportKind::Function,
                             line,
+                            false,
                         );
                     }
                     Declaration::ClassDeclaration(cls) => {
@@ -169,6 +173,7 @@ fn process_statement(stmt: &Statement, source: &str, out: &mut FileSymbols) {
                             cls.id.as_ref().map(|id| id.name.as_str()),
                             ExportKind::Class,
                             line,
+                            false,
                         );
                     }
                     Declaration::VariableDeclaration(var) => {
@@ -182,7 +187,7 @@ fn process_statement(stmt: &Statement, source: &str, out: &mut FileSymbols) {
                             oxc::ast::ast::VariableDeclarationKind::Var => ExportKind::Var,
                         };
                         for decl in &var.declarations {
-                            collect_binding_names(&decl.id, kind.clone(), line, out);
+                            collect_binding_names(&decl.id, kind.clone(), line, false, out);
                         }
                     }
                     Declaration::TSTypeAliasDeclaration(ta) => {
@@ -190,6 +195,7 @@ fn process_statement(stmt: &Statement, source: &str, out: &mut FileSymbols) {
                             name: ta.id.name.as_str().to_string(),
                             kind: ExportKind::TypeAlias,
                             line,
+                            is_type_only: true,
                         });
                     }
                     Declaration::TSInterfaceDeclaration(iface) => {
@@ -197,6 +203,7 @@ fn process_statement(stmt: &Statement, source: &str, out: &mut FileSymbols) {
                             name: iface.id.name.as_str().to_string(),
                             kind: ExportKind::Interface,
                             line,
+                            is_type_only: true,
                         });
                     }
                     Declaration::TSEnumDeclaration(en) => {
@@ -204,6 +211,7 @@ fn process_statement(stmt: &Statement, source: &str, out: &mut FileSymbols) {
                             name: en.id.name.as_str().to_string(),
                             kind: ExportKind::Enum,
                             line,
+                            is_type_only: false,
                         });
                     }
                     _ => {}
@@ -218,12 +226,17 @@ fn process_statement(stmt: &Statement, source: &str, out: &mut FileSymbols) {
                     name,
                     kind: ExportKind::Const,
                     line,
+                    is_type_only: export_is_type || spec.export_kind.is_type(),
                 });
             }
         }
 
         Statement::ExportDefaultDeclaration(export) => {
             let line = byte_offset_to_line(source, export.span.start as usize);
+            let is_type_only = matches!(
+                &export.declaration,
+                ExportDefaultDeclarationKind::TSInterfaceDeclaration(_)
+            );
             let name = match &export.declaration {
                 ExportDefaultDeclarationKind::FunctionDeclaration(f) => {
                     default_export_name(f.id.as_ref().map(|id| id.name.as_str()))
@@ -241,6 +254,7 @@ fn process_statement(stmt: &Statement, source: &str, out: &mut FileSymbols) {
                 name,
                 kind: ExportKind::Default,
                 line,
+                is_type_only,
             });
         }
 
@@ -248,12 +262,17 @@ fn process_statement(stmt: &Statement, source: &str, out: &mut FileSymbols) {
             let source_str = export.source.value.as_str().to_string();
             let line = byte_offset_to_line(source, export.span.start as usize);
             out.exports.push(Export {
-                name: "*".to_string(),
+                name: export
+                    .exported
+                    .as_ref()
+                    .map(|name| name.name().to_string())
+                    .unwrap_or_else(|| "*".to_string()),
                 kind: ExportKind::ReExport {
                     source: source_str,
                     imported: "*".to_string(),
                 },
                 line,
+                is_type_only: export.export_kind.is_type(),
             });
         }
 
@@ -261,12 +280,19 @@ fn process_statement(stmt: &Statement, source: &str, out: &mut FileSymbols) {
     }
 }
 
-fn push_export_if_named(out: &mut FileSymbols, name: Option<&str>, kind: ExportKind, line: u32) {
+fn push_export_if_named(
+    out: &mut FileSymbols,
+    name: Option<&str>,
+    kind: ExportKind,
+    line: u32,
+    is_type_only: bool,
+) {
     if let Some(name) = name {
         out.exports.push(Export {
             name: name.to_string(),
             kind,
             line,
+            is_type_only,
         });
     }
 }
@@ -275,27 +301,34 @@ fn default_export_name(name: Option<&str>) -> String {
     name.unwrap_or("default").to_string()
 }
 
-fn collect_binding_names(pat: &BindingPattern, kind: ExportKind, line: u32, out: &mut FileSymbols) {
+fn collect_binding_names(
+    pat: &BindingPattern,
+    kind: ExportKind,
+    line: u32,
+    is_type_only: bool,
+    out: &mut FileSymbols,
+) {
     match pat {
         BindingPattern::BindingIdentifier(id) => {
             out.exports.push(Export {
                 name: id.name.as_str().to_string(),
                 kind,
                 line,
+                is_type_only,
             });
         }
         BindingPattern::ObjectPattern(obj) => {
             for prop in &obj.properties {
-                collect_binding_names(&prop.value, kind.clone(), line, out);
+                collect_binding_names(&prop.value, kind.clone(), line, is_type_only, out);
             }
         }
         BindingPattern::ArrayPattern(arr) => {
             for elem in arr.elements.iter().flatten() {
-                collect_binding_names(elem, kind.clone(), line, out);
+                collect_binding_names(elem, kind.clone(), line, is_type_only, out);
             }
         }
         BindingPattern::AssignmentPattern(ap) => {
-            collect_binding_names(&ap.left, kind, line, out);
+            collect_binding_names(&ap.left, kind, line, is_type_only, out);
         }
     }
 }

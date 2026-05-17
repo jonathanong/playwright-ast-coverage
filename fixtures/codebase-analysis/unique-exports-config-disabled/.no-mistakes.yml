@@ -1,0 +1,3 @@
+rules:
+  unique-exports:
+    enabled: false

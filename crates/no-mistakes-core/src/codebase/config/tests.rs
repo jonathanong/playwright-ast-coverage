@@ -44,3 +44,60 @@ fn augment_from_gitignore_ignores_missing_file() {
 
     assert!(config.filesystem.skip_directories.is_empty());
 }
+
+#[test]
+fn load_codebase_config_uses_explicit_config_path() {
+    let root =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/config-v2/disabled-rule");
+    let config_path = root.join(".no-mistakes.yml");
+
+    let config = load_codebase_config_with_path(&root, Some(&config_path)).unwrap();
+
+    assert!(config.is_rule_enabled("active-rule"));
+    assert!(!config.is_rule_enabled("disabled-rule"));
+}
+
+#[test]
+fn load_config_with_explicit_config_uses_config_parent_gitignore() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/config-v2/explicit-config-parent");
+    let nested = root.join("nested");
+
+    let config = load_config_with_path(&nested, Some(Path::new("../.no-mistakes.yml"))).unwrap();
+
+    assert_eq!(config.filesystem.skip_directories, vec!["from-config"]);
+}
+
+#[test]
+fn load_codebase_config_finds_parent_guardrails_config() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/codebase-analysis/codebase-intel");
+    let nested = root.join("packages/api/src");
+
+    let config = load_codebase_config_with_path(&nested, None).unwrap();
+    let routes: RouteOptions = config.rule_options("route-consistency");
+
+    assert_eq!(routes.backend_pattern, "packages/api/src/**/*.mts");
+    assert_eq!(routes.frontend_root, "packages/web/app");
+}
+
+#[test]
+fn load_codebase_config_finds_parent_no_mistakes_config() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/codebase-analysis/unique-exports-config-disabled");
+    let nested = root.join("src/nested");
+
+    let config = load_codebase_config_with_path(&nested, None).unwrap();
+
+    assert!(!config.is_rule_enabled("unique-exports"));
+}
+
+#[test]
+fn load_codebase_config_rejects_duplicate_parent_configs() {
+    let root =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/config-v2/duplicate-stems");
+
+    let error = load_codebase_config_with_path(&root, None).unwrap_err();
+
+    assert!(error.to_string().contains("multiple config files found"));
+}

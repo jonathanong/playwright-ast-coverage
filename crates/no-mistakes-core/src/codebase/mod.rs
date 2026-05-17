@@ -13,6 +13,7 @@ pub mod ts_resolver;
 pub mod ts_routes;
 pub mod ts_source;
 pub mod ts_symbols;
+pub mod unique_exports;
 pub mod workspaces;
 
 pub use dependencies::{Direction, TraverseArgs};
