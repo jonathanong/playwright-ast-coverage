@@ -9,7 +9,7 @@ use no_mistakes_core::cli::{init_rayon_threads, JobsArg};
 use no_mistakes_core::codebase::dependencies::{self, Direction, TraverseArgs};
 use no_mistakes_core::codebase::symbols::{self, SymbolsArgs};
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, ExitCode, Stdio};
 
 #[derive(Parser)]
@@ -112,7 +112,7 @@ fn find_in_path(executable: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     for dir in std::env::split_paths(&path) {
         let candidate = dir.join(executable);
-        if candidate.is_file() {
+        if is_executable_file(&candidate) {
             return Some(candidate);
         }
         #[cfg(windows)]
@@ -124,11 +124,25 @@ fn find_in_path(executable: &str) -> Option<PathBuf> {
                     continue;
                 };
                 let candidate = dir.join(format!("{executable}{extension}"));
-                if candidate.is_file() {
+                if is_executable_file(&candidate) {
                     return Some(candidate);
                 }
             }
         }
     }
     None
+}
+
+#[cfg(unix)]
+fn is_executable_file(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::metadata(path)
+        .map(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn is_executable_file(path: &Path) -> bool {
+    path.is_file()
 }

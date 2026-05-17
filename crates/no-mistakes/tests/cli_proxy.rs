@@ -18,12 +18,18 @@ fn stdout(output: &Output) -> String {
     String::from_utf8(output.stdout.clone()).expect("stdout should be utf8")
 }
 
-fn proxy_path() -> std::ffi::OsString {
+fn proxy_path_with(paths: &[PathBuf]) -> std::ffi::OsString {
     env::join_paths(
-        std::iter::once(proxy_fixture("bin"))
+        paths
+            .iter()
+            .cloned()
             .chain(env::split_paths(&env::var_os("PATH").unwrap_or_default())),
     )
     .expect("PATH should join")
+}
+
+fn proxy_path() -> std::ffi::OsString {
+    proxy_path_with(&[proxy_fixture("bin")])
 }
 
 #[test]
@@ -61,4 +67,20 @@ fn external_subcommand_reports_missing_executable() {
     assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("no-mistakes-missing-proxy"));
+}
+
+#[cfg(unix)]
+#[test]
+fn external_subcommand_skips_non_executable_path_match() {
+    let output = Command::new(bin())
+        .env(
+            "PATH",
+            proxy_path_with(&[proxy_fixture("non-executable-bin"), proxy_fixture("bin")]),
+        )
+        .args(["fixture-proxy", "--print", "fallback"])
+        .output()
+        .expect("no-mistakes should run");
+
+    assert!(output.status.success());
+    assert_eq!(stdout(&output).trim(), "fixture-proxy:--print:fallback");
 }

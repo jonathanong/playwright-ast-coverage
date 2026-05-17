@@ -3,7 +3,7 @@
 Portable shell checks for macOS and Linux.
 
 ```bash
-npm install --save-dev no-mistakes-scripts
+npm install --save-dev no-mistakes no-mistakes-scripts
 npx no-mistakes rust-no-inline-tests crates/no-mistakes/src
 npx no-mistakes rust-max-lines-per-file crates/no-mistakes/src crates/no-mistakes/tests
 npx no-mistakes agents-md-max-size
