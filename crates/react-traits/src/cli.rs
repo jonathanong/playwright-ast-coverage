@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use no_mistakes_core::react_traits;
 use std::path::PathBuf;
@@ -45,7 +45,7 @@ fn parse_cli_args() -> Cli {
 
 pub fn run_cli() -> Result<ExitCode> {
     let cli = parse_cli_args();
-    let base_root = std::env::current_dir().expect("current directory is available");
+    let base_root = std::env::current_dir().context("reading current directory")?;
     let root = base_root.join(&cli.root);
     match &cli.command {
         Command::Analyze { targets } => {
@@ -54,7 +54,7 @@ pub fn run_cli() -> Result<ExitCode> {
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&results)
-                        .expect("serialization of Rust structs never fails")
+                        .context("serializing analysis results")?
                 );
             } else {
                 react_traits::print_results(&results, 0);
@@ -74,7 +74,7 @@ pub fn run_cli() -> Result<ExitCode> {
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&violations)
-                            .expect("serialization of Rust structs never fails")
+                            .context("serializing check violations")?
                     );
                 } else {
                     react_traits::print_violations(&violations);

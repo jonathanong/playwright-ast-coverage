@@ -52,7 +52,7 @@ fn load_tsconfig_inner(
 
     let dir = path
         .parent()
-        .expect("tsconfig path has parent")
+        .context(format!("resolving parent directory for {}", path.display()))?
         .to_path_buf();
 
     let content = std::fs::read_to_string(path).context(format!("reading {}", path.display()))?;

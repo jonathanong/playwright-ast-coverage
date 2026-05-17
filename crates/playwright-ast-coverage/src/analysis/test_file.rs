@@ -6,14 +6,14 @@ use crate::matcher;
 use crate::selectors;
 use crate::url::normalize_url;
 use crate::{ast, playwright_urls};
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 pub(crate) fn analyze_test_file(
     test_file: &DiscoveredTestFile,
     context: &TestAnalysisContext<'_>,
 ) -> Result<Vec<Edge>> {
-    let source =
-        std::fs::read_to_string(&test_file.path).expect("discovered test file is readable");
+    let source = std::fs::read_to_string(&test_file.path)
+        .context(format!("reading test file {}", test_file.path.display()))?;
     let rel_test_file = relative_string(context.root, &test_file.path);
     let mut edges = Vec::new();
     let base_urls = test_file.base_urls();

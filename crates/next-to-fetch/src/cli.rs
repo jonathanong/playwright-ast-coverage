@@ -1,6 +1,6 @@
 use crate::pipeline::run::run_with_base_root;
 use crate::report::print::print_markdown_report;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -37,13 +37,12 @@ fn parse_cli_args() -> Cli {
 
 pub fn run_cli() -> Result<ExitCode> {
     let cli = parse_cli_args();
-    let base_root = std::env::current_dir().expect("current directory is available");
+    let base_root = std::env::current_dir().context("reading current directory")?;
     let report = run_with_base_root(&base_root, &cli)?;
     if cli.json {
         println!(
             "{}",
-            serde_json::to_string_pretty(&report)
-                .expect("serialization of Rust structs never fails")
+            serde_json::to_string_pretty(&report).context("serializing fetch report")?
         );
     } else {
         print_markdown_report(&report);

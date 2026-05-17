@@ -199,7 +199,7 @@ fn collect_entries_with_timings(
     args: &SymbolsArgs,
     mut timings: Option<&mut crate::codebase::timing::PhaseTimings>,
 ) -> Result<(Vec<FileEntry>, Vec<String>)> {
-    let cwd = std::env::current_dir().expect("current directory is readable");
+    let cwd = std::env::current_dir().context("reading current directory")?;
     let root = resolve_root(args.root.as_deref(), &cwd);
     let tsconfig = resolve_tsconfig(args.tsconfig.as_deref(), &root)?;
     let abs_files = resolve_input_files(&args.files, &root, &cwd);
@@ -233,19 +233,11 @@ pub fn run(args: SymbolsArgs) -> Result<()> {
     let stdout = io::stdout();
     let mut out = stdout.lock();
     match format {
-        Format::Json => {
-            output::write_json(&root_strs, &entries, &mut out).expect("stdout write succeeds")
-        }
-        Format::Md => {
-            output::write_md(&root_strs, &entries, &mut out).expect("stdout write succeeds")
-        }
-        Format::Yml => {
-            output::write_yml(&root_strs, &entries, &mut out).expect("stdout write succeeds")
-        }
-        Format::Paths => output::write_paths(&entries, &mut out).expect("stdout write succeeds"),
-        Format::Human => {
-            output::write_human(&root_strs, &entries, &mut out).expect("stdout write succeeds")
-        }
+        Format::Json => output::write_json(&root_strs, &entries, &mut out)?,
+        Format::Md => output::write_md(&root_strs, &entries, &mut out)?,
+        Format::Yml => output::write_yml(&root_strs, &entries, &mut out)?,
+        Format::Paths => output::write_paths(&entries, &mut out)?,
+        Format::Human => output::write_human(&root_strs, &entries, &mut out)?,
     }
     timings.mark("output");
     if args.timings {
