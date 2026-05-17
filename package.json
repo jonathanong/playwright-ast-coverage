@@ -17,6 +17,7 @@
   ],
   "scripts": {
     "test": "vitest run --coverage",
+    "test:ci": "vitest run --coverage --reporter=dot --reporter=github-actions",
     "fmt:js": "oxfmt --write packages/ vitest.config.js",
     "fmt:js:check": "oxfmt --check packages/ vitest.config.js",
     "lint:js": "oxlint packages/ vitest.config.js",

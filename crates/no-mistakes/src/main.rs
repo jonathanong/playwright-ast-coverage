@@ -123,7 +123,7 @@ fn run_react(args: ReactArgs) -> Result<ExitCode> {
                         .expect("serialization of Rust structs never fails")
                 );
             } else {
-                react_traits::report::text::print_results(&results, 0);
+                react_traits::print_results(&results, 0);
             }
             Ok(ExitCode::SUCCESS)
         }
@@ -143,7 +143,7 @@ fn run_react(args: ReactArgs) -> Result<ExitCode> {
                             .expect("serialization of Rust structs never fails")
                     );
                 } else {
-                    react_traits::report::text::print_violations(&violations);
+                    react_traits::print_violations(&violations);
                 }
                 Ok(ExitCode::from(1))
             }

@@ -52,7 +52,7 @@ pub fn run_cli() -> Result<ExitCode> {
                         .expect("serialization of Rust structs never fails")
                 );
             } else {
-                no_mistakes_core::react_traits::report::text::print_results(&results, 0);
+                react_traits::print_results(&results, 0);
             }
             Ok(ExitCode::SUCCESS)
         }
@@ -72,7 +72,7 @@ pub fn run_cli() -> Result<ExitCode> {
                             .expect("serialization of Rust structs never fails")
                     );
                 } else {
-                    no_mistakes_core::react_traits::report::text::print_violations(&violations);
+                    react_traits::print_violations(&violations);
                 }
                 Ok(ExitCode::from(1))
             }
