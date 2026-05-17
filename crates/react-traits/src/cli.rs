@@ -1,7 +1,6 @@
-use crate::pipeline::check::run_check;
-use crate::pipeline::run::run_analyze;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use no_mistakes_core::react_traits;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -42,9 +41,10 @@ pub fn run_cli() -> Result<ExitCode> {
     };
     let base_root =
         std::env::current_dir().context("current working directory must be accessible")?;
+    let root = base_root.join(&cli.root);
     match &cli.command {
         Command::Analyze { targets } => {
-            let results = run_analyze(&base_root, &cli, targets, None)?;
+            let results = react_traits::run_analyze(&root, cli.config.as_deref(), targets, None)?;
             if cli.json {
                 println!(
                     "{}",
@@ -52,7 +52,7 @@ pub fn run_cli() -> Result<ExitCode> {
                         .expect("serialization of Rust structs never fails")
                 );
             } else {
-                crate::report::text::print_results(&results, 0);
+                react_traits::print_results(&results, 0);
             }
             Ok(ExitCode::SUCCESS)
         }
@@ -60,7 +60,8 @@ pub fn run_cli() -> Result<ExitCode> {
             targets,
             assert_no_fetch,
         } => {
-            let violations = run_check(&base_root, &cli, targets, *assert_no_fetch)?;
+            let violations =
+                react_traits::run_check(&root, cli.config.as_deref(), targets, *assert_no_fetch)?;
             if violations.is_empty() {
                 Ok(ExitCode::SUCCESS)
             } else {
@@ -71,7 +72,7 @@ pub fn run_cli() -> Result<ExitCode> {
                             .expect("serialization of Rust structs never fails")
                     );
                 } else {
-                    crate::report::text::print_violations(&violations);
+                    react_traits::print_violations(&violations);
                 }
                 Ok(ExitCode::from(1))
             }
