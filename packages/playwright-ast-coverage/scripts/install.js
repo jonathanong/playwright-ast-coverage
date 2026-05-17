@@ -12,6 +12,7 @@ const INSTALL_DEFAULTS = {
   checkExisting: true,
 };
 const DEFAULT_BIN_NAME = "playwright-ast-coverage";
+const DEFAULT_REPOSITORY = "jonathanong/no-mistakes";
 
 function isPlatform(value) {
   return (
@@ -39,7 +40,7 @@ function unsupportedPlatformMessage(binNameOrPlatform, platform, arch, report) {
 
 async function main(installFn = core.install, io = process, logger = console) {
   try {
-    const destination = await installFn("playwright-ast-coverage", "jonathanong/no-mistakes", {
+    const destination = await installFn(DEFAULT_BIN_NAME, DEFAULT_REPOSITORY, {
       ...INSTALL_DEFAULTS,
     });
     logger.log(`Installed playwright-ast-coverage native binary to ${destination}`);
@@ -58,12 +59,12 @@ module.exports = {
     const targetDir = typeof dir === "string" ? dir : PACKAGE_ROOT;
     return require(join(targetDir, "package.json")).version;
   },
-  assetName: (version, target) => core.assetName("playwright-ast-coverage", version, target),
+  assetName: (version, target) => core.assetName(DEFAULT_BIN_NAME, version, target),
   releaseBaseUrl: (version, envVar = "PLAYWRIGHT_AST_COVERAGE_RELEASE_BASE_URL") =>
-    core.releaseBaseUrl("jonathanong/no-mistakes", version, envVar),
+    core.releaseBaseUrl(DEFAULT_REPOSITORY, version, envVar),
   install: (binName, repository, options) => {
     if (binName === undefined) {
-      return core.install("playwright-ast-coverage", "jonathanong/no-mistakes", {
+      return core.install(DEFAULT_BIN_NAME, DEFAULT_REPOSITORY, {
         ...INSTALL_DEFAULTS,
       });
     }
@@ -73,7 +74,7 @@ module.exports = {
         ...INSTALL_DEFAULTS,
         ...binName,
       };
-      return core.install("playwright-ast-coverage", "jonathanong/no-mistakes", mergedOptions);
+      return core.install(DEFAULT_BIN_NAME, DEFAULT_REPOSITORY, mergedOptions);
     }
     return core.install(binName, repository, {
       ...INSTALL_DEFAULTS,

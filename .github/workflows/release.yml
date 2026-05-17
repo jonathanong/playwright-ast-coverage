@@ -376,12 +376,29 @@ jobs:
           base_sha="${{ needs.prepare.outputs.base-sha }}"
           version="${{ needs.prepare.outputs.version }}"
           current_sha="$(git rev-parse HEAD)"
-          if [ "$current_sha" != "$base_sha" ]; then
+          release_subject="chore(release): v$version"
+          if [ "$current_sha" = "$base_sha" ]; then
+            git am prepared-release/release.patch
+          elif [ "$(git log -1 --format=%s)" = "$release_subject" ] && [ "$(git rev-parse HEAD^)" = "$base_sha" ]; then
+            echo "Release commit v$version is already applied to main; continuing."
+          else
             echo "::error::main moved from $base_sha to $current_sha while this release was running. Re-run the release workflow from current main." >&2
             exit 1
           fi
-          git am prepared-release/release.patch
-          git tag -a "v$version" -m "v$version"
+          release_sha="$(git rev-parse HEAD)"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null 2>&1; then
+            git fetch origin "refs/tags/v$version:refs/tags/v$version"
+          fi
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            tag_sha="$(git rev-list -n 1 "v$version")"
+            if [ "$tag_sha" != "$release_sha" ]; then
+              echo "::error::tag v$version points at $tag_sha, expected $release_sha." >&2
+              exit 1
+            fi
+            echo "Tag v$version already points at the release commit; continuing."
+          else
+            git tag -a "v$version" -m "v$version"
+          fi
           git push origin HEAD:main "v$version"
 
       - name: Install Rust
