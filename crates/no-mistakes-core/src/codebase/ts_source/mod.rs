@@ -38,19 +38,16 @@ pub fn walk_files(root: &Path, extra_skip: &[String]) -> Vec<PathBuf> {
     WalkBuilder::new(root)
         .hidden(false)
         .filter_entry(move |e| {
-            // depth==0 is the walk root itself; never prune it by name.
-            // Only prune directories — never exclude individual files by name.
-            if e.depth() == 0 {
-                return true;
-            }
             let name = e.file_name().to_str().unwrap_or("");
-            if e.file_type().is_some_and(|ft| ft.is_dir()) {
-                !SKIP_DIRS.contains(&name)
-                    && !extra_skip.contains(name)
-                    && !is_hidden_non_github(name)
-            } else {
-                !is_hidden_non_github(name)
+            // Prune hidden files and directories, except `.github` for CI analysis.
+            if e.depth() > 0 && is_hidden_non_github(name) {
+                return false;
             }
+            // Prune directories that are explicitly skipped.
+            if e.file_type().is_some_and(|ft| ft.is_dir()) {
+                return !SKIP_DIRS.contains(&name) && !extra_skip.contains(name);
+            }
+            true
         })
         .build()
         .filter_map(|e| e.ok())

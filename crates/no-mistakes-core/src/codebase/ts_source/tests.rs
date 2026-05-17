@@ -324,13 +324,18 @@ fn discover_files_falls_back_outside_git_repositories() {
 #[test]
 fn fallback_walk_includes_github_workflows() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/codebase-analysis/codebase-intel");
+        .join("../../fixtures/ast-snippets/ts-source/hidden-walk");
 
     let files = walk_files(&dir, &[]);
 
     assert!(files
         .iter()
         .any(|path| path.ends_with(".github/workflows/ci.yml")));
+    assert!(files.iter().any(|path| path.ends_with("src/main.mts")));
+    assert!(!files.iter().any(|path| path.ends_with(".env")));
+    assert!(!files
+        .iter()
+        .any(|path| path.ends_with(".config/secret.mts")));
 }
 
 #[test]
