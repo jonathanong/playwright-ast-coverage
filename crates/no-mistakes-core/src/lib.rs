@@ -5,6 +5,7 @@ pub mod config;
 pub mod fetch;
 pub mod import_shape;
 pub mod imports;
+pub mod integration_tests;
 pub mod queue;
 pub mod react_traits;
 pub mod routes;

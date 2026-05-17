@@ -1,0 +1,6 @@
+tests:
+  vitest:
+    configs: vitest.config.mts
+    suites:
+      - project: missing
+        integration: false

@@ -1,0 +1,33 @@
+tests:
+  vitest:
+    configs:
+      - vitest.object.mts
+      - vitest.projects.mts
+    suites:
+      - project: root-vitest
+        integration: false
+      - name: nested-suite
+        config: vitest.projects.mts
+        project: nested
+        integration:
+          suites: [openai]
+          strict: false
+      - name: default-globs
+        include: []
+        integration: false
+  playwright:
+    configs:
+      - playwright.commonjs.cjs
+      - playwright.projects.ts
+      - playwright.empty.ts
+    suites:
+      - project: commonjs
+        integration: false
+      - name: absolute-suite
+        config: playwright.projects.ts
+        project: absolute
+        integration:
+          suites: [openai]
+      - name: inherits-suite
+        project: inherits
+        integration: false

@@ -58,6 +58,7 @@ pub struct Tests {
 #[serde(rename_all = "camelCase", default)]
 pub struct PlaywrightTestConfig {
     pub configs: Option<StringOrList>,
+    pub suites: Vec<TestSuitePolicy>,
     pub selectors: PlaywrightSelectors,
     pub selector_roots: Vec<String>,
     pub selector_exclude: Vec<String>,
@@ -75,6 +76,7 @@ pub struct PlaywrightSelectors {
 #[serde(rename_all = "camelCase", default)]
 pub struct VitestConfig {
     pub configs: Option<StringOrList>,
+    pub suites: Vec<TestSuitePolicy>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq)]
@@ -87,6 +89,38 @@ pub struct JestConfig {
 #[serde(rename_all = "camelCase", default)]
 pub struct StorybookConfig {
     pub configs: Option<StringOrList>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TestSuitePolicy {
+    pub name: Option<String>,
+    pub config: Option<String>,
+    pub project: Option<String>,
+    pub include: Vec<String>,
+    pub exclude: Vec<String>,
+    pub integration: IntegrationPolicy,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(untagged)]
+pub enum IntegrationPolicy {
+    Disabled(bool),
+    Suites(IntegrationSuitesPolicy),
+}
+
+impl Default for IntegrationPolicy {
+    fn default() -> Self {
+        Self::Disabled(false)
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct IntegrationSuitesPolicy {
+    pub suites: Vec<String>,
+    #[serde(default = "default_true")]
+    pub strict: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]

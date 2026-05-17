@@ -1,0 +1,28 @@
+tests:
+  vitest:
+    configs: vitest.config.mts
+    suites:
+      - name: unit
+        config: vitest.config.mts
+        project: unit
+        integration: false
+      - name: openai
+        project: openai
+        integration:
+          suites: [openai]
+      - name: mixed
+        project: mixed
+        integration:
+          suites: [openai]
+          strict: false
+  playwright:
+    configs: playwright.config.ts
+    suites:
+      - name: pw-unit
+        config: playwright.config.ts
+        project: pw-unit
+        integration: false
+      - name: pw-openai
+        project: pw-openai
+        integration:
+          suites: [openai]

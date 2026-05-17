@@ -193,6 +193,44 @@ fn global_check_formats_cover_clean_and_failing_projects() {
 }
 
 #[test]
+fn global_check_reports_integration_suite_findings() {
+    let root = fixture("integration-tests", "basic");
+    let json_output = run(&["check", "--root", root.to_str().unwrap(), "--json"]);
+    assert_eq!(json_output.status.code(), Some(1));
+    let json: serde_json::Value = serde_json::from_str(&stdout(&json_output)).unwrap();
+    let integration = json["integration"].as_array().unwrap();
+    assert!(integration.iter().any(|finding| {
+        finding["file"] == "backend/unit.test.mts"
+            && finding["testName"] == "helper integration in unit suite"
+            && finding["integration"] == "openai"
+    }));
+
+    let paths = run(&[
+        "check",
+        "--root",
+        root.to_str().unwrap(),
+        "--format",
+        "paths",
+    ]);
+    assert_eq!(paths.status.code(), Some(1));
+    assert!(stdout(&paths).contains("backend/unit.test.mts:"));
+
+    let human = run(&[
+        "check",
+        "--root",
+        root.to_str().unwrap(),
+        "--format",
+        "human",
+    ]);
+    assert_eq!(human.status.code(), Some(1));
+    assert!(stdout(&human).contains("integration[vitest:unit]"));
+
+    let markdown = run(&["check", "--root", root.to_str().unwrap(), "--format", "md"]);
+    assert_eq!(markdown.status.code(), Some(1));
+    assert!(stdout(&markdown).contains("vitest suite unit does not allow integration tests"));
+}
+
+#[test]
 fn global_check_warns_when_react_config_is_invalid() {
     let root = fixture("react-traits-config", "invalid");
     let output = run(&[
