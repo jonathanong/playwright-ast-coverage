@@ -5,6 +5,7 @@ use crate::codebase::ts_symbols::extract_symbols;
 use anyhow::Context;
 use rayon::prelude::*;
 use regex::Regex;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 pub(super) fn filter_source_files(
@@ -31,6 +32,7 @@ pub(super) fn filter_source_files(
 }
 
 pub(super) fn collect_source_files(root: &Path, files: &[PathBuf]) -> Vec<SourceFile> {
+    let nextjs_projects = NextJsProjectLookup::new(root, files);
     files
         .par_iter()
         .filter_map(|path| {
@@ -46,7 +48,7 @@ pub(super) fn collect_source_files(root: &Path, files: &[PathBuf]) -> Vec<Source
                 path: normalize_path(path),
                 rel: relative_slash_path(root, path),
                 disabled: has_disable_file_comment(&source, RULE_ID),
-                is_nextjs_project: file_is_in_nextjs_project(root, path),
+                is_nextjs_project: nextjs_projects.contains_file(path),
                 source,
                 symbols,
             })
@@ -54,6 +56,54 @@ pub(super) fn collect_source_files(root: &Path, files: &[PathBuf]) -> Vec<Source
         .collect()
 }
 
+pub(super) struct NextJsProjectLookup {
+    directories: HashMap<PathBuf, bool>,
+}
+
+impl NextJsProjectLookup {
+    pub(super) fn new(root: &Path, files: &[PathBuf]) -> Self {
+        let root = normalize_path(root);
+        let mut directories = HashSet::from([root.clone()]);
+        for path in files {
+            let mut current = path
+                .parent()
+                .map(normalize_path)
+                .unwrap_or_else(|| root.clone());
+            loop {
+                directories.insert(current.clone());
+                if current == root || !current.pop() {
+                    break;
+                }
+            }
+        }
+
+        let mut sorted: Vec<_> = directories.into_iter().collect();
+        sorted.sort_by_key(|path| path.components().count());
+        let mut directories = HashMap::new();
+        for directory in sorted {
+            let parent_is_nextjs = directory
+                .parent()
+                .and_then(|parent| directories.get(&normalize_path(parent)))
+                .copied()
+                .unwrap_or(false);
+            directories.insert(
+                directory.clone(),
+                parent_is_nextjs
+                    || package_json_has_next_dependency(&directory.join("package.json")),
+            );
+        }
+        Self { directories }
+    }
+
+    pub(super) fn contains_file(&self, path: &Path) -> bool {
+        path.parent()
+            .map(normalize_path)
+            .and_then(|directory| self.directories.get(&directory).copied())
+            .unwrap_or(false)
+    }
+}
+
+#[cfg(test)]
 pub(super) fn file_is_in_nextjs_project(root: &Path, path: &Path) -> bool {
     let root = normalize_path(root);
     let mut current = match path.parent() {

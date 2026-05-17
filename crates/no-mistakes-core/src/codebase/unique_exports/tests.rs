@@ -197,6 +197,9 @@ fn scan_helpers_cover_filter_and_parse_edges() {
     let sources = scan::collect_source_files(&root, &filtered);
     assert_eq!(sources.len(), 1);
     assert_eq!(sources[0].rel, "src/direct.ts");
+
+    let lookup = scan::NextJsProjectLookup::new(&fixture("unique-exports-nextjs"), &[]);
+    assert!(!lookup.contains_file(&root.join("src/direct.ts")));
 }
 
 #[test]

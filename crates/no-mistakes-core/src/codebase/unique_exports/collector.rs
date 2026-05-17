@@ -102,7 +102,8 @@ pub(super) fn collect_file_exports(
 }
 
 fn should_skip_export(file: &SourceFile, export: &Export) -> bool {
-    has_disable_comment(&file.source, export.line, RULE_ID)
+    export.name == "default"
+        || has_disable_comment(&file.source, export.line, RULE_ID)
         || super::nextjs::is_framework_export(&file.rel, &export.name, file.is_nextjs_project)
 }
 
