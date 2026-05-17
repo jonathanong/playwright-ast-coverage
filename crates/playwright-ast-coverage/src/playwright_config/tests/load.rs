@@ -77,6 +77,19 @@ fn load_directory_config_path_returns_read_error() {
 }
 
 #[test]
+fn load_surfaces_config_parse_errors() {
+    let dir = fixture_path(&["ast-snippets", "playwright_config", "load-invalid"]);
+    let config = dir.join("playwright.config.ts");
+
+    let err = load(&dir, &config).err().unwrap();
+
+    assert!(format!("{err:#}").contains("playwright.config.ts"));
+
+    let err = load_many(&dir, &[config], None).err().unwrap();
+    assert!(format!("{err:#}").contains("playwright.config.ts"));
+}
+
+#[test]
 fn test_dir_resolves_absolute_relative_and_relative_config_dir() {
     let absolute = TestProject {
         config_dir: PathBuf::from("/repo"),

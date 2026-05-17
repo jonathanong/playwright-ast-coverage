@@ -31,6 +31,106 @@ fn report_marks_matching_dynamic_route_covered() {
 }
 
 #[test]
+fn exit_status_codes_match_process_exit_contract() {
+    assert_eq!(ExitStatus::Covered.code(), 0);
+    assert_eq!(ExitStatus::Uncovered.code(), 1);
+}
+
+#[test]
+fn resolve_format_prefers_json_flag_explicit_format_then_tty_default() {
+    assert_eq!(
+        resolve_format(true, Some(Format::Human), true),
+        Format::Json
+    );
+    assert_eq!(resolve_format(false, Some(Format::Md), true), Format::Md);
+    assert_eq!(resolve_format(false, None, true), Format::Human);
+    assert_eq!(resolve_format(false, None, false), Format::Json);
+}
+
+#[test]
+fn run_returns_uncovered_for_fixture_with_missing_route() {
+    let root = fixture("playwright-coverage");
+    let status = run(CoverageArgs {
+        root: Some(root),
+        frontend_root: None,
+        test_globs: Vec::new(),
+        format: Some(Format::Json),
+        json: false,
+        timings: true,
+    })
+    .unwrap();
+
+    assert_eq!(status, ExitStatus::Uncovered);
+}
+
+#[test]
+fn run_returns_covered_with_explicit_frontend_root_and_json_shorthand() {
+    let root = fixture("playwright-coverage-alt");
+    let status = run(CoverageArgs {
+        frontend_root: Some(PathBuf::from("apps/site/app")),
+        test_globs: vec!["specs/**/*.ts".to_string()],
+        root: Some(root),
+        format: None,
+        json: true,
+        timings: false,
+    })
+    .unwrap();
+
+    assert_eq!(status, ExitStatus::Covered);
+}
+
+#[test]
+fn run_requires_routes_under_frontend_root() {
+    let root = fixture("playwright-coverage-invalid-config");
+    let err = run(CoverageArgs {
+        frontend_root: Some(PathBuf::from("web/app")),
+        test_globs: vec!["tests/e2e/**/*.ts".to_string()],
+        root: Some(root),
+        format: Some(Format::Human),
+        json: false,
+        timings: false,
+    })
+    .unwrap_err();
+
+    assert!(format!("{err:#}").contains("no Next.js routes discovered"));
+}
+
+#[test]
+fn run_surfaces_invalid_test_glob_from_report_collection() {
+    let root = fixture("playwright-coverage");
+    let err = run(CoverageArgs {
+        frontend_root: Some(PathBuf::from("web/app")),
+        test_globs: vec!["[".to_string()],
+        root: Some(root),
+        format: Some(Format::Json),
+        json: false,
+        timings: false,
+    })
+    .unwrap_err();
+
+    assert!(
+        format!("{err:#}").contains("invalid glob `[`"),
+        "unexpected error: {err:#}"
+    );
+}
+
+#[test]
+fn run_surfaces_config_load_errors_without_explicit_frontend_root() {
+    let root = fixture("playwright-coverage-invalid-config");
+    let err = run(CoverageArgs {
+        root: Some(root),
+        frontend_root: None,
+        test_globs: Vec::new(),
+        format: Some(Format::Json),
+        json: false,
+        timings: false,
+    })
+    .unwrap_err();
+
+    assert!(format!("{err:#}").contains("loading guardrails config"));
+}
+
+#[test]
 fn report_marks_unmatched_route_uncovered() {
     let root = fixture("playwright-coverage");
     let all_files = crate::codebase::ts_source::discover_files(&root, &[]);
@@ -67,6 +167,15 @@ fn explicit_frontend_root_must_exist() {
     let err = resolve_frontend_root(Some(&missing), &root, None).unwrap_err();
 
     assert!(err.to_string().contains("does not exist"));
+}
+
+#[test]
+fn no_config_uses_default_frontend_root() {
+    let root = fixture("playwright-coverage");
+
+    let frontend_root = resolve_frontend_root(None, &root, None).unwrap();
+
+    assert_eq!(frontend_root, root.join("web/app"));
 }
 
 #[test]
@@ -126,6 +235,53 @@ fn skip_file_patterns_match_normalized_relative_paths() {
 }
 
 #[test]
+fn skip_file_patterns_ignore_invalid_regexes_and_keep_external_paths() {
+    let root = PathBuf::from("/repo");
+    let external = PathBuf::from("/outside/page.tsx");
+    let file = root.join("web/app/page.tsx");
+    let files = vec![external.clone(), file.clone()];
+
+    let filtered = filter_skip_file_patterns(&root, files, &["[".to_string()]);
+
+    assert_eq!(filtered, vec![external, file]);
+}
+
+#[test]
+fn skip_file_patterns_keep_external_paths_with_valid_patterns() {
+    let root = PathBuf::from("/repo");
+    let external = PathBuf::from("/outside/page.tsx");
+    let generated = root.join("web/app/generated/page.tsx");
+    let regular = root.join("web/app/page.tsx");
+    let files = vec![external.clone(), generated, regular.clone()];
+
+    let filtered = filter_skip_file_patterns(&root, files, &["^web/app/generated/".to_string()]);
+
+    assert_eq!(filtered, vec![external, regular]);
+}
+
+#[test]
+fn route_coverage_sort_uses_file_as_tiebreaker() {
+    let mut routes = [
+        RouteCoverage {
+            route: "/same".to_string(),
+            file: "b/page.tsx".to_string(),
+            covered: false,
+            tests: Vec::new(),
+        },
+        RouteCoverage {
+            route: "/same".to_string(),
+            file: "a/page.tsx".to_string(),
+            covered: false,
+            tests: Vec::new(),
+        },
+    ];
+
+    routes.sort_by(compare_route_coverage);
+
+    assert_eq!(routes[0].file, "a/page.tsx");
+}
+
+#[test]
 fn missing_route_consistency_config_uses_default_frontend_root() {
     let root = fixture("playwright-coverage");
     let config = crate::codebase::config::Config::default();
@@ -133,6 +289,16 @@ fn missing_route_consistency_config_uses_default_frontend_root() {
     let frontend_root = resolve_frontend_root(None, &root, Some(&config)).unwrap();
 
     assert_eq!(frontend_root, root.join("web/app"));
+}
+
+#[test]
+fn configured_frontend_root_uses_valid_route_options() {
+    let root = fixture("codebase-intel");
+    let config = crate::codebase::config::load_config(&root).unwrap();
+
+    let frontend_root = resolve_frontend_root(None, &root, Some(&config)).unwrap();
+
+    assert_eq!(frontend_root, root.join("packages/web/app"));
 }
 
 fn sample_report(uncovered: bool) -> CoverageReport {

@@ -25,15 +25,11 @@ struct CompilerOptions {
 }
 
 pub(crate) fn load_tsconfig(root: &Path, explicit: Option<&Path>) -> Result<TsConfig> {
-    let path = explicit
-        .map(|path| {
-            if path.is_absolute() {
-                path.to_path_buf()
-            } else {
-                root.join(path)
-            }
-        })
-        .or_else(|| find_tsconfig(root));
+    let path = match explicit {
+        Some(path) if path.is_absolute() => Some(path.to_path_buf()),
+        Some(path) => Some(root.join(path)),
+        None => find_tsconfig(root),
+    };
     let Some(path) = path else {
         return Ok(TsConfig {
             paths_dir: root.to_path_buf(),
@@ -68,9 +64,8 @@ pub(crate) fn resolve_import(
     tsconfig: &TsConfig,
 ) -> Option<PathBuf> {
     if specifier.starts_with('.') {
-        return current_file
-            .parent()
-            .and_then(|parent| resolve_candidate(&parent.join(specifier)));
+        let parent = current_file.parent()?;
+        return resolve_candidate(&parent.join(specifier));
     }
     for (pattern, targets) in &tsconfig.paths {
         if let Some(capture) = match_pattern(pattern, specifier) {
@@ -87,11 +82,12 @@ pub(crate) fn resolve_import(
             }
         }
     }
-    tsconfig
-        .base_url
-        .as_ref()
-        .and_then(|base| resolve_candidate(&base.join(specifier)))
-        .or_else(|| resolve_candidate(&root.join(specifier)))
+    if let Some(base_url) = &tsconfig.base_url {
+        if let Some(path) = resolve_candidate(&base_url.join(specifier)) {
+            return Some(path);
+        }
+    }
+    resolve_candidate(&root.join(specifier))
 }
 
 fn find_tsconfig(root: &Path) -> Option<PathBuf> {
@@ -108,24 +104,20 @@ fn find_tsconfig(root: &Path) -> Option<PathBuf> {
 
 fn match_pattern<'a>(pattern: &str, specifier: &'a str) -> Option<&'a str> {
     if let Some((prefix, suffix)) = pattern.split_once('*') {
-        return specifier
-            .strip_prefix(prefix)
-            .and_then(|rest| rest.strip_suffix(suffix));
+        let rest = specifier.strip_prefix(prefix)?;
+        return rest.strip_suffix(suffix);
     }
     (pattern == specifier).then_some("")
 }
 
 fn resolve_candidate(path: &Path) -> Option<PathBuf> {
     if path.is_file() && is_source(path) {
-        return path
-            .canonicalize()
-            .ok()
-            .or_else(|| Some(path.to_path_buf()));
+        return Some(path.canonicalize().unwrap_or(path.to_path_buf()));
     }
     for ext in EXTENSIONS {
         let with_ext = path.with_extension(ext);
         if with_ext.is_file() {
-            return with_ext.canonicalize().ok().or(Some(with_ext));
+            return Some(with_ext.canonicalize().unwrap_or(with_ext));
         }
         let index = path.join(format!("index.{ext}"));
         if index.is_file() {
@@ -136,7 +128,8 @@ fn resolve_candidate(path: &Path) -> Option<PathBuf> {
 }
 
 fn is_source(path: &Path) -> bool {
-    path.extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| EXTENSIONS.contains(&ext))
+    matches!(
+        path.extension().and_then(|ext| ext.to_str()),
+        Some(ext) if EXTENSIONS.contains(&ext)
+    )
 }

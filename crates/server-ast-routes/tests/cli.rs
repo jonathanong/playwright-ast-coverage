@@ -91,6 +91,23 @@ fn edges_json_honors_roots_and_depth() {
 }
 
 #[test]
+fn edges_depth_walk_stops_after_leaf_frontier() {
+    Command::cargo_bin("server-ast-routes")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("express"))
+        .arg("--format")
+        .arg("json")
+        .arg("--depth")
+        .arg("2")
+        .arg("edges")
+        .arg("backend/api/users.ts")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("/api/v1/users/*"));
+}
+
+#[test]
 fn related_supports_directions_and_formats() {
     for format in ["json", "md", "yml", "human", "paths"] {
         Command::cargo_bin("server-ast-routes")
@@ -107,6 +124,54 @@ fn related_supports_directions_and_formats() {
             .success()
             .stdout(predicate::str::contains("/api/v1/users"));
     }
+}
+
+#[test]
+fn related_supports_dependents_and_both_directions() {
+    for direction in ["dependents", "both"] {
+        Command::cargo_bin("server-ast-routes")
+            .unwrap()
+            .arg("--root")
+            .arg(fixture("express"))
+            .arg("--format")
+            .arg("json")
+            .arg("related")
+            .arg("backend/api/users.ts")
+            .arg("--direction")
+            .arg(direction)
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("edges"));
+    }
+}
+
+#[test]
+fn related_with_unmatched_root_stops_when_frontier_is_empty() {
+    Command::cargo_bin("server-ast-routes")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("express"))
+        .arg("--format")
+        .arg("json")
+        .arg("related")
+        .arg("backend/api/missing.ts")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""edges": []"#));
+}
+
+#[test]
+fn invalid_filter_surfaces_main_error_exit() {
+    Command::cargo_bin("server-ast-routes")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("express"))
+        .arg("--filter")
+        .arg("[")
+        .arg("routes")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("error:"));
 }
 
 #[test]

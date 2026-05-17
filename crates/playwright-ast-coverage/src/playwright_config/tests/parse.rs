@@ -12,6 +12,19 @@ fn parses_test_dir_and_match() {
 }
 
 #[test]
+fn parse_from_path_surfaces_parser_errors() {
+    let err = parse_from_path(
+        "await page.goto(",
+        Path::new("playwright.config.ts"),
+        Path::new("/repo"),
+    )
+    .err()
+    .unwrap();
+
+    assert!(format!("{err:#}").contains("playwright.config.ts"));
+}
+
+#[test]
 fn parser_handles_parenthesized_expressions() {
     let source = "export default ({ testDir: 'parenthesized' });";
     let parsed = parse(source, Path::new("/repo")).unwrap();

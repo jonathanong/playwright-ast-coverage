@@ -348,10 +348,15 @@ fn fixture_refs_walker_covers_router_jsx_fetch_and_scope_shapes() {
         "/api/local",
         "/api/member",
         "/spread",
+        "/spread-attr",
         "/href",
         "/to/:param",
         "/string-key/:slug/",
+        "/catch-all/*",
+        "/optional/**",
+        "/after-spread",
         "/namespaced",
+        "/nested-fragment",
         "/if",
         "/else",
         "/conditional",
@@ -359,6 +364,7 @@ fn fixture_refs_walker_covers_router_jsx_fetch_and_scope_shapes() {
         "/sequence-one",
         "/sequence-two",
         "/assignment",
+        "/assertion-call",
         "/satisfies",
         "/non-null",
         "/parenthesized",
@@ -366,15 +372,65 @@ fn fixture_refs_walker_covers_router_jsx_fetch_and_scope_shapes() {
         "/arrow",
         "/function-expression",
         "/export-var",
+        "/export-var-init",
         "/export-function",
+        "/default-expression",
         "/default-export",
+        "/for-var-router",
         "/after-let-for-of",
+        "/after-class-shadow-check",
+        "/exported-function-body",
+        "/default-function-body/:id",
+        "/do-while-after",
     ] {
         assert!(
             patterns.contains(&expected),
             "expected {expected} in {patterns:?}"
         );
     }
-    assert!(!patterns.iter().any(|pattern| pattern.contains("ignored")));
+    assert!(
+        !patterns.iter().any(|pattern| pattern.contains("ignored")),
+        "unexpected ignored route in {patterns:?}"
+    );
     assert!(!patterns.contains(&"?query"));
+}
+
+#[test]
+fn extracts_from_default_exports_and_jsx_edge_shapes() {
+    let cases = [
+        (
+            r#"
+            const router = useRouter();
+            export default function DefaultFn(...rest) {
+              return <><Link href={}></Link>{<a href="/fragment-child">x</a>}</>;
+            }
+            "#,
+            "/fragment-child",
+        ),
+        (
+            r#"
+            const router = useRouter();
+            export default () => router.push("/default-arrow-expression");
+            "#,
+            "/default-arrow-expression",
+        ),
+        (
+            r#"
+            const router = useRouter();
+            const view = <ns:Link href="https://example.com/ignored-ns" />;
+            router.push(dynamic);
+            api.fetch(dynamic);
+            "#,
+            "/none",
+        ),
+    ];
+
+    let refs = extract_route_refs(cases[0].0, "default-fn.tsx");
+    assert!(refs.iter().any(|route_ref| route_ref.pattern == cases[0].1));
+
+    let refs = extract_route_refs(cases[1].0, "default-arrow.tsx");
+    assert!(refs.iter().any(|route_ref| route_ref.pattern == cases[1].1));
+
+    let refs = extract_route_refs(cases[2].0, "ignored.tsx");
+    assert!(refs.is_empty());
 }

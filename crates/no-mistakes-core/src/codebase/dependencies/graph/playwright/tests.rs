@@ -215,6 +215,27 @@ fn empty_file_returns_empty() {
 }
 
 #[test]
+fn covers_ignored_argument_and_selector_shapes() {
+    let src = r#"
+page.goto();
+page.goto(route);
+page.waitForURL(route);
+page.waitForURL("https://example.com");
+page.click("a[href=/missing-quote]");
+page.click("a[href=\"https://example.com\"]");
+expect(page).toHaveURL();
+expect(page).toHaveURL(new RegExp(dynamic));
+page.toHaveURL("/not-expect");
+expect.soft(page).toHaveURL("/soft-not-supported");
+navigateTo(page, "relative");
+navigateTo("relative", page);
+new URL("/ignored", base);
+"#;
+    let urls = extract_playwright_urls(src);
+    assert!(urls.is_empty());
+}
+
+#[test]
 fn fixture_walks_statement_and_expression_shapes() {
     let source = fixture_source("walk-all.ts");
     let urls = extract_playwright_urls(&source);
@@ -224,22 +245,38 @@ fn fixture_walks_statement_and_expression_shapes() {
         "/arrow",
         "/block",
         "/conditional",
+        "/catch",
         "/do-body",
         "/do-test",
+        "/else",
+        "/expr-string",
+        "/expr-template",
         "/for-body",
+        "/for-var-body",
+        "/for-var-init",
         "/for-in-body",
         "/for-in-right",
         "/for-init-expr",
+        "/for-empty",
         "/for-of-body",
         "/for-of-right",
         "/for-test",
         "/for-update",
+        "/finally",
+        "/if",
+        "/if-test",
         "/logical",
         "/navigate-second",
         "/return",
         "/sequence-one",
         "/sequence-two",
+        "/switch-body",
+        "/switch-case",
+        "/switch-discriminant",
+        "/try",
         "/var-init",
+        "/while-body",
+        "/while-test",
     ] {
         assert!(urls.iter().any(|url| url == expected), "missing {expected}");
     }

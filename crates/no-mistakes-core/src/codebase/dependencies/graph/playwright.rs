@@ -1,6 +1,6 @@
 use crate::codebase::ts_routes::refs::normalize_template;
 use oxc::allocator::Allocator;
-use oxc::ast::ast::{Argument, Expression, ForStatementInit, Statement};
+use oxc::ast::ast::{Argument, Expression, ForStatementInit, FunctionBody, Statement};
 use oxc::parser::Parser;
 use oxc::span::SourceType;
 
@@ -49,11 +49,7 @@ fn collect_urls_from_stmt(stmt: &Statement, urls: &mut Vec<String>) {
             }
         }
         Statement::FunctionDeclaration(f) => {
-            if let Some(body) = &f.body {
-                for s in &body.statements {
-                    collect_urls_from_stmt(s, urls);
-                }
-            }
+            collect_urls_from_body(f.body.as_deref(), urls);
         }
         Statement::IfStatement(i) => {
             collect_urls_from_expr(&i.test, urls);
@@ -63,18 +59,12 @@ fn collect_urls_from_stmt(stmt: &Statement, urls: &mut Vec<String>) {
             }
         }
         Statement::TryStatement(t) => {
-            for s in &t.block.body {
-                collect_urls_from_stmt(s, urls);
-            }
+            collect_urls_from_stmts(&t.block.body, urls);
             if let Some(handler) = &t.handler {
-                for s in &handler.body.body {
-                    collect_urls_from_stmt(s, urls);
-                }
+                collect_urls_from_stmts(&handler.body.body, urls);
             }
             if let Some(finalizer) = &t.finalizer {
-                for s in &finalizer.body {
-                    collect_urls_from_stmt(s, urls);
-                }
+                collect_urls_from_stmts(&finalizer.body, urls);
             }
         }
         Statement::WhileStatement(w) => {
@@ -148,36 +138,34 @@ fn collect_urls_from_expr(expr: &Expression, urls: &mut Vec<String>) {
                     }
                 } else if method == "click" {
                     if is_page_receiver(&member.object) {
-                        if let Some(selector) = route_arg(&call.arguments, 0) {
-                            if let Some(url) = extract_href_from_selector(&selector) {
-                                urls.push(url);
-                            }
-                        }
-                    }
-                } else if method == "waitForURL" {
-                    if is_page_receiver(&member.object) {
-                        if let Some(url) = route_arg(&call.arguments, 0) {
-                            if url.starts_with('/') {
-                                urls.push(url);
-                            }
-                        }
-                    }
-                } else if method == "toHaveURL" && is_expect_page_call(&member.object) {
-                    if let Some(url) = route_arg(&call.arguments, 0) {
-                        if url.starts_with('/') {
+                        if let Some(url) = route_arg(&call.arguments, 0)
+                            .as_deref()
+                            .and_then(extract_href_from_selector)
+                        {
                             urls.push(url);
                         }
                     }
+                } else if method == "waitForURL" && is_page_receiver(&member.object) {
+                    if let Some(url) =
+                        route_arg(&call.arguments, 0).filter(|url| url.starts_with('/'))
+                    {
+                        urls.push(url);
+                    }
+                } else if method == "toHaveURL" && is_expect_page_call(&member.object) {
+                    if let Some(url) =
+                        route_arg(&call.arguments, 0).filter(|url| url.starts_with('/'))
+                    {
+                        urls.push(url);
+                    }
                 }
-            } else if let Expression::Identifier(callee) = &call.callee {
-                if callee.name == "navigateTo" {
-                    for index in [0, 1] {
-                        if let Some(url) = route_arg(&call.arguments, index) {
-                            if url.starts_with('/') {
-                                urls.push(url);
-                                break;
-                            }
-                        }
+            } else if matches!(&call.callee, Expression::Identifier(callee) if callee.name == "navigateTo")
+            {
+                for index in [0, 1] {
+                    if let Some(url) =
+                        route_arg(&call.arguments, index).filter(|url| url.starts_with('/'))
+                    {
+                        urls.push(url);
+                        break;
                     }
                 }
             }
@@ -190,9 +178,7 @@ fn collect_urls_from_expr(expr: &Expression, urls: &mut Vec<String>) {
         }
         Expression::AwaitExpression(a) => collect_urls_from_expr(&a.argument, urls),
         Expression::ArrowFunctionExpression(arrow) => {
-            for s in &arrow.body.statements {
-                collect_urls_from_stmt(s, urls);
-            }
+            collect_urls_from_stmts(&arrow.body.statements, urls);
         }
         Expression::ConditionalExpression(c) => {
             collect_urls_from_expr(&c.test, urls);
@@ -209,6 +195,18 @@ fn collect_urls_from_expr(expr: &Expression, urls: &mut Vec<String>) {
             }
         }
         _ => {}
+    }
+}
+
+fn collect_urls_from_body(body: Option<&FunctionBody>, urls: &mut Vec<String>) {
+    if let Some(body) = body {
+        collect_urls_from_stmts(&body.statements, urls);
+    }
+}
+
+fn collect_urls_from_stmts(statements: &[Statement], urls: &mut Vec<String>) {
+    for stmt in statements {
+        collect_urls_from_stmt(stmt, urls);
     }
 }
 
@@ -245,6 +243,7 @@ fn route_expr(expr: &Expression) -> Option<String> {
     match expr {
         Expression::StringLiteral(s) => Some(s.value.as_str().to_string()),
         Expression::TemplateLiteral(tpl) => Some(normalize_template(tpl)),
+        Expression::ParenthesizedExpression(paren) => route_expr(&paren.expression),
         Expression::NewExpression(new_expr) => {
             let Expression::Identifier(callee) = &new_expr.callee else {
                 return None;

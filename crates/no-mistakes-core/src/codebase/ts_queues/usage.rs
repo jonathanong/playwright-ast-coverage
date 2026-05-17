@@ -1,8 +1,8 @@
 use crate::codebase::ts_source::byte_offset_to_line;
 use oxc::allocator::Allocator;
 use oxc::ast::ast::{
-    Argument, ArrayExpressionElement, Expression, ImportDeclarationSpecifier, ObjectPropertyKind,
-    Statement,
+    Argument, ArrayExpressionElement, CallExpression, Expression, FunctionBody,
+    ImportDeclarationSpecifier, ObjectPropertyKind, Statement,
 };
 use oxc::parser::Parser;
 use oxc::span::SourceType;
@@ -124,11 +124,7 @@ fn scan_stmt(
                         }
                     }
                     oxc::ast::ast::Declaration::FunctionDeclaration(f) => {
-                        if let Some(body) = &f.body {
-                            for s in &body.statements {
-                                scan_stmt(s, source, namespace_imports, usage);
-                            }
-                        }
+                        scan_function_body(f.body.as_deref(), source, namespace_imports, usage);
                     }
                     _ => {}
                 }
@@ -145,11 +141,7 @@ fn scan_stmt(
             }
         }
         Statement::FunctionDeclaration(f) => {
-            if let Some(body) = &f.body {
-                for s in &body.statements {
-                    scan_stmt(s, source, namespace_imports, usage);
-                }
-            }
+            scan_function_body(f.body.as_deref(), source, namespace_imports, usage);
         }
         Statement::IfStatement(i) => {
             scan_stmt(&i.consequent, source, namespace_imports, usage);
@@ -162,12 +154,32 @@ fn scan_stmt(
                 scan_stmt(s, source, namespace_imports, usage);
             }
             if let Some(handler) = &t.handler {
-                for s in &handler.body.body {
-                    scan_stmt(s, source, namespace_imports, usage);
-                }
+                scan_statements(&handler.body.body, source, namespace_imports, usage);
             }
         }
         _ => {}
+    }
+}
+
+fn scan_statements(
+    statements: &[Statement],
+    source: &str,
+    namespace_imports: &HashMap<String, String>,
+    usage: &mut QueueUsage,
+) {
+    for stmt in statements {
+        scan_stmt(stmt, source, namespace_imports, usage);
+    }
+}
+
+fn scan_function_body(
+    body: Option<&FunctionBody>,
+    source: &str,
+    namespace_imports: &HashMap<String, String>,
+    usage: &mut QueueUsage,
+) {
+    if let Some(body) = body {
+        scan_statements(&body.statements, source, namespace_imports, usage);
     }
 }
 
@@ -180,7 +192,7 @@ fn scan_expr(
     match expr {
         Expression::CallExpression(call) => {
             // Check for <binding>.add(...) or <binding>.addBulk(...)
-            if let Some((binding, method)) = extract_member_call(expr) {
+            if let Some((binding, method)) = extract_member_call(call) {
                 if method == "add" {
                     let job = call.arguments.first().and_then(|a| literal_str(a));
                     let line = byte_offset_to_line(source, call.span.start as usize);
@@ -282,13 +294,11 @@ fn scan_expr(
     }
 }
 
-/// If `expr` is `<identifier>.<method>(...)`, return `(identifier_name, method_name)`.
-fn extract_member_call<'a>(expr: &'a Expression) -> Option<(String, &'a str)> {
-    if let Expression::CallExpression(call) = expr {
-        if let Expression::StaticMemberExpression(member) = &call.callee {
-            if let Expression::Identifier(obj) = &member.object {
-                return Some((obj.name.as_str().to_string(), member.property.name.as_str()));
-            }
+/// If `call` is `<identifier>.<method>(...)`, return `(identifier_name, method_name)`.
+fn extract_member_call<'a>(call: &'a CallExpression) -> Option<(String, &'a str)> {
+    if let Expression::StaticMemberExpression(member) = &call.callee {
+        if let Expression::Identifier(obj) = &member.object {
+            return Some((obj.name.as_str().to_string(), member.property.name.as_str()));
         }
     }
     None

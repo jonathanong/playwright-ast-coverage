@@ -60,15 +60,11 @@ fn collect_from_stmt(
         }
         Statement::VariableDeclaration(v) => {
             for decl in &v.declarations {
-                if let Some(init) = &decl.init {
-                    collect_from_expr(init, source, file_path, root, out);
-                }
+                collect_from_optional_expr(decl.init.as_ref(), source, file_path, root, out);
             }
         }
         Statement::ReturnStatement(r) => {
-            if let Some(e) = &r.argument {
-                collect_from_expr(e, source, file_path, root, out);
-            }
+            collect_from_optional_expr(r.argument.as_ref(), source, file_path, root, out);
         }
         Statement::BlockStatement(b) => {
             for s in &b.body {
@@ -87,9 +83,13 @@ fn collect_from_stmt(
                 match decl {
                     oxc::ast::ast::Declaration::VariableDeclaration(v) => {
                         for d in &v.declarations {
-                            if let Some(init) = &d.init {
-                                collect_from_expr(init, source, file_path, root, out);
-                            }
+                            collect_from_optional_expr(
+                                d.init.as_ref(),
+                                source,
+                                file_path,
+                                root,
+                                out,
+                            );
                         }
                     }
                     oxc::ast::ast::Declaration::FunctionDeclaration(f) => {
@@ -143,6 +143,16 @@ fn collect_from_stmt(
     }
 }
 
+fn collect_from_optional_expr(
+    expr: Option<&Expression>,
+    source: &str,
+    file_path: &Path,
+    root: &Path,
+    out: &mut Vec<SpawnEdge>,
+) {
+    let _ = expr.map(|expr| collect_from_expr(expr, source, file_path, root, out));
+}
+
 fn collect_from_export_default(
     kind: &oxc::ast::ast::ExportDefaultDeclarationKind,
     source: &str,
@@ -163,21 +173,10 @@ fn collect_from_export_default(
                 collect_from_stmt(s, source, file_path, root, out);
             }
         }
-        oxc::ast::ast::ExportDefaultDeclarationKind::CallExpression(call) => {
-            if let Some(fn_name) = callee_name(&call.callee) {
-                if fn_name == "defineConfig" {
-                    if let Some(Argument::ObjectExpression(obj)) = call.arguments.first() {
-                        for prop in &obj.properties {
-                            if let ObjectPropertyKind::ObjectProperty(p) = prop {
-                                if matches!(&p.key, PropertyKey::StaticIdentifier(id) if id.name.as_str() == "webServer")
-                                {
-                                    extract_web_server(&p.value, file_path, root, out);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        oxc::ast::ast::ExportDefaultDeclarationKind::CallExpression(call)
+            if callee_name(&call.callee) == Some("defineConfig") =>
+        {
+            extract_define_config_web_server(call, file_path, root, out);
         }
         _ => {}
     }
@@ -198,16 +197,15 @@ fn collect_from_expr(
                 match fn_name {
                     "spawn" | "execFile" | "fork" => {
                         // First arg is the command/module path
-                        if let Some(cmd) = string_or_template_arg(&call.arguments, 0) {
+                        let entry = string_or_template_arg(&call.arguments, 0).and_then(|cmd| {
                             let cwd = extract_cwd_from_opts(&call.arguments, 2);
-                            if let Some(entry) =
-                                resolve_entry_file(&cmd, cwd.as_deref(), file_path, root)
-                            {
-                                out.push(SpawnEdge {
-                                    spawner: file_path.to_path_buf(),
-                                    entry,
-                                });
-                            }
+                            resolve_entry_file(&cmd, cwd.as_deref(), file_path, root)
+                        });
+                        if let Some(entry) = entry {
+                            out.push(SpawnEdge {
+                                spawner: file_path.to_path_buf(),
+                                entry,
+                            });
                         }
                     }
                     "exec" => {
@@ -224,27 +222,13 @@ fn collect_from_expr(
                             }
                         }
                     }
-                    "defineConfig" => {
-                        // Playwright defineConfig({ webServer: [...] })
-                        if let Some(Argument::ObjectExpression(obj)) = call.arguments.first() {
-                            for prop in &obj.properties {
-                                if let ObjectPropertyKind::ObjectProperty(p) = prop {
-                                    if matches!(&p.key, PropertyKey::StaticIdentifier(id) if id.name.as_str() == "webServer")
-                                    {
-                                        extract_web_server(&p.value, file_path, root, out);
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    "defineConfig" => extract_define_config_web_server(call, file_path, root, out),
                     _ => {}
                 }
             }
             // Recurse into arguments regardless
             for arg in &call.arguments {
-                if let Some(e) = arg.as_expression() {
-                    collect_from_expr(e, source, file_path, root, out);
-                }
+                collect_from_optional_expr(arg.as_expression(), source, file_path, root, out);
             }
             collect_from_expr(&call.callee, source, file_path, root, out);
         }
@@ -279,12 +263,38 @@ fn extract_web_server(expr: &Expression, file_path: &Path, root: &Path, out: &mu
     match expr {
         Expression::ArrayExpression(arr) => {
             for item in &arr.elements {
-                if let Some(e) = item.as_expression() {
-                    extract_web_server_entry(e, file_path, root, out);
-                }
+                extract_optional_web_server_entry(item.as_expression(), file_path, root, out);
             }
         }
         _ => extract_web_server_entry(expr, file_path, root, out),
+    }
+}
+
+fn extract_optional_web_server_entry(
+    expr: Option<&Expression>,
+    file_path: &Path,
+    root: &Path,
+    out: &mut Vec<SpawnEdge>,
+) {
+    let _ = expr.map(|expr| extract_web_server_entry(expr, file_path, root, out));
+}
+
+fn extract_define_config_web_server(
+    call: &oxc::ast::ast::CallExpression,
+    file_path: &Path,
+    root: &Path,
+    out: &mut Vec<SpawnEdge>,
+) {
+    let Some(Argument::ObjectExpression(obj)) = call.arguments.first() else {
+        return;
+    };
+    for p in obj.properties.iter().filter_map(|prop| match prop {
+        ObjectPropertyKind::ObjectProperty(p) => Some(p),
+        _ => None,
+    }) {
+        if matches!(&p.key, PropertyKey::StaticIdentifier(id) if id.name.as_str() == "webServer") {
+            extract_web_server(&p.value, file_path, root, out);
+        }
     }
 }
 
@@ -311,9 +321,7 @@ fn extract_web_server_entry(
                     }
                     "cwd" => {
                         // cwd may be a dynamic join() — only take literal strings
-                        if let Some(s) = literal_string(&p.value) {
-                            cwd = Some(PathBuf::from(s));
-                        }
+                        assign_literal_cwd(&mut cwd, &p.value);
                     }
                     _ => {}
                 }
@@ -332,11 +340,16 @@ fn extract_web_server_entry(
     }
 }
 
+fn assign_literal_cwd(cwd: &mut Option<PathBuf>, expr: &Expression) {
+    *cwd = literal_string(expr).map(PathBuf::from);
+}
+
 // ── String extraction helpers ─────────────────────────────────────────────────
 
 /// Extract a string literal or template literal (quasis concatenated) from an argument.
 fn string_or_template_arg(args: &[Argument], index: usize) -> Option<String> {
-    let expr = args.get(index)?.as_expression()?;
+    let arg = args.get(index)?;
+    let expr = arg.as_expression()?;
     string_or_template_literal(expr)
 }
 
@@ -369,19 +382,25 @@ fn literal_string(expr: &Expression) -> Option<String> {
 
 /// Extract `cwd` from the opts object at `args[opts_index]`.
 fn extract_cwd_from_opts(args: &[Argument], opts_index: usize) -> Option<String> {
-    let opts = args.get(opts_index)?.as_expression()?;
-    let opts = unwrap_ts_wrappers(opts);
-    if let Expression::ObjectExpression(obj) = opts {
-        for prop in &obj.properties {
-            if let ObjectPropertyKind::ObjectProperty(p) = prop {
-                if matches!(&p.key, PropertyKey::StaticIdentifier(id) if id.name.as_str() == "cwd")
-                {
-                    return literal_string(&p.value);
-                }
-            }
-        }
-    }
-    None
+    let obj = match args
+        .get(opts_index)?
+        .as_expression()
+        .map(unwrap_ts_wrappers)
+    {
+        Some(Expression::ObjectExpression(obj)) => obj,
+        _ => return None,
+    };
+    obj.properties
+        .iter()
+        .filter_map(|prop| match prop {
+            ObjectPropertyKind::ObjectProperty(p) => Some(p),
+            _ => None,
+        })
+        .find_map(|p| {
+            matches!(&p.key, PropertyKey::StaticIdentifier(id) if id.name.as_str() == "cwd")
+                .then(|| literal_string(&p.value))
+                .flatten()
+        })
 }
 
 /// Attempt to get the short name of a callee (last identifier in a chain).
@@ -446,10 +465,11 @@ fn resolve_entry_file(
             root.join(cwd_path)
         }
     } else {
+        let fallback = root.to_path_buf();
         file_path
             .parent()
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|| root.to_path_buf())
+            .map(Path::to_path_buf)
+            .unwrap_or(fallback)
     };
 
     let candidate = base.join(token);
@@ -467,12 +487,10 @@ fn resolve_entry_file(
 }
 
 fn looks_like_file_path(token: &str) -> bool {
-    // Must contain a dot (extension) or slash (path separator)
-    (token.contains('.') || token.contains('/'))
-        // Must not start with '-' (flag)
-        && !token.starts_with('-')
-        // Must not be a URL
-        && !token.starts_with("http")
+    let has_file_shape = token.contains('.') || token.contains('/');
+    let is_flag = token.starts_with('-');
+    let is_url = token.starts_with("http");
+    has_file_shape && !is_flag && !is_url
 }
 
 #[cfg(test)]

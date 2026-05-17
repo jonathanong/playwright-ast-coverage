@@ -2,7 +2,10 @@ pub(crate) mod playwright;
 
 use super::extract::{is_indexable, is_tsx_file, ExtractedImport, ImportExtractor, ImportKind};
 use crate::codebase::ts_resolver::{ImportResolver, TsConfig};
-use crate::codebase::ts_source::facts::{collect_ts_facts, TsFactMap, TsFactPlan};
+use crate::codebase::ts_source::facts::TsFactMap;
+#[cfg(test)]
+use crate::codebase::ts_source::facts::{collect_ts_facts, TsFactPlan};
+use crate::codebase::ts_symbols::ExportKind;
 use anyhow::Result;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use rayon::prelude::*;
@@ -150,22 +153,6 @@ impl GraphBuildPlan {
             process: allowed.contains(&EdgeKind::ProcessSpawn),
         }
     }
-
-    pub fn import_only(&self) -> bool {
-        *self
-            == (Self {
-                imports: true,
-                workspace: false,
-                tests: false,
-                markdown: false,
-                ci: false,
-                routes: false,
-                queues: false,
-                playwright_routes: false,
-                http: false,
-                process: false,
-            })
-    }
 }
 
 #[derive(Clone)]
@@ -234,6 +221,7 @@ fn merge_edges(forward: &mut EdgeMap, reverse: &mut EdgeMap, edges: Vec<Edge>) {
 
 /// Directed dependency graph: node → nodes it depends on, and the reverse.
 pub struct DepGraph {
+    #[cfg(test)]
     root: PathBuf,
     /// forward: node → nodes it imports/references (with edge kinds)
     forward: EdgeMap,
@@ -242,23 +230,12 @@ pub struct DepGraph {
 }
 
 impl DepGraph {
-    /// Build a full dependency graph by walking `root` and parsing every
-    /// indexable TS/JS file. Imports are resolved via `tsconfig`.
-    pub fn build(root: &Path, tsconfig: &TsConfig) -> Result<Self> {
-        Self::build_with_plan(root, tsconfig, GraphBuildPlan::all())
-    }
-
-    pub fn build_with_plan(root: &Path, tsconfig: &TsConfig, plan: GraphBuildPlan) -> Result<Self> {
-        let graph_files = GraphFiles::discover(root);
-        Self::build_with_plan_and_files(root, tsconfig, plan, &graph_files)
-    }
-
     pub(crate) fn build_with_plan_and_files(
         root: &Path,
         tsconfig: &TsConfig,
         plan: GraphBuildPlan,
         graph_files: &GraphFiles,
-    ) -> Result<Self> {
+    ) -> Self {
         Self::build_with_plan_files_and_facts(root, tsconfig, plan, graph_files, None)
     }
 
@@ -268,9 +245,9 @@ impl DepGraph {
         plan: GraphBuildPlan,
         graph_files: &GraphFiles,
         facts: Option<&TsFactMap>,
-    ) -> Result<Self> {
-        let ts_ex = ImportExtractor::for_typescript()?;
-        let tsx_ex = ImportExtractor::for_tsx()?;
+    ) -> Self {
+        let ts_ex = ImportExtractor::for_typescript().expect("typescript import extractor builds");
+        let tsx_ex = ImportExtractor::for_tsx().expect("tsx import extractor builds");
         let resolver = ImportResolver::new(tsconfig).with_visible(graph_files.visible());
 
         let mut forward: EdgeMap = HashMap::new();
@@ -365,11 +342,12 @@ impl DepGraph {
             adj.sort_by_key(|(n, k)| (node_sort_key(n), *k as u8));
         }
 
-        Ok(Self {
+        Self {
+            #[cfg(test)]
             root: root.to_path_buf(),
             forward,
             reverse,
-        })
+        }
     }
 
     /// Construct a graph directly from pre-built maps (for testing).
@@ -456,9 +434,7 @@ impl DepGraph {
                     direct_importers.insert(NodeId::File(importer.clone()));
                     if *is_reexport {
                         let pair = (importer.clone(), local_name.clone());
-                        if visited_pairs.insert(pair) {
-                            queue.push_back((importer.clone(), local_name.clone()));
-                        }
+                        push_unvisited_symbol_pair(&mut visited_pairs, &mut queue, pair);
                     }
                 }
             }
@@ -477,25 +453,36 @@ impl DepGraph {
         bfs(&roots, &self.reverse, max_depth, allowed)
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn root(&self) -> &Path {
         &self.root
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn all_files(&self) -> impl Iterator<Item = &NodeId> {
         self.forward.keys()
     }
 }
 
+fn push_unvisited_symbol_pair(
+    visited_pairs: &mut HashSet<(PathBuf, String)>,
+    queue: &mut VecDeque<(PathBuf, String)>,
+    pair: (PathBuf, String),
+) {
+    if visited_pairs.insert(pair.clone()) {
+        queue.push_back(pair);
+    }
+}
+
 /// Demand-driven import traversal used by `dependencies --relationship import`.
 /// It parses only roots and files reached through static import edges.
+#[cfg(test)]
 pub fn lazy_import_deps_of(
     roots: &[NodeId],
     root: &Path,
     tsconfig: &TsConfig,
     max_depth: Option<usize>,
-) -> Result<Vec<NodeEntry>> {
+) -> Vec<NodeEntry> {
     let graph_files = GraphFiles::discover(root);
     lazy_import_deps_of_with_files(roots, root, tsconfig, max_depth, &graph_files)
 }
@@ -506,9 +493,9 @@ pub(crate) fn lazy_import_deps_of_with_files(
     tsconfig: &TsConfig,
     max_depth: Option<usize>,
     graph_files: &GraphFiles,
-) -> Result<Vec<NodeEntry>> {
-    let ts_ex = ImportExtractor::for_typescript()?;
-    let tsx_ex = ImportExtractor::for_tsx()?;
+) -> Vec<NodeEntry> {
+    let ts_ex = ImportExtractor::for_typescript().expect("typescript import extractor builds");
+    let tsx_ex = ImportExtractor::for_tsx().expect("tsx import extractor builds");
     let resolver = ImportResolver::new(tsconfig).with_visible(&graph_files.visible);
 
     let mut visited: HashSet<NodeId> = HashSet::new();
@@ -559,10 +546,9 @@ pub(crate) fn lazy_import_deps_of_with_files(
                     });
                     result_idx.insert(neighbor.clone(), idx);
                     next_frontier.push(neighbor);
-                } else if let Some(&idx) = result_idx.get(&neighbor) {
-                    if !result[idx].via.contains(&kind) {
-                        result[idx].via.push(kind);
-                        result[idx].via.sort_by_key(|k| *k as u8);
+                } else {
+                    if let Some(&idx) = result_idx.get(&neighbor) {
+                        add_via_kind(&mut result[idx], kind);
                     }
                 }
             }
@@ -571,7 +557,7 @@ pub(crate) fn lazy_import_deps_of_with_files(
         depth = next_depth;
     }
 
-    Ok(result)
+    result
 }
 
 fn import_neighbors(
@@ -591,17 +577,45 @@ fn import_neighbors(
         .unwrap_or_default()
         .into_iter()
         .filter_map(|imp| {
-            resolver.resolve(&imp.specifier, path).and_then(|target| {
-                if !graph_files.is_visible(&target) {
-                    return None;
-                }
-                let kind = edge_kind_for_import(&imp);
-                Some((NodeId::File(target), kind))
-            })
+            resolver
+                .resolve(&imp.specifier, path)
+                .filter(|target| graph_files.is_visible(target))
+                .map(|target| (NodeId::File(target), edge_kind_for_import(&imp)))
         })
         .collect();
     neighbors.sort_by_key(|(node, kind)| (node_sort_key(node), *kind as u8));
     neighbors
+}
+
+fn push_route_ref_edge(edges: &mut Vec<Edge>, source: &Path, target: &Path) {
+    edges.push((
+        NodeId::File(source.to_path_buf()),
+        NodeId::File(target.to_path_buf()),
+        EdgeKind::RouteRef,
+    ));
+}
+
+fn add_distinct_worker_file_edges(
+    forward: &mut EdgeMap,
+    reverse: &mut EdgeMap,
+    worker_file: &PathBuf,
+    processor_file: &PathBuf,
+    queue_job: &NodeId,
+) {
+    if worker_file != processor_file {
+        add_edge(
+            forward,
+            queue_job.clone(),
+            NodeId::File(worker_file.clone()),
+            EdgeKind::QueueWorker,
+        );
+        add_edge(
+            reverse,
+            NodeId::File(worker_file.clone()),
+            queue_job.clone(),
+            EdgeKind::QueueWorker,
+        );
+    }
 }
 
 fn bfs(
@@ -646,17 +660,20 @@ fn bfs(
                     result_idx.insert(neighbor.clone(), idx);
                     queue.push_back((neighbor.clone(), next_depth));
                 } else if let Some(&idx) = result_idx.get(neighbor) {
-                    // Already found — record additional edge kind if new.
-                    if !result[idx].via.contains(kind) {
-                        result[idx].via.push(*kind);
-                        result[idx].via.sort_by_key(|k| *k as u8);
-                    }
+                    add_via_kind(&mut result[idx], *kind);
                 }
             }
         }
     }
 
     result
+}
+
+fn add_via_kind(entry: &mut NodeEntry, kind: EdgeKind) {
+    if !entry.via.contains(&kind) {
+        entry.via.push(kind);
+        entry.via.sort_by_key(|k| *k as u8);
+    }
 }
 
 // ── Sort key for deterministic adjacency ordering ─────────────────────────────
@@ -679,11 +696,11 @@ fn collect_parsed_imports(
 ) -> ParsedImports {
     files
         .par_iter()
-        .filter_map(|path| {
-            let source = std::fs::read_to_string(path).ok()?;
+        .map(|path| {
+            let source = std::fs::read_to_string(path).unwrap_or_default();
             let extractor = if is_tsx_file(path) { tsx_ex } else { ts_ex };
             let imports = extractor.extract(&source).unwrap_or_default();
-            Some((path.clone(), imports))
+            (path.clone(), imports)
         })
         .collect()
 }
@@ -779,29 +796,36 @@ fn collect_workspace_manifest_edges(
 
     all_files
         .par_iter()
-        .filter(|path| path.file_name().and_then(|name| name.to_str()) == Some("package.json"))
         .flat_map_iter(|path| {
+            let mut edges = Vec::new();
+            if path.file_name().and_then(|name| name.to_str()) != Some("package.json") {
+                return edges;
+            }
             let Ok(source) = std::fs::read_to_string(path) else {
-                return vec![];
+                return edges;
             };
             let Ok(package_json) = serde_json::from_str::<serde_json::Value>(&source) else {
-                return vec![];
+                return edges;
             };
-            package_dependency_names(&package_json)
-                .into_iter()
-                .filter_map(|name| {
-                    workspace.resolve_package(&name).and_then(|entry| {
-                        if !graph_files.is_visible(entry) {
-                            return None;
-                        }
-                        Some((
-                            NodeId::File(path.clone()),
-                            NodeId::File(entry.clone()),
-                            EdgeKind::WorkspaceImport,
-                        ))
-                    })
-                })
-                .collect::<Vec<_>>()
+            for name in package_dependency_names(&package_json) {
+                let entry = workspace
+                    .packages
+                    .iter()
+                    .find(|package| package.name == name)
+                    .and_then(|package| package.entry.as_ref());
+                let Some(entry) = entry else {
+                    continue;
+                };
+                if !graph_files.is_visible(entry) {
+                    continue;
+                }
+                edges.push((
+                    NodeId::File(path.clone()),
+                    NodeId::File(entry.clone()),
+                    EdgeKind::WorkspaceImport,
+                ));
+            }
+            edges
         })
         .collect()
 }
@@ -868,10 +892,7 @@ fn collect_test_edges(files: &[PathBuf]) -> Vec<Edge> {
                 Some(s) => s.to_string(),
                 None => return edges,
             };
-            let dir = match path.parent() {
-                Some(d) => d,
-                None => return edges,
-            };
+            let dir = path.parent().unwrap_or(Path::new(""));
 
             let source_stem = test_variants.iter().find_map(|&v| {
                 let suffix = format!(".{v}");
@@ -923,10 +944,7 @@ fn collect_md_edges(all_files: &[PathBuf], graph_files: &GraphFiles) -> Vec<Edge
                 Ok(s) => s,
                 Err(_) => return vec![],
             };
-            let dir = match path.parent() {
-                Some(d) => d.to_path_buf(),
-                None => return vec![],
-            };
+            let dir = path.parent().unwrap_or(Path::new("")).to_path_buf();
             crate::codebase::md_links::extract_links(&source)
                 .into_iter()
                 .filter_map(|link| {
@@ -970,23 +988,16 @@ fn add_ci_edges(root: &Path, all_files: &[PathBuf], forward: &mut EdgeMap, rever
 
     // Walk .github/workflows/*.yml
     let workflows_dir = root.join(".github").join("workflows");
-    if !workflows_dir.is_dir() {
-        return;
-    }
-
     for path in all_files
         .iter()
-        .filter(|path| path.starts_with(&workflows_dir))
+        .filter(|path| workflows_dir.is_dir() && path.starts_with(&workflows_dir))
     {
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
         if ext != "yml" && ext != "yaml" {
             continue;
         }
 
-        let source = match std::fs::read_to_string(path) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
+        let source = std::fs::read_to_string(path).unwrap_or_default();
 
         let invocations = match crate::codebase::ci_workflows::extract_invocations(&source) {
             Ok(inv) => inv,
@@ -1080,13 +1091,14 @@ fn collect_cargo_bins(root: &Path, all_files: &[PathBuf]) -> CargoBinIndex {
     let member_set = cargo_member_globset(&members);
     let exclude_set = cargo_member_globset(&excludes);
 
-    for manifest in all_files.iter().filter(|path| {
-        path.file_name().and_then(|name| name.to_str()) == Some("Cargo.toml")
-            && path != &&root_manifest
-    }) {
-        let Some(parent) = manifest.parent() else {
-            continue;
-        };
+    for (manifest, parent) in all_files
+        .iter()
+        .filter(|path| {
+            path.file_name().and_then(|name| name.to_str()) == Some("Cargo.toml")
+                && path != &&root_manifest
+        })
+        .filter_map(|manifest| manifest.parent().map(|parent| (manifest, parent)))
+    {
         let Ok(rel_dir) = parent.strip_prefix(root) else {
             continue;
         };
@@ -1119,7 +1131,7 @@ fn cargo_member_globset(members: &[String]) -> Option<globset::GlobSet> {
         let glob = globset::GlobBuilder::new(member)
             .literal_separator(true)
             .build()
-            .ok()?;
+            .expect("cargo workspace member globs are valid");
         builder.add(glob);
     }
     builder.build().ok()
@@ -1181,27 +1193,30 @@ fn collect_route_edges(root: &Path, tsconfig: &TsConfig, all_files: &[PathBuf]) 
     }
 
     let mut all_defs: Vec<(PathBuf, String)> = Vec::new();
-    if !opts.backend_pattern.is_empty() && !opts.backend_register_object.is_empty() {
-        let glob = match GlobBuilder::new(&opts.backend_pattern)
-            .literal_separator(false)
-            .build()
-        {
-            Ok(g) => g,
-            Err(_) => return vec![],
+    let backend_defs =
+        if !opts.backend_pattern.is_empty() && !opts.backend_register_object.is_empty() {
+            let glob = match GlobBuilder::new(&opts.backend_pattern)
+                .literal_separator(false)
+                .build()
+            {
+                Ok(g) => g,
+                Err(_) => return vec![],
+            };
+            let mut gb = GlobSetBuilder::new();
+            gb.add(glob);
+            let gs = gb
+                .build()
+                .expect("globset with one validated backend route glob should build");
+            defs_backend::collect_backend_routes_from_files(
+                root,
+                all_files,
+                &opts.backend_register_object,
+                &gs,
+            )
+        } else {
+            Vec::new()
         };
-        let mut gb = GlobSetBuilder::new();
-        gb.add(glob);
-        let gs = match gb.build() {
-            Ok(g) => g,
-            Err(_) => return vec![],
-        };
-        all_defs.extend(defs_backend::collect_backend_routes_from_files(
-            root,
-            all_files,
-            &opts.backend_register_object,
-            &gs,
-        ));
-    }
+    all_defs.extend(backend_defs);
     if !opts.frontend_root.is_empty() {
         let frontend_abs = root.join(&opts.frontend_root);
         all_defs.extend(defs_frontend::collect_frontend_routes_from_files(
@@ -1243,15 +1258,12 @@ fn collect_route_edges(root: &Path, tsconfig: &TsConfig, all_files: &[PathBuf]) 
         opts.scan_patterns.clone()
     };
     let mut scan_gb = GlobSetBuilder::new();
-    for g in &scan_globs {
-        if let Ok(glob) = Glob::new(g) {
-            scan_gb.add(glob);
-        }
+    for glob in scan_globs.iter().filter_map(|g| Glob::new(g).ok()) {
+        scan_gb.add(glob);
     }
-    let scan_gs = match scan_gb.build() {
-        Ok(g) => g,
-        Err(_) => return vec![],
-    };
+    let scan_gs = scan_gb
+        .build()
+        .expect("globset with individually validated scan globs should build");
 
     let scan_files: Vec<PathBuf> = all_files
         .iter()
@@ -1268,37 +1280,29 @@ fn collect_route_edges(root: &Path, tsconfig: &TsConfig, all_files: &[PathBuf]) 
     scan_files
         .into_par_iter()
         .flat_map_iter(|path| {
-            let rel = match path.strip_prefix(root) {
-                Ok(r) => r.to_path_buf(),
-                Err(_) => return vec![],
-            };
-            let source = match std::fs::read_to_string(&path) {
-                Ok(s) => s,
-                Err(_) => return vec![],
-            };
+            let rel = path
+                .strip_prefix(root)
+                .expect("route scan files are rooted under the graph root")
+                .to_path_buf();
+            let source = std::fs::read_to_string(&path).unwrap_or_default();
             let rel_str = rel.to_string_lossy().into_owned();
             let route_refs = refs::extract_route_refs(&source, &rel_str);
             let mut edges = Vec::new();
             for route_ref in route_refs {
                 let is_backend = backend_prefixes
                     .iter()
-                    .any(|p| route_ref.pattern.starts_with(p.as_str()))
-                    || backend_exact.iter().any(|p| p == &route_ref.pattern);
+                    .any(|p| route_ref.pattern.starts_with(p.as_str()));
+                let is_backend = is_backend || backend_exact.contains(&route_ref.pattern);
                 if !is_backend && opts.frontend_root.is_empty() {
                     continue;
                 }
                 for pattern in &all_patterns {
                     if matcher::matches(&route_ref.pattern, pattern) {
-                        if let Some(def_files) = pattern_to_files.get(pattern) {
-                            for def_file in def_files {
-                                if def_file != &path {
-                                    edges.push((
-                                        NodeId::File(path.clone()),
-                                        NodeId::File(def_file.clone()),
-                                        EdgeKind::RouteRef,
-                                    ));
-                                }
-                            }
+                        for def_file in pattern_to_files[pattern]
+                            .iter()
+                            .filter(|def_file| *def_file != &path)
+                        {
+                            push_route_ref_edge(&mut edges, &path, def_file);
                         }
                     }
                 }
@@ -1348,10 +1352,9 @@ fn add_queue_edges(
     };
     let mut gb = globset::GlobSetBuilder::new();
     gb.add(glob);
-    let gs = match gb.build() {
-        Ok(g) => g,
-        Err(_) => return,
-    };
+    let gs = gb
+        .build()
+        .expect("globset with one validated queue pattern should build");
 
     // Phase 1: Find queue-def files and their queue names.
     // queue_name → def_file  (only queues with string-literal names)
@@ -1360,17 +1363,13 @@ fn add_queue_edges(
     let mut def_to_queue_name: HashMap<PathBuf, String> = HashMap::new();
 
     for path in files {
-        let rel = match path.strip_prefix(root) {
-            Ok(r) => r,
-            Err(_) => continue,
-        };
+        let rel = path
+            .strip_prefix(root)
+            .expect("queue files are rooted under the graph root");
         if !gs.is_match(rel) {
             continue;
         }
-        let source = match std::fs::read_to_string(path) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
+        let source = std::fs::read_to_string(path).unwrap_or_default();
         if find_create_queue_line(&source, &opts.factory_specifier, &opts.factory_function)
             .is_none()
         {
@@ -1401,10 +1400,7 @@ fn add_queue_edges(
     let queue_def_paths: HashSet<PathBuf> = def_to_queue_name.keys().cloned().collect();
 
     for path in files {
-        let source = match std::fs::read_to_string(path) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
+        let source = std::fs::read_to_string(path).unwrap_or_default();
 
         let usage = extract_queue_usage(&source);
 
@@ -1430,30 +1426,23 @@ fn add_queue_edges(
 
         // Worker registrations.
         for worker in &usage.worker_declarations {
-            let queue_def = match &worker.queue_name {
-                Some(n) => queue_name_to_def.get(n).cloned(),
-                None => None,
-            };
-            let queue_def = match queue_def {
-                Some(d) => d,
-                None => continue,
-            };
-
-            let processors_file = match &worker.processors_specifier {
-                Some(spec) => resolver.resolve(spec, path),
-                None => None,
-            };
-            let processors_file = match processors_file {
-                Some(p) => p,
-                None => continue,
+            let queue_def = worker
+                .queue_name
+                .as_ref()
+                .and_then(|name| queue_name_to_def.get(name))
+                .cloned();
+            let processors_file = worker
+                .processors_specifier
+                .as_ref()
+                .and_then(|spec| resolver.resolve(spec, path));
+            let (Some(queue_def), Some(processors_file)) = (queue_def, processors_file) else {
+                continue;
             };
 
             let job_names = if let Some(job_names) = processor_job_names.get(&processors_file) {
                 job_names.clone()
             } else {
-                let Some(job_names) = extract_processor_job_names(&processors_file) else {
-                    continue;
-                };
+                let job_names = extract_processor_job_names(&processors_file).unwrap_or_default();
                 processor_job_names.insert(processors_file.clone(), job_names.clone());
                 job_names
             };
@@ -1478,9 +1467,8 @@ fn add_queue_edges(
     for (worker_file, queue_def, processor_file, job_names) in &worker_sites {
         for job in job_names {
             let key = (queue_def.clone(), job.clone());
-            let enqueue_files = match enqueue_index.get(&key) {
-                Some(files) => files,
-                None => continue,
+            let Some(enqueue_files) = enqueue_index.get(&key) else {
+                continue;
             };
 
             let queue_job = NodeId::QueueJob {
@@ -1515,21 +1503,13 @@ fn add_queue_edges(
                 NodeId::File(processor_file.clone()),
                 EdgeKind::QueueWorker,
             );
-            // Also emit QueueJob → worker_file (the file with `new Worker(...)`) as QueueWorker.
-            if worker_file != processor_file {
-                add_edge(
-                    forward,
-                    queue_job.clone(),
-                    NodeId::File(worker_file.clone()),
-                    EdgeKind::QueueWorker,
-                );
-                add_edge(
-                    reverse,
-                    NodeId::File(worker_file.clone()),
-                    queue_job.clone(),
-                    EdgeKind::QueueWorker,
-                );
-            }
+            add_distinct_worker_file_edges(
+                forward,
+                reverse,
+                worker_file,
+                processor_file,
+                &queue_job,
+            );
             add_edge(
                 reverse,
                 NodeId::File(processor_file.clone()),
@@ -1541,27 +1521,29 @@ fn add_queue_edges(
 }
 
 fn extract_processor_job_names(processors_file: &Path) -> Option<Vec<String>> {
-    use crate::codebase::ts_symbols::{extract_symbols, ExportKind};
+    use crate::codebase::ts_symbols::extract_symbols;
 
-    let proc_source = std::fs::read_to_string(processors_file).ok()?;
+    let proc_source = std::fs::read_to_string(processors_file).unwrap_or_default();
     let is_tsx = processors_file
         .extension()
         .and_then(|e| e.to_str())
         .map(|e| e == "tsx" || e == "jsx")
         .unwrap_or(false);
-    let symbols = extract_symbols(&proc_source, is_tsx).ok()?;
+    let symbols = extract_symbols(&proc_source, is_tsx);
     Some(
         symbols
             .exports
             .into_iter()
-            .filter_map(|e| {
-                matches!(
-                    e.kind,
-                    ExportKind::Function | ExportKind::Const | ExportKind::Let | ExportKind::Var
-                )
-                .then_some(e.name)
-            })
+            .filter(|e| is_processor_export_kind(&e.kind))
+            .map(|e| e.name)
             .collect(),
+    )
+}
+
+fn is_processor_export_kind(kind: &ExportKind) -> bool {
+    matches!(
+        kind,
+        ExportKind::Function | ExportKind::Const | ExportKind::Let | ExportKind::Var
     )
 }
 
@@ -1668,10 +1650,9 @@ fn collect_http_call_edges(
     };
     let mut gb = GlobSetBuilder::new();
     gb.add(glob);
-    let gs = match gb.build() {
-        Ok(g) => g,
-        Err(_) => return vec![],
-    };
+    let gs = gb
+        .build()
+        .expect("globset with one validated HTTP route glob should build");
 
     // Collect backend route definitions: (file, pattern)
     let route_defs =
@@ -1882,12 +1863,14 @@ impl SymbolIndex {
     ///
     /// This is the companion index required by `DepGraph::dependents_of_symbol`
     /// for `file#exportName` queries.
-    pub fn build_from_root(root: &Path, tsconfig: &TsConfig) -> Result<Self> {
+    #[cfg(test)]
+    pub fn build_from_root(root: &Path, tsconfig: &TsConfig) -> Self {
         let graph_files = GraphFiles::discover(root);
         Self::build_from_files(tsconfig, &graph_files)
     }
 
-    pub(crate) fn build_from_files(tsconfig: &TsConfig, graph_files: &GraphFiles) -> Result<Self> {
+    #[cfg(test)]
+    pub(crate) fn build_from_files(tsconfig: &TsConfig, graph_files: &GraphFiles) -> Self {
         let facts = collect_ts_facts(graph_files.indexable(), TsFactPlan::imports_and_symbols());
         Self::build_from_facts(tsconfig, graph_files, &facts)
     }
@@ -1896,7 +1879,7 @@ impl SymbolIndex {
         tsconfig: &TsConfig,
         graph_files: &GraphFiles,
         facts: &TsFactMap,
-    ) -> Result<Self> {
+    ) -> Self {
         type SymEntry = (PathBuf, String, String, bool);
 
         let resolver = ImportResolver::new(tsconfig).with_visible(graph_files.visible());
@@ -1943,7 +1926,7 @@ impl SymbolIndex {
 
         let symbols_by_file: HashMap<PathBuf, Vec<SymEntry>> = per_file.into_iter().collect();
 
-        Ok(Self::build(&symbols_by_file))
+        Self::build(&symbols_by_file)
     }
 
     pub fn importers_of(&self, source: &Path, symbol: &str) -> Option<&Vec<ImporterRecord>> {

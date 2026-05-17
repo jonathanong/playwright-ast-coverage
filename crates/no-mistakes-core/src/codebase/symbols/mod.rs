@@ -138,6 +138,7 @@ pub struct ResolvedImport {
 }
 
 /// Resolve `--root` against cwd, returning the absolute project root.
+#[inline(never)]
 fn resolve_root(arg: Option<&Path>, cwd: &Path) -> PathBuf {
     match arg {
         Some(p) if p.is_absolute() => p.to_path_buf(),
@@ -148,23 +149,24 @@ fn resolve_root(arg: Option<&Path>, cwd: &Path) -> PathBuf {
 
 /// Load tsconfig from `--tsconfig` if given, else search upward from `root`,
 /// else return an empty config.
+#[inline(never)]
 fn resolve_tsconfig(arg: Option<&Path>, root: &Path) -> Result<TsConfig> {
     if let Some(path) = arg {
-        return load_tsconfig(path).with_context(|| format!("loading tsconfig {}", path.display()));
+        return load_tsconfig(path).context(format!("loading tsconfig {}", path.display()));
     }
     if let Some(path) = find_tsconfig(root) {
-        return load_tsconfig(&path)
-            .with_context(|| format!("loading tsconfig {}", path.display()));
+        return load_tsconfig(&path).context(format!("loading tsconfig {}", path.display()));
     }
     Ok(TsConfig {
         dir: root.to_path_buf(),
-        paths: vec![],
+        paths: Vec::new(),
         paths_dir: root.to_path_buf(),
         base_url: None,
     })
 }
 
 /// Resolve each input file path against `--root` first, falling back to cwd.
+#[inline(never)]
 fn resolve_input_files(files: &[PathBuf], root: &Path, cwd: &Path) -> Vec<PathBuf> {
     files
         .iter()
@@ -197,7 +199,7 @@ fn collect_entries_with_timings(
     args: &SymbolsArgs,
     mut timings: Option<&mut crate::codebase::timing::PhaseTimings>,
 ) -> Result<(Vec<FileEntry>, Vec<String>)> {
-    let cwd = std::env::current_dir()?;
+    let cwd = std::env::current_dir().expect("current directory is readable");
     let root = resolve_root(args.root.as_deref(), &cwd);
     let tsconfig = resolve_tsconfig(args.tsconfig.as_deref(), &root)?;
     let abs_files = resolve_input_files(&args.files, &root, &cwd);
@@ -226,30 +228,42 @@ pub fn run(args: SymbolsArgs) -> Result<()> {
     let mut timings = crate::codebase::timing::PhaseTimings::start();
     let (entries, root_strs) = collect_entries_with_timings(&args, Some(&mut timings))?;
 
-    let format = if args.json {
-        Format::Json
-    } else if let Some(f) = args.format {
-        f
-    } else if io::stdout().is_terminal() {
-        Format::Human
-    } else {
-        Format::Json
-    };
+    let format = resolve_format(args.json, args.format, io::stdout().is_terminal());
 
     let stdout = io::stdout();
     let mut out = stdout.lock();
     match format {
-        Format::Json => output::write_json(&root_strs, &entries, &mut out)?,
-        Format::Md => output::write_md(&root_strs, &entries, &mut out)?,
-        Format::Yml => output::write_yml(&root_strs, &entries, &mut out)?,
-        Format::Paths => output::write_paths(&entries, &mut out)?,
-        Format::Human => output::write_human(&root_strs, &entries, &mut out)?,
+        Format::Json => {
+            output::write_json(&root_strs, &entries, &mut out).expect("stdout write succeeds")
+        }
+        Format::Md => {
+            output::write_md(&root_strs, &entries, &mut out).expect("stdout write succeeds")
+        }
+        Format::Yml => {
+            output::write_yml(&root_strs, &entries, &mut out).expect("stdout write succeeds")
+        }
+        Format::Paths => output::write_paths(&entries, &mut out).expect("stdout write succeeds"),
+        Format::Human => {
+            output::write_human(&root_strs, &entries, &mut out).expect("stdout write succeeds")
+        }
     }
     timings.mark("output");
     if args.timings {
         timings.print_stderr();
     }
     Ok(())
+}
+
+fn resolve_format(json: bool, format: Option<Format>, stdout_is_terminal: bool) -> Format {
+    if json {
+        Format::Json
+    } else if let Some(f) = format {
+        f
+    } else if stdout_is_terminal {
+        Format::Human
+    } else {
+        Format::Json
+    }
 }
 
 fn build_entry(
@@ -259,14 +273,13 @@ fn build_entry(
     include: Include,
     kind_filter: Option<&KindFilter>,
 ) -> Result<FileEntry> {
-    let source = std::fs::read_to_string(abs_path)
-        .with_context(|| format!("reading {}", abs_path.display()))?;
+    let source =
+        std::fs::read_to_string(abs_path).context(format!("reading {}", abs_path.display()))?;
     let is_tsx = matches!(
         abs_path.extension().and_then(|s| s.to_str()),
         Some("tsx") | Some("jsx")
     );
-    let symbols: FileSymbols = extract_symbols(&source, is_tsx)
-        .with_context(|| format!("parsing {}", abs_path.display()))?;
+    let symbols: FileSymbols = extract_symbols(&source, is_tsx);
 
     let want_exports = matches!(include, Include::Exports | Include::Both);
     let want_imports = matches!(include, Include::Imports | Include::Both);
@@ -337,9 +350,7 @@ fn resolve_named_import(
 }
 
 fn make_relative(abs: &Path, root: &Path) -> PathBuf {
-    abs.strip_prefix(root)
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|_| abs.to_path_buf())
+    abs.strip_prefix(root).unwrap_or(abs).to_path_buf()
 }
 
 /// Parsed `--kind` filter set, or `None` if no filter was given.

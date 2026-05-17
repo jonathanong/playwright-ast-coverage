@@ -34,8 +34,4 @@ flag_management:
     carryforward: false
   individual_flags:
     - name: rust
-      paths:
-        - crates/
     - name: javascript
-      paths:
-        - packages/

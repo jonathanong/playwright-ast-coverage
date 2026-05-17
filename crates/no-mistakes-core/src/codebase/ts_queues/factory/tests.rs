@@ -308,3 +308,45 @@ fn bfs_reachable_handles_unreadable_start_file() {
     assert_eq!(result.len(), 1);
     assert!(result.iter().any(|path| path.ends_with("not-created.ts")));
 }
+
+#[test]
+fn factory_helpers_cover_string_imports_missing_inits_and_wrong_callees() {
+    let source = r#"
+import { "create-queue" as cq, createQueue } from "@factory/pkg";
+let uninitialized;
+const notString = 1;
+const { NAME } = values;
+export const alsoMissing;
+export const notAQueue = other();
+export const exported = cq("string-import");
+wrap(member.createQueue("ignored-member"));
+wrap(createQueue("nested"));
+"#;
+    let line = find_create_queue_line(source, "@factory/pkg", "create-queue");
+    assert_eq!(line, Some(8));
+
+    let name = find_queue_name(source, "@factory/pkg", "create-queue");
+    assert_eq!(name, Some("string-import".to_string()));
+
+    let nested_line = find_create_queue_line(source, "@factory/pkg", "createQueue");
+    assert_eq!(nested_line, Some(10));
+    let nested_name = find_queue_name(source, "@factory/pkg", "createQueue");
+    assert_eq!(nested_name, None);
+}
+
+#[test]
+fn find_queue_name_covers_exported_const_identifier_and_wrong_factory() {
+    let source = r#"
+import { createQueue } from "@factory/pkg";
+export const QUEUE_NAME = "exported-name";
+export const queue = createQueue(QUEUE_NAME);
+"#;
+    assert_eq!(
+        find_queue_name(source, "@factory/pkg", "createQueue"),
+        Some("exported-name".to_string())
+    );
+    assert_eq!(
+        find_queue_name(source, "@factory/pkg", "otherFactory"),
+        None
+    );
+}

@@ -173,9 +173,10 @@ pub fn has_disable_comment(source: &str, stmt_line: u32, rule_id: &str) -> bool 
             if !trimmed.starts_with("//") {
                 return false;
             }
-            let Some(rest) = trimmed.strip_prefix("//").map(|s| s.trim()) else {
-                return false;
-            };
+            let rest = trimmed
+                .strip_prefix("//")
+                .expect("line starts with //")
+                .trim();
             let Some(after_directive) = rest.strip_prefix("guardrails-disable-next-line ") else {
                 return false;
             };

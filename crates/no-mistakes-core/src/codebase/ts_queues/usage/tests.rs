@@ -154,6 +154,7 @@ fn fixture_walks_nested_queue_usage_shapes() {
         "nested-arg",
         "casted",
         "nonnull",
+        "awaited",
     ] {
         assert!(jobs.contains(&expected), "missing enqueue job {expected}");
     }
@@ -181,4 +182,33 @@ export const foo = () => 42;
     let usage = extract_queue_usage(src);
     assert!(usage.enqueue_calls.is_empty());
     assert!(usage.worker_declarations.is_empty());
+}
+
+#[test]
+fn ignores_malformed_bulk_workers_and_member_call_shapes() {
+    let src = r#"
+import { q } from './queues.mts';
+q.addBulk([{ data: {} }, notObject, { name: dynamicName }]);
+q.addBulk([{ ...record }]);
+q.addBulk(dynamicJobs);
+nested.q.add('ignored', {});
+new ns.Worker('emails', handler);
+new Worker(...workerArgs);
+try {
+  q.add('try-job', {});
+} catch {
+  q.add('catch-job', {});
+}
+"#;
+    let usage = extract_queue_usage(src);
+    let jobs: Vec<_> = usage
+        .enqueue_calls
+        .iter()
+        .filter_map(|call| call.job.as_deref())
+        .collect();
+    assert!(jobs.contains(&"try-job"));
+    assert!(jobs.contains(&"catch-job"));
+    assert!(!jobs.contains(&"ignored"));
+    assert_eq!(usage.worker_declarations.len(), 1);
+    assert_eq!(usage.worker_declarations[0].queue_name, None);
 }

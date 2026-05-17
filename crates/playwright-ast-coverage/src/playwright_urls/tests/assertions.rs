@@ -85,6 +85,7 @@ fn marks_urls_inside_skipped_and_conditional_tests() {
         });
         test('annotation', async ({ page, browserName }) => {
             test.skip(browserName === 'webkit', 'conditional');
+            test.fixme(browserName === 'firefox', 'also conditional');
             await page.goto('/conditional-annotation');
         });
         test.describe('scope annotation', () => {

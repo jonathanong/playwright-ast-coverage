@@ -1,0 +1,9 @@
+rules:
+  route-consistency:
+    backendPattern: ""
+    backendRegisterObject: ""
+    frontendRoot: ""
+
+  queue-dashboard-reachability:
+    queuePattern: ""
+    factorySpecifier: ""

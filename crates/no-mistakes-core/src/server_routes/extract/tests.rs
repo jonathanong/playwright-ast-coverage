@@ -33,15 +33,20 @@ fn extract_file_covers_import_binding_route_and_mount_shapes() {
         ("get", "/"),
         ("get", "/array"),
         ("get", "/template-array"),
+        ("get", "/spread-array"),
         ("get", "/named"),
         ("get", "/root"),
         ("get", "/on"),
         ("delete", "/on"),
+        ("get", "/koa-no-prefix"),
+        ("get", "/hono-no-prefix"),
+        ("get", "/hono-plain"),
         ("get", "/matched"),
         ("get", "/child"),
         ("post", "/post"),
         ("put", "/put"),
         ("get", "/api-server"),
+        ("get", "/heuristic"),
     ] {
         assert!(
             route_pairs.contains(&expected),
@@ -56,4 +61,11 @@ fn extract_file_covers_import_binding_route_and_mount_shapes() {
     assert!(facts.mounts.iter().any(|mount| {
         mount.parent == "api" && mount.child == "stringRouter" && mount.prefix == "/api-route"
     }));
+}
+
+#[test]
+fn default_export_non_identifier_is_ignored() {
+    let facts = extract_file(&fixture("default-function.ts")).unwrap();
+
+    assert_eq!(facts.exports["default"], "default");
 }

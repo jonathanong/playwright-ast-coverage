@@ -41,6 +41,24 @@ fn fixture_args(files: Vec<&str>, format: Format) -> SymbolsArgs {
 }
 
 #[test]
+fn collect_entries_surfaces_tsconfig_errors() {
+    let root = fixture_root();
+    let mut invalid_tsconfig = args_for(&root, vec!["src/utils.mts"], Format::Json);
+    invalid_tsconfig.tsconfig = Some(root.join("tsconfig-invalid.json"));
+    let err = collect_entries(&invalid_tsconfig).unwrap_err();
+    assert!(format!("{err:#}").contains("tsconfig-invalid.json"));
+}
+
+#[test]
+fn collect_entries_surfaces_read_errors() {
+    let missing_source = fixture_args(vec!["src/missing.mts"], Format::Json);
+
+    let err = collect_entries(&missing_source).unwrap_err();
+
+    assert!(format!("{err:#}").contains("src/missing.mts"));
+}
+
+#[test]
 fn json_simple_exports() {
     let out = run_capture(fixture_args(vec!["src/utils.mts"], Format::Json));
     let v: serde_json::Value = serde_json::from_str(&out).unwrap();
@@ -186,6 +204,26 @@ fn md_format_emits_headings() {
     assert!(out.contains("# `src/human.mts`"));
     assert!(out.contains("### Exports"));
     assert!(out.contains("`go`"));
+}
+
+#[test]
+fn md_writer_emits_exports_section() {
+    let entry = FileEntry {
+        rel_path: PathBuf::from("manual.mts"),
+        exports: vec![ResolvedExport {
+            name: "go".to_string(),
+            kind: ExportKind::Function,
+            line: 1,
+            resolved: None,
+        }],
+        imports: Vec::new(),
+    };
+    let mut out = Vec::new();
+
+    output::write_md(&["manual.mts".to_string()], &[entry], &mut out).unwrap();
+
+    let out = String::from_utf8(out).unwrap();
+    assert!(out.contains("- `go` (function, line 1)\n"));
 }
 
 #[test]
@@ -356,4 +394,73 @@ fn export_kind_enum_serializes_as_enum() {
     let v: serde_json::Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["files"][0]["exports"][0]["kind"], "enum");
     assert_eq!(v["files"][0]["exports"][0]["name"], "Color");
+}
+
+#[test]
+fn run_covers_formats_timings_and_resolution_fallbacks() {
+    let root = fixture_root();
+
+    for format in [
+        Format::Json,
+        Format::Md,
+        Format::Yml,
+        Format::Paths,
+        Format::Human,
+    ] {
+        let mut args = args_for(&root, vec!["src/human.mts"], format);
+        args.timings = true;
+        run(args).unwrap();
+    }
+
+    let mut fallback = args_for(&root, vec!["does-not-exist.mts"], Format::Json);
+    fallback.files = vec![PathBuf::from("src/human.mts")];
+    fallback.root = Some(root.join("missing-root"));
+    assert!(run(fallback).is_err());
+}
+
+#[test]
+fn helper_branches_cover_root_tsconfig_and_kind_strings() {
+    let cwd = fixture_root();
+    assert_eq!(resolve_root(None, &cwd), cwd);
+    assert_eq!(
+        resolve_root(Some(Path::new("relative")), &cwd),
+        cwd.join("relative")
+    );
+    assert_eq!(resolve_root(Some(&cwd), Path::new("/tmp")), cwd);
+
+    let missing_tsconfig = resolve_tsconfig(None, &cwd.join("no-tsconfig-here")).unwrap();
+    assert!(missing_tsconfig.paths.is_empty());
+    let explicit_err = resolve_tsconfig(Some(&cwd.join("missing-tsconfig.json")), &cwd);
+    assert!(explicit_err.is_err());
+
+    let resolved = resolve_input_files(
+        &[
+            cwd.join("src/human.mts"),
+            PathBuf::from("src/human.mts"),
+            PathBuf::from("missing.mts"),
+        ],
+        &cwd,
+        Path::new("/tmp"),
+    );
+    assert_eq!(resolved[0], cwd.join("src/human.mts"));
+    assert_eq!(resolved[1], cwd.join("src/human.mts"));
+    assert_eq!(resolved[2], PathBuf::from("/tmp/missing.mts"));
+
+    for kind in [
+        ExportKind::Class,
+        ExportKind::Let,
+        ExportKind::Var,
+        ExportKind::TypeAlias,
+        ExportKind::Interface,
+    ] {
+        assert!(!export_kind_str(&kind).is_empty());
+    }
+
+    assert_eq!(
+        resolve_format(true, Some(Format::Human), true),
+        Format::Json
+    );
+    assert_eq!(resolve_format(false, Some(Format::Md), true), Format::Md);
+    assert_eq!(resolve_format(false, None, true), Format::Human);
+    assert_eq!(resolve_format(false, None, false), Format::Json);
 }

@@ -1,5 +1,5 @@
 use crate::report::{print_edges, print_related, print_routes, Format};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 use no_mistakes_core::cli::{init_rayon_threads, resolve_root, JobsArg};
 use no_mistakes_core::server_routes::{analyze_project, related, RelatedDirection};
@@ -56,7 +56,7 @@ enum DirectionArg {
 pub fn run_cli() -> Result<ExitCode> {
     let cli = Cli::parse();
     init_rayon_threads(cli.jobs);
-    let base = std::env::current_dir().context("current working directory must be accessible")?;
+    let base = std::env::current_dir()?;
     let root = resolve_root(&cli.root, &base);
     let started = Instant::now();
     let report = analyze_project(&root, cli.tsconfig.as_deref(), &cli.filters)?;

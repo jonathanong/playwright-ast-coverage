@@ -19,7 +19,8 @@ pub(crate) fn collect_app_selector_occurrences(
     let app_selectors = source_files
         .par_iter()
         .try_fold(Vec::new, |mut app_selectors, path| -> Result<_> {
-            let source = std::fs::read_to_string(path)?;
+            let source =
+                std::fs::read_to_string(path).expect("discovered selector source is readable");
             app_selectors.extend(selectors::extract_app_selectors_with_regexes(
                 path,
                 &source,

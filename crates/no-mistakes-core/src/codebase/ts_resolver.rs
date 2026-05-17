@@ -52,14 +52,13 @@ fn load_tsconfig_inner(
 
     let dir = path
         .parent()
-        .context("tsconfig path has no parent")?
+        .expect("tsconfig path has parent")
         .to_path_buf();
 
-    let content =
-        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let content = std::fs::read_to_string(path).context(format!("reading {}", path.display()))?;
 
     let v: serde_json::Value =
-        serde_json::from_str(&content).with_context(|| format!("parsing {}", path.display()))?;
+        serde_json::from_str(&content).context(format!("parsing {}", path.display()))?;
 
     let own_paths: Option<Vec<(String, Vec<String>)>> = v
         .get("compilerOptions")
@@ -142,7 +141,7 @@ fn load_tsconfig_inner(
                 base_path
             };
             let base = load_tsconfig_inner(&base_path, visited)
-                .with_context(|| format!("loading extended tsconfig {}", base_path.display()))?;
+                .context(format!("loading extended tsconfig {}", base_path.display()))?;
             if let Some(base_url) = &base.inner.base_url {
                 inherited_base_url = Some(base_url.clone());
             }
@@ -398,9 +397,7 @@ fn match_alias(pattern: &str, specifier: &str) -> Option<String> {
         if specifier.starts_with(prefix) && specifier.ends_with(suffix) {
             let cap_end = specifier.len() - suffix.len();
             let cap_start = prefix.len();
-            if cap_start <= cap_end {
-                return Some(specifier[cap_start..cap_end].to_string());
-            }
+            return (cap_start <= cap_end).then(|| specifier[cap_start..cap_end].to_string());
         }
         None
     } else if specifier == pattern {

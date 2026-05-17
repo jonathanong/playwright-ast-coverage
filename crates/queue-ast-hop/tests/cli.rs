@@ -181,3 +181,28 @@ fn check_failure_formats_are_rendered() {
             .stdout(predicate::str::contains("queues.ts"));
     }
 }
+
+#[test]
+fn check_success_returns_success_exit_code() {
+    Command::cargo_bin("queue-ast-hop")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("basic"))
+        .arg("check")
+        .assert()
+        .success();
+}
+
+#[test]
+fn missing_tsconfig_surfaces_main_error_exit() {
+    Command::cargo_bin("queue-ast-hop")
+        .unwrap()
+        .arg("--root")
+        .arg(fixture("basic"))
+        .arg("--tsconfig")
+        .arg(fixture("basic/missing.json"))
+        .arg("edges")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("error:"));
+}

@@ -5,7 +5,6 @@ use crate::server_routes::normalize::{join_paths, normalize_route};
 use crate::server_routes::source::{discover_source_files, relative_string};
 use crate::server_routes::types::{Diagnostic, Edge, EdgeKind, ServerRoute, Severity, Summary};
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
-use rayon::prelude::*;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -21,24 +20,30 @@ pub fn analyze_project(
     _tsconfig_path: Option<&Path>,
     filters: &[String],
 ) -> anyhow::Result<ProjectReport> {
-    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let root = root.canonicalize().unwrap_or(root.to_path_buf());
     let filter = build_filter(filters)?;
-    let files = discover_source_files(&root)
-        .into_iter()
-        .filter(|path| {
-            filter
-                .as_ref()
-                .is_none_or(|f| f.is_match(path.strip_prefix(&root).unwrap_or(path)))
-        })
-        .collect::<Vec<_>>();
-    let facts = files
-        .par_iter()
-        .filter_map(|path| extract_file(path).ok().map(|facts| (path.clone(), facts)))
-        .collect::<HashMap<_, _>>();
+    let mut files = Vec::new();
+    for path in discover_source_files(&root) {
+        let rel = path.strip_prefix(&root).unwrap_or(&path);
+        let matches = match &filter {
+            Some(filter) => filter.is_match(rel),
+            None => true,
+        };
+        if matches {
+            files.push(path);
+        }
+    }
+
+    let mut facts = HashMap::new();
+    for path in &files {
+        if let Ok(file_facts) = extract_file(path) {
+            facts.insert(path.clone(), file_facts);
+        }
+    }
     Ok(build_report(&root, &facts))
 }
 
-fn build_report(root: &Path, facts: &HashMap<PathBuf, FileFacts>) -> ProjectReport {
+pub(super) fn build_report(root: &Path, facts: &HashMap<PathBuf, FileFacts>) -> ProjectReport {
     let mut routes = Vec::new();
     let mut edges = Vec::new();
     let mut diagnostics = Vec::new();

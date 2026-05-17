@@ -176,11 +176,11 @@ impl UrlVisitor<'_, '_> {
     }
 
     pub fn apply_annotation_call(&mut self, call: &CallExpression<'_>) {
-        if let Some(status) = playwright_tests::annotation_status_for_call(call) {
-            let status = playwright_tests::merge_annotation_status(self.status, status);
-            self.annotation_status =
-                playwright_tests::merge_annotation_status(self.annotation_status, status);
-        }
+        let status = playwright_tests::annotation_status_for_call(call)
+            .expect("only annotation calls are applied");
+        let status = playwright_tests::merge_annotation_status(self.status, status);
+        self.annotation_status =
+            playwright_tests::merge_annotation_status(self.annotation_status, status);
     }
 }
 

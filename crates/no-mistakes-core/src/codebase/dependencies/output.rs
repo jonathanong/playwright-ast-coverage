@@ -94,7 +94,7 @@ pub fn write_json(
     roots: &[String],
     entries: &[NodeEntry],
     root_dir: &Path,
-    w: &mut impl Write,
+    w: &mut dyn Write,
 ) -> Result<()> {
     let out = build_output(roots, entries, root_dir);
     serde_json::to_writer_pretty(&mut *w, &out)?;
@@ -104,7 +104,7 @@ pub fn write_json(
 
 /// Write one relative path per line — suitable for shell `$()` substitution.
 /// QueueJob virtual nodes are rendered as `queueFile#job`.
-pub fn write_paths(entries: &[NodeEntry], root_dir: &Path, w: &mut impl Write) -> Result<()> {
+pub fn write_paths(entries: &[NodeEntry], root_dir: &Path, w: &mut dyn Write) -> Result<()> {
     for entry in entries {
         match &entry.node {
             NodeId::File(p) => {
@@ -127,7 +127,7 @@ pub fn write_human(
     roots: &[String],
     entries: &[NodeEntry],
     root_dir: &Path,
-    w: &mut impl Write,
+    w: &mut dyn Write,
 ) -> Result<()> {
     if roots.len() == 1 {
         writeln!(w, "{}", roots[0])?;
@@ -154,7 +154,7 @@ pub fn write_md(
     roots: &[String],
     entries: &[NodeEntry],
     root_dir: &Path,
-    w: &mut impl Write,
+    w: &mut dyn Write,
 ) -> Result<()> {
     if roots.len() == 1 {
         writeln!(w, "# `{}`", roots[0])?;
@@ -185,7 +185,7 @@ pub fn write_yml(
     roots: &[String],
     entries: &[NodeEntry],
     root_dir: &Path,
-    w: &mut impl Write,
+    w: &mut dyn Write,
 ) -> Result<()> {
     let out = build_output(roots, entries, root_dir);
     let s = serde_yaml::to_string(&out)?;

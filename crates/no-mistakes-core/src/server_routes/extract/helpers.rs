@@ -24,10 +24,10 @@ pub(super) fn first_object_prefix(args: &[Argument<'_>]) -> Option<String> {
     };
     for property in &object.properties {
         if let ObjectPropertyKind::ObjectProperty(property) = property {
-            if property.key.static_name().as_deref() == Some("prefix") {
-                if let Expression::StringLiteral(value) = &property.value {
-                    return Some(value.value.as_str().to_string());
-                }
+            if let (Some("prefix"), Expression::StringLiteral(value)) =
+                (property.key.static_name().as_deref(), &property.value)
+            {
+                return Some(value.value.as_str().to_string());
             }
         }
     }
@@ -45,10 +45,13 @@ pub(super) fn object_identifier(object: &Expression<'_>) -> Option<String> {
 pub(super) fn mounted_binding(arg: &Argument<'_>) -> Option<String> {
     let expr = arg.as_expression()?;
     if let Expression::CallExpression(call) = expr {
-        if let Expression::StaticMemberExpression(member) = &call.callee {
-            if matches!(member.property.name.as_str(), "routes" | "middleware") {
+        match &call.callee {
+            Expression::StaticMemberExpression(member)
+                if matches!(member.property.name.as_str(), "routes" | "middleware") =>
+            {
                 return object_identifier(&member.object);
             }
+            _ => {}
         }
     }
     object_identifier(expr)

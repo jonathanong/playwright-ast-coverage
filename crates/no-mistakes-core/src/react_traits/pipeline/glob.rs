@@ -45,3 +45,6 @@ fn is_skip_dir(path: &Path) -> bool {
         )
     })
 }
+
+#[cfg(test)]
+mod tests;

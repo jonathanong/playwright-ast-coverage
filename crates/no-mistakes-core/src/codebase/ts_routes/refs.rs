@@ -80,35 +80,32 @@ fn register_router_bindings_from_statement<'a>(
         Statement::ClassDeclaration(class) => {
             remove_shadowed_class_binding(class, bindings);
         }
-        Statement::ForStatement(for_stmt) => {
-            if let Some(ForStatementInit::VariableDeclaration(var_decl)) = &for_stmt.init {
-                if var_decl.kind == VariableDeclarationKind::Var {
-                    collect_router_bindings_from_var_decl(var_decl, bindings);
-                }
+        Statement::ForStatement(for_stmt) => match &for_stmt.init {
+            Some(ForStatementInit::VariableDeclaration(var_decl))
+                if var_decl.kind == VariableDeclarationKind::Var =>
+            {
+                collect_router_bindings_from_var_decl(var_decl, bindings);
             }
-        }
+            _ => {}
+        },
         Statement::ForInStatement(for_stmt) => {
             collect_for_statement_left_var_bindings(&for_stmt.left, bindings);
         }
         Statement::ForOfStatement(for_stmt) => {
             collect_for_statement_left_var_bindings(&for_stmt.left, bindings);
         }
-        Statement::ExportNamedDeclaration(export) => {
-            if let Some(decl) = &export.declaration {
-                match decl {
-                    oxc::ast::ast::Declaration::VariableDeclaration(var_decl) => {
-                        collect_router_bindings_from_var_decl(var_decl, bindings);
-                    }
-                    oxc::ast::ast::Declaration::FunctionDeclaration(func) => {
-                        remove_shadowed_function_binding(func, bindings);
-                    }
-                    oxc::ast::ast::Declaration::ClassDeclaration(class) => {
-                        remove_shadowed_class_binding(class, bindings);
-                    }
-                    _ => {}
-                }
+        Statement::ExportNamedDeclaration(export) => match export.declaration.as_ref() {
+            Some(oxc::ast::ast::Declaration::VariableDeclaration(var_decl)) => {
+                collect_router_bindings_from_var_decl(var_decl, bindings);
             }
-        }
+            Some(oxc::ast::ast::Declaration::FunctionDeclaration(func)) => {
+                remove_shadowed_function_binding(func, bindings);
+            }
+            Some(oxc::ast::ast::Declaration::ClassDeclaration(class)) => {
+                remove_shadowed_class_binding(class, bindings);
+            }
+            _ => {}
+        },
         _ => {}
     }
 }
@@ -128,22 +125,18 @@ fn collect_scope_router_bindings<'a>(
             Statement::ClassDeclaration(class) => {
                 remove_shadowed_class_binding(class, bindings);
             }
-            Statement::ExportNamedDeclaration(export) => {
-                if let Some(decl) = &export.declaration {
-                    match decl {
-                        oxc::ast::ast::Declaration::VariableDeclaration(var_decl) => {
-                            collect_router_bindings_from_var_decl(var_decl, bindings);
-                        }
-                        oxc::ast::ast::Declaration::FunctionDeclaration(func) => {
-                            remove_shadowed_function_binding(func, bindings);
-                        }
-                        oxc::ast::ast::Declaration::ClassDeclaration(class) => {
-                            remove_shadowed_class_binding(class, bindings);
-                        }
-                        _ => {}
-                    }
+            Statement::ExportNamedDeclaration(export) => match export.declaration.as_ref() {
+                Some(oxc::ast::ast::Declaration::VariableDeclaration(var_decl)) => {
+                    collect_router_bindings_from_var_decl(var_decl, bindings);
                 }
-            }
+                Some(oxc::ast::ast::Declaration::FunctionDeclaration(func)) => {
+                    remove_shadowed_function_binding(func, bindings);
+                }
+                Some(oxc::ast::ast::Declaration::ClassDeclaration(class)) => {
+                    remove_shadowed_class_binding(class, bindings);
+                }
+                _ => {}
+            },
             _ => {}
         }
     }
@@ -173,10 +166,13 @@ fn collect_function_scope_var_bindings<'a>(
                 }
             }
             Statement::ForStatement(for_stmt) => {
-                if let Some(ForStatementInit::VariableDeclaration(var_decl)) = &for_stmt.init {
-                    if var_decl.kind == VariableDeclarationKind::Var {
+                match &for_stmt.init {
+                    Some(ForStatementInit::VariableDeclaration(var_decl))
+                        if var_decl.kind == VariableDeclarationKind::Var =>
+                    {
                         collect_router_bindings_from_var_decl(var_decl, bindings);
                     }
+                    _ => {}
                 }
                 collect_function_scope_var_bindings(std::slice::from_ref(&for_stmt.body), bindings);
             }
@@ -413,45 +409,24 @@ fn collect_from_statement<'a>(
                 }
             }
         }
-        Statement::ExportNamedDeclaration(export) => {
-            if let Some(decl) = &export.declaration {
-                match decl {
-                    oxc::ast::ast::Declaration::VariableDeclaration(var_decl) => {
-                        for d in &var_decl.declarations {
-                            if let Some(init) = &d.init {
-                                collect_from_expression(init, source, file, router_bindings, refs);
-                            }
-                        }
-                    }
-                    oxc::ast::ast::Declaration::FunctionDeclaration(func) => {
-                        if let Some(body) = &func.body {
-                            let mut scoped_bindings = router_bindings.clone();
-                            remove_shadowed_function_binding(func, &mut scoped_bindings);
-                            remove_shadowed_parameters(&func.params, &mut scoped_bindings);
-                            collect_router_bindings_for_scope(
-                                &body.statements,
-                                &mut scoped_bindings,
-                            );
-                            for s in &body.statements {
-                                collect_from_statement(s, source, file, &mut scoped_bindings, refs);
-                            }
-                        }
-                    }
-                    _ => {}
+        Statement::ExportNamedDeclaration(export) => match export.declaration.as_ref() {
+            Some(oxc::ast::ast::Declaration::VariableDeclaration(var_decl)) => {
+                for init in var_decl
+                    .declarations
+                    .iter()
+                    .filter_map(|decl| decl.init.as_ref())
+                {
+                    collect_from_expression(init, source, file, router_bindings, refs);
                 }
             }
-        }
+            Some(oxc::ast::ast::Declaration::FunctionDeclaration(func)) => {
+                collect_from_function_body(func, source, file, router_bindings, refs);
+            }
+            _ => {}
+        },
         Statement::ExportDefaultDeclaration(export) => match &export.declaration {
             oxc::ast::ast::ExportDefaultDeclarationKind::FunctionDeclaration(func) => {
-                if let Some(body) = &func.body {
-                    let mut scoped_bindings = router_bindings.clone();
-                    remove_shadowed_function_binding(func, &mut scoped_bindings);
-                    remove_shadowed_parameters(&func.params, &mut scoped_bindings);
-                    collect_router_bindings_for_scope(&body.statements, &mut scoped_bindings);
-                    for s in &body.statements {
-                        collect_from_statement(s, source, file, &mut scoped_bindings, refs);
-                    }
-                }
+                collect_from_function_body(func, source, file, router_bindings, refs);
             }
             other => {
                 if let Some(expr) = other.as_expression() {
@@ -460,6 +435,25 @@ fn collect_from_statement<'a>(
             }
         },
         _ => {}
+    }
+}
+
+fn collect_from_function_body<'a>(
+    func: &'a oxc::ast::ast::Function<'a>,
+    source: &str,
+    file: &str,
+    router_bindings: &mut RouterBindings<'a>,
+    refs: &mut Vec<RouteRef>,
+) {
+    let Some(body) = &func.body else {
+        return;
+    };
+    let mut scoped_bindings = router_bindings.clone();
+    remove_shadowed_function_binding(func, &mut scoped_bindings);
+    remove_shadowed_parameters(&func.params, &mut scoped_bindings);
+    collect_router_bindings_for_scope(&body.statements, &mut scoped_bindings);
+    for s in &body.statements {
+        collect_from_statement(s, source, file, &mut scoped_bindings, refs);
     }
 }
 
@@ -495,15 +489,7 @@ fn collect_from_expression<'a>(
             }
         }
         Expression::FunctionExpression(func) => {
-            if let Some(body) = &func.body {
-                let mut scoped_bindings = router_bindings.clone();
-                remove_shadowed_function_binding(func, &mut scoped_bindings);
-                remove_shadowed_parameters(&func.params, &mut scoped_bindings);
-                collect_router_bindings_for_scope(&body.statements, &mut scoped_bindings);
-                for s in &body.statements {
-                    collect_from_statement(s, source, file, &mut scoped_bindings, refs);
-                }
-            }
+            collect_from_function_body(func, source, file, router_bindings, refs);
         }
         Expression::ConditionalExpression(cond) => {
             collect_from_expression(&cond.test, source, file, router_bindings, refs);
@@ -533,9 +519,6 @@ fn collect_from_expression<'a>(
         }
         Expression::TSSatisfiesExpression(ts_sat) => {
             collect_from_expression(&ts_sat.expression, source, file, router_bindings, refs);
-        }
-        Expression::TSTypeAssertion(ts_assert) => {
-            collect_from_expression(&ts_assert.expression, source, file, router_bindings, refs);
         }
         _ => {}
     }
@@ -568,35 +551,35 @@ fn collect_from_jsx_element<'a>(
     refs: &mut Vec<RouteRef>,
 ) {
     for attr_item in &jsx_elem.opening_element.attributes {
-        if let JSXAttributeItem::Attribute(attr) = attr_item {
-            let attr_name = match &attr.name {
-                JSXAttributeName::Identifier(id) => id.name.as_str(),
-                JSXAttributeName::NamespacedName(_) => continue,
-            };
+        let JSXAttributeItem::Attribute(attr) = attr_item else {
+            continue;
+        };
+        let attr_name = match &attr.name {
+            JSXAttributeName::Identifier(id) => id.name.as_str(),
+            JSXAttributeName::NamespacedName(_) => continue,
+        };
 
-            if attr_name != "href" && attr_name != "to" {
-                continue;
+        if attr_name != "href" && attr_name != "to" {
+            continue;
+        }
+
+        let line = byte_offset_to_line(source, attr.span.start as usize);
+
+        let pattern = match &attr.value {
+            Some(JSXAttributeValue::StringLiteral(s)) => Some(s.value.as_str().to_string()),
+            Some(JSXAttributeValue::ExpressionContainer(container)) => {
+                extract_pattern_from_jsx_expression(&container.expression)
             }
+            _ => None,
+        }
+        .filter(|pattern| !should_skip(pattern));
 
-            let line = byte_offset_to_line(source, attr.span.start as usize);
-
-            let pattern_opt = match &attr.value {
-                Some(JSXAttributeValue::StringLiteral(s)) => Some(s.value.as_str().to_string()),
-                Some(JSXAttributeValue::ExpressionContainer(container)) => {
-                    extract_pattern_from_jsx_expression(&container.expression)
-                }
-                _ => None,
-            };
-
-            if let Some(pattern) = pattern_opt {
-                if !should_skip(&pattern) {
-                    refs.push(RouteRef {
-                        pattern,
-                        file: file.to_string(),
-                        line,
-                    });
-                }
-            }
+        if let Some(pattern) = pattern {
+            refs.push(RouteRef {
+                pattern,
+                file: file.to_string(),
+                line,
+            });
         }
     }
 
@@ -633,13 +616,9 @@ fn collect_from_jsx_child<'a>(
 fn extract_pattern_from_jsx_expression(jsx_expr: &JSXExpression) -> Option<String> {
     match jsx_expr {
         JSXExpression::EmptyExpression(_) => None,
-        _ => {
-            if let Some(expr) = jsx_expr.as_expression() {
-                extract_pattern_from_expression(expr)
-            } else {
-                None
-            }
-        }
+        _ => jsx_expr
+            .as_expression()
+            .and_then(extract_pattern_from_expression),
     }
 }
 
@@ -653,22 +632,22 @@ fn check_call_for_route_ref(
     // Detect router.push('/path') / router.replace('/path') where router is
     // bound to useRouter().
     if let Some(member) = call.callee.as_member_expression() {
-        if let Some(prop) = member.static_property_name() {
-            if prop == "push" || prop == "replace" || prop == "prefetch" {
-                if let Expression::Identifier(ident) = member.object() {
-                    let name = ident.name.as_str();
-                    if router_bindings.objects.contains(name) {
-                        let line = byte_offset_to_line(source, call.span.start as usize);
-                        if let Some(pattern) = first_arg_pattern(&call.arguments) {
-                            if !should_skip(&pattern) {
-                                refs.push(RouteRef {
-                                    pattern,
-                                    file: file.to_string(),
-                                    line,
-                                });
-                            }
-                        }
-                        return;
+        let is_router_method = member
+            .static_property_name()
+            .is_some_and(|prop| prop == "push" || prop == "replace" || prop == "prefetch");
+        if is_router_method {
+            if let Expression::Identifier(ident) = member.object() {
+                let name = ident.name.as_str();
+                if router_bindings.objects.contains(name) {
+                    let line = byte_offset_to_line(source, call.span.start as usize);
+                    if let Some(pattern) =
+                        first_arg_pattern(&call.arguments).filter(|p| !should_skip(p))
+                    {
+                        refs.push(RouteRef {
+                            pattern,
+                            file: file.to_string(),
+                            line,
+                        });
                     }
                 }
             }
@@ -679,14 +658,12 @@ fn check_call_for_route_ref(
         let name = id.name.as_str();
         if router_bindings.redirects.contains(name) || router_bindings.methods.contains(name) {
             let line = byte_offset_to_line(source, call.span.start as usize);
-            if let Some(pattern) = first_arg_pattern(&call.arguments) {
-                if !should_skip(&pattern) {
-                    refs.push(RouteRef {
-                        pattern,
-                        file: file.to_string(),
-                        line,
-                    });
-                }
+            if let Some(pattern) = first_arg_pattern(&call.arguments).filter(|p| !should_skip(p)) {
+                refs.push(RouteRef {
+                    pattern,
+                    file: file.to_string(),
+                    line,
+                });
             }
         }
     }

@@ -1,4 +1,4 @@
-use crate::analysis::discover::discover_test_files;
+use crate::analysis::discover::{build_project_discovery, discover_test_files};
 use crate::analysis::output::{build_related_report, print_related_text};
 use crate::analysis::pipeline::run;
 use crate::analysis::types::Edge;
@@ -162,6 +162,108 @@ fn discover_test_files_applies_yaml_exclude_before_project_matching() {
 
     let files = discover_test_files(&root, &settings, &playwright).unwrap();
     assert!(files.is_empty());
+}
+
+#[test]
+fn discover_test_files_rejects_invalid_configured_globs() {
+    let root = fixture_path(&["ast-snippets", "main", "analyze-basic"]);
+    let base_settings = Settings {
+        frontend_root: "web/app".to_string(),
+        playwright_configs: vec![],
+        project: None,
+        test_include: vec![],
+        test_exclude: vec![],
+        ignore_routes: vec![],
+        navigation_helpers: vec![],
+        selector_attributes: vec![],
+        component_selector_attributes: BTreeMap::new(),
+        html_ids: false,
+        selector_roots: vec!["web/app".to_string()],
+        selector_include: vec![],
+        selector_exclude: vec![],
+    };
+    let playwright = playwright_config::PlaywrightConfig {
+        name: None,
+        projects: vec![playwright_config::TestProject {
+            config_dir: root.clone(),
+            test_dir: "tests".to_string(),
+            test_match: vec!["**/*.spec.ts".to_string()],
+            test_ignore: vec![],
+            base_url: None,
+            test_id_attribute: "data-testid".to_string(),
+        }],
+    };
+
+    let mut invalid_include = base_settings.clone();
+    invalid_include.test_include = vec!["[".to_string()];
+    assert!(discover_test_files(&root, &invalid_include, &playwright).is_err());
+
+    let mut invalid_include_exclude = base_settings.clone();
+    invalid_include_exclude.test_include = vec!["tests/**/*.spec.ts".to_string()];
+    invalid_include_exclude.test_exclude = vec!["[".to_string()];
+    assert!(discover_test_files(&root, &invalid_include_exclude, &playwright).is_err());
+
+    let mut invalid_yaml_exclude = base_settings;
+    invalid_yaml_exclude.test_exclude = vec!["[".to_string()];
+    assert!(discover_test_files(&root, &invalid_yaml_exclude, &playwright).is_err());
+
+    let invalid_project = playwright_config::PlaywrightConfig {
+        name: None,
+        projects: vec![playwright_config::TestProject {
+            config_dir: root.clone(),
+            test_dir: "tests".to_string(),
+            test_match: vec!["[".to_string()],
+            test_ignore: vec![],
+            base_url: None,
+            test_id_attribute: "data-testid".to_string(),
+        }],
+    };
+    let settings = Settings {
+        frontend_root: "web/app".to_string(),
+        playwright_configs: vec![],
+        project: None,
+        test_include: vec![],
+        test_exclude: vec![],
+        ignore_routes: vec![],
+        navigation_helpers: vec![],
+        selector_attributes: vec![],
+        component_selector_attributes: BTreeMap::new(),
+        html_ids: false,
+        selector_roots: vec!["web/app".to_string()],
+        selector_include: vec![],
+        selector_exclude: vec![],
+    };
+    assert!(discover_test_files(&root, &settings, &invalid_project).is_err());
+}
+
+#[test]
+fn build_project_discovery_rejects_invalid_project_globs() {
+    let root = fixture_path(&["ast-snippets", "main", "analyze-basic"]);
+    let invalid_match = playwright_config::PlaywrightConfig {
+        name: None,
+        projects: vec![playwright_config::TestProject {
+            config_dir: root.clone(),
+            test_dir: "tests".to_string(),
+            test_match: vec!["[".to_string()],
+            test_ignore: vec![],
+            base_url: None,
+            test_id_attribute: "data-testid".to_string(),
+        }],
+    };
+    assert!(build_project_discovery(&root, &invalid_match).is_err());
+
+    let invalid_ignore = playwright_config::PlaywrightConfig {
+        name: None,
+        projects: vec![playwright_config::TestProject {
+            config_dir: root.clone(),
+            test_dir: "tests".to_string(),
+            test_match: vec!["**/*.spec.ts".to_string()],
+            test_ignore: vec!["[".to_string()],
+            base_url: None,
+            test_id_attribute: "data-testid".to_string(),
+        }],
+    };
+    assert!(build_project_discovery(&root, &invalid_ignore).is_err());
 }
 
 #[test]

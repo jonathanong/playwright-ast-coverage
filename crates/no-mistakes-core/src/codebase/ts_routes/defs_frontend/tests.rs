@@ -61,6 +61,12 @@ fn static_nested_path() {
 }
 
 #[test]
+fn absolute_path_components_skip_root_prefix() {
+    let p = Path::new("/repo/web/app/page.tsx");
+    assert_eq!(path_to_route_pattern(p), "/repo/web/app");
+}
+
+#[test]
 fn collect_frontend_routes_finds_pages() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/codebase-analysis")

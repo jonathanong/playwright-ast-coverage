@@ -58,8 +58,6 @@ impl<'a> Visit<'a> for ServerRouteVisitor<'a> {
             if let Some(value) = const_string(init) {
                 self.const_strings.insert(name.clone(), value);
             }
-        }
-        if let Some(init) = &decl.init {
             if let Some(binding) = self.binding_from_expr(init) {
                 self.facts.bindings.insert(name, binding);
             }

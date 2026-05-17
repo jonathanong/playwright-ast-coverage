@@ -1,0 +1,1 @@
+{"name":"@fixtures/exported","exports":{".":{"import":"./exported/index.ts"}},"module":"dist/module","main":"dist/main","types":"dist/types.d.ts"}

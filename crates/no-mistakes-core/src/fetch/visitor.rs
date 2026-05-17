@@ -63,6 +63,7 @@ impl<'a> FetchVisitor<'a> {
         scope.shadowed_identifiers.insert("fetch".to_string());
     }
 
+    #[inline(never)]
     pub fn mark_identifier_shadowed_in_var_scope(&mut self, name: &str) {
         for scope in self.fetch_scope_stack.iter_mut().rev() {
             if scope.tracks_var_bindings {
@@ -193,3 +194,6 @@ impl<'a> Visit<'a> for FetchVisitor<'a> {
         walk::walk_call_expression(self, expr);
     }
 }
+
+#[cfg(test)]
+mod tests;

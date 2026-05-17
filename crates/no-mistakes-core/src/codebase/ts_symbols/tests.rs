@@ -1,11 +1,11 @@
 use super::*;
 
 fn syms(src: &str) -> FileSymbols {
-    extract_symbols(src, false).unwrap()
+    extract_symbols(src, false)
 }
 
 fn syms_tsx(src: &str) -> FileSymbols {
-    extract_symbols(src, true).unwrap()
+    extract_symbols(src, true)
 }
 
 // ── Imports ──────────────────────────────────────────────────────────────
@@ -58,6 +58,12 @@ fn multiple_named_imports() {
     assert!(names.contains(&"c"));
 }
 
+#[test]
+fn side_effect_import_has_no_symbols() {
+    let s = syms("import './setup.mts';");
+    assert!(s.imports.is_empty());
+}
+
 // ── Exports — functions and classes ──────────────────────────────────────
 
 #[test]
@@ -92,6 +98,19 @@ fn export_let() {
 fn export_var() {
     let s = syms("export var z = 3;");
     assert_eq!(s.exports[0].kind, ExportKind::Var);
+}
+
+#[test]
+fn ignored_export_declaration_has_no_symbol() {
+    let s = syms("export namespace Internal { export const value = 1; }");
+    assert!(s.exports.is_empty());
+}
+
+#[test]
+fn unnamed_inline_exports_are_ignored() {
+    let mut out = FileSymbols::default();
+    push_export_if_named(&mut out, None, ExportKind::Function, 1);
+    assert!(out.exports.is_empty());
 }
 
 // ── Exports — type-level ─────────────────────────────────────────────────

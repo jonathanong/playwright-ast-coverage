@@ -1,0 +1,3 @@
+[[bin]]
+name = "nested"
+path = "missing.rs"

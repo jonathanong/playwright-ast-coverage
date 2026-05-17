@@ -2,11 +2,12 @@ pub mod extract;
 pub mod graph;
 pub mod output;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use is_terminal::IsTerminal;
 use std::collections::HashMap;
 use std::io;
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
 pub use crate::codebase::ts_resolver::TsConfig;
 pub use graph::{DepGraph, EdgeKind, NodeId};
@@ -15,41 +16,50 @@ pub use crate::cli::Format;
 
 /// Map a `--test <framework>` value to its corresponding glob patterns.
 pub(crate) fn test_globs(framework: &str) -> Vec<String> {
+    const VITEST: &[&str] = &[
+        "**/*.test.mts",
+        "**/*.spec.mts",
+        "**/*.test.ts",
+        "**/*.spec.ts",
+        "**/*.test.tsx",
+        "**/*.spec.tsx",
+        "**/*.test.mjs",
+        "**/*.spec.mjs",
+        "**/*.test.js",
+        "**/*.spec.js",
+        "**/*.test.jsx",
+        "**/*.spec.jsx",
+    ];
+    const PLAYWRIGHT: &[&str] = &[
+        "**/tests/e2e/**/*.mts",
+        "**/tests/e2e/**/*.ts",
+        "**/tests/e2e/**/*.tsx",
+        "**/tests/e2e/**/*.mjs",
+        "**/tests/e2e/**/*.js",
+        "**/tests/e2e/**/*.jsx",
+        "**/playwright/**/*.spec.mts",
+        "**/playwright/**/*.spec.ts",
+        "**/playwright/**/*.spec.tsx",
+        "**/playwright/**/*.spec.mjs",
+        "**/playwright/**/*.spec.js",
+        "**/playwright/**/*.spec.jsx",
+    ];
+    const CARGO: &[&str] = &["**/tests/**/*.rs", "src/**/*_test.rs"];
+
     match framework {
-        "vitest" => vec![
-            "**/*.test.mts".to_string(),
-            "**/*.spec.mts".to_string(),
-            "**/*.test.ts".to_string(),
-            "**/*.spec.ts".to_string(),
-            "**/*.test.tsx".to_string(),
-            "**/*.spec.tsx".to_string(),
-            "**/*.test.mjs".to_string(),
-            "**/*.spec.mjs".to_string(),
-            "**/*.test.js".to_string(),
-            "**/*.spec.js".to_string(),
-            "**/*.test.jsx".to_string(),
-            "**/*.spec.jsx".to_string(),
-        ],
-        "playwright" => vec![
-            "**/tests/e2e/**/*.mts".to_string(),
-            "**/tests/e2e/**/*.ts".to_string(),
-            "**/tests/e2e/**/*.tsx".to_string(),
-            "**/tests/e2e/**/*.mjs".to_string(),
-            "**/tests/e2e/**/*.js".to_string(),
-            "**/tests/e2e/**/*.jsx".to_string(),
-            "**/playwright/**/*.spec.mts".to_string(),
-            "**/playwright/**/*.spec.ts".to_string(),
-            "**/playwright/**/*.spec.tsx".to_string(),
-            "**/playwright/**/*.spec.mjs".to_string(),
-            "**/playwright/**/*.spec.js".to_string(),
-            "**/playwright/**/*.spec.jsx".to_string(),
-        ],
-        "cargo" => vec![
-            "**/tests/**/*.rs".to_string(),
-            "src/**/*_test.rs".to_string(),
-        ],
+        "vitest" => globs_to_strings(VITEST),
+        "playwright" => globs_to_strings(PLAYWRIGHT),
+        "cargo" => globs_to_strings(CARGO),
         _ => vec![],
     }
+}
+
+fn globs_to_strings(globs: &[&str]) -> Vec<String> {
+    let mut strings = Vec::with_capacity(globs.len());
+    for glob in globs {
+        strings.push((*glob).to_string());
+    }
+    strings
 }
 
 pub enum Direction {
@@ -74,10 +84,11 @@ pub enum RelationshipArg {
 
 /// Convert `--relationship` values into a `HashSet<EdgeKind>` filter.
 /// Returns `None` when "all" is present or the list is empty (= no filter).
+#[inline(never)]
 fn relationship_filter(
     relationships: &[RelationshipArg],
 ) -> Option<std::collections::HashSet<EdgeKind>> {
-    if relationships.is_empty() || relationships.contains(&RelationshipArg::All) {
+    if relationships.is_empty() {
         return None;
     }
     let mut set = std::collections::HashSet::new();
@@ -116,14 +127,10 @@ fn relationship_filter(
             RelationshipArg::Process => {
                 set.insert(EdgeKind::ProcessSpawn);
             }
-            RelationshipArg::All => {}
+            RelationshipArg::All => return None,
         }
     }
-    if set.is_empty() {
-        None
-    } else {
-        Some(set)
-    }
+    Some(set)
 }
 
 fn relationships_are_import_only(relationships: &[RelationshipArg]) -> bool {
@@ -154,35 +161,22 @@ fn parse_entrypoint(s: &str) -> Entrypoint {
 
 pub fn run(args: TraverseArgs, direction: Direction) -> Result<()> {
     let mut timings = crate::codebase::timing::PhaseTimings::start();
-    let cwd_early = std::env::current_dir()?;
-    let root = match args.root {
+    let cwd_early = std::env::current_dir().expect("current directory is available");
+    let root = match &args.root {
         Some(p) => {
             if p.is_absolute() {
-                p
+                p.clone()
             } else {
                 cwd_early.join(p)
             }
         }
-        None => cwd_early,
+        None => cwd_early.clone(),
     };
     let root = crate::codebase::ts_resolver::normalize_path(&root);
 
-    let tsconfig = match args.tsconfig {
-        Some(ref path) => crate::codebase::ts_resolver::load_tsconfig(path)
-            .with_context(|| format!("loading tsconfig {}", path.display()))?,
-        None => match crate::codebase::ts_resolver::find_tsconfig(&root) {
-            Some(path) => crate::codebase::ts_resolver::load_tsconfig(&path)
-                .with_context(|| format!("loading tsconfig {}", path.display()))?,
-            None => crate::codebase::ts_resolver::TsConfig {
-                dir: root.clone(),
-                paths: vec![],
-                paths_dir: root.clone(),
-                base_url: None,
-            },
-        },
-    };
+    let tsconfig = resolve_tsconfig(&args, &root)?;
 
-    let cwd = std::env::current_dir().unwrap_or_else(|_| root.clone());
+    let cwd = cwd_early;
 
     // Parse entrypoints, resolving to absolute paths.
     // Relative paths are tried against --root first, then cwd as fallback.
@@ -228,6 +222,13 @@ pub fn run(args: TraverseArgs, direction: Direction) -> Result<()> {
     let allowed = relationship_filter(&args.relationships);
     let build_plan = graph::GraphBuildPlan::from_allowed(allowed.as_ref());
     let graph_files = graph::GraphFiles::discover(&root);
+    let ctx = TraversalCtx {
+        root: &root,
+        tsconfig: &tsconfig,
+        graph_files: &graph_files,
+        build_plan,
+        allowed: allowed.as_ref(),
+    };
 
     timings.mark("ingest");
 
@@ -237,25 +238,7 @@ pub fn run(args: TraverseArgs, direction: Direction) -> Result<()> {
                 .iter()
                 .map(|e| NodeId::File(e.file.clone()))
                 .collect();
-            if relationships_are_import_only(&args.relationships) {
-                graph::lazy_import_deps_of_with_files(
-                    &roots,
-                    &root,
-                    &tsconfig,
-                    args.depth,
-                    &graph_files,
-                )
-                .context("walking import dependencies lazily")?
-            } else {
-                let graph = graph::DepGraph::build_with_plan_and_files(
-                    &root,
-                    &tsconfig,
-                    build_plan,
-                    &graph_files,
-                )
-                .context("building dependency graph")?;
-                graph.deps_of(&roots, args.depth, allowed.as_ref())
-            }
+            deps_entries(&args, &roots, &ctx)
         }
         Direction::Dependents => {
             let any_symbol = entrypoints.iter().any(|e| e.symbol.is_some());
@@ -265,31 +248,14 @@ pub fn run(args: TraverseArgs, direction: Direction) -> Result<()> {
                     crate::codebase::ts_source::facts::TsFactPlan::imports_and_symbols(),
                 )
             });
-            let graph = match symbol_facts.as_ref() {
-                Some(facts) => graph::DepGraph::build_with_plan_files_and_facts(
-                    &root,
-                    &tsconfig,
-                    build_plan,
-                    &graph_files,
-                    Some(facts),
-                ),
-                None => graph::DepGraph::build_with_plan_and_files(
-                    &root,
-                    &tsconfig,
-                    build_plan,
-                    &graph_files,
-                ),
-            }
-            .context("building dependency graph")?;
+            let graph = build_dependents_graph(&ctx, symbol_facts.as_ref());
             if any_symbol {
                 let mut all_entries: HashMap<NodeId, graph::NodeEntry> = HashMap::new();
-                let symbol_index = graph::SymbolIndex::build_from_facts(
-                    &tsconfig,
-                    &graph_files,
-                    symbol_facts
-                        .as_ref()
-                        .expect("symbol facts are collected for symbol queries"),
-                )?;
+                let facts = symbol_facts
+                    .as_ref()
+                    .expect("symbol facts are collected for symbol queries");
+                let symbol_index =
+                    graph::SymbolIndex::build_from_facts(&tsconfig, &graph_files, facts);
                 for ep in &entrypoints {
                     if let Some(sym) = &ep.symbol {
                         let entries = graph.dependents_of_symbol(
@@ -310,11 +276,7 @@ pub fn run(args: TraverseArgs, direction: Direction) -> Result<()> {
                     }
                 }
                 let mut entries: Vec<_> = all_entries.into_values().collect();
-                entries.sort_by(|a, b| {
-                    a.depth
-                        .cmp(&b.depth)
-                        .then_with(|| a.node.display_name(&root).cmp(&b.node.display_name(&root)))
-                });
+                sort_node_entries(&mut entries, &root);
                 entries
             } else {
                 let roots: Vec<NodeId> = entrypoints
@@ -339,26 +301,12 @@ pub fn run(args: TraverseArgs, direction: Direction) -> Result<()> {
     timings.mark("analysis");
 
     // Resolve output format.
-    let format = if args.json {
-        Format::Json
-    } else if let Some(f) = args.format {
-        f
-    } else if io::stdout().is_terminal() {
-        Format::Human
-    } else {
-        Format::Json
-    };
+    let format = resolve_format(args.json, args.format, io::stdout().is_terminal());
 
     let stdout = io::stdout();
     let mut out = stdout.lock();
 
-    match format {
-        Format::Json => output::write_json(&root_strs, &entries, &root, &mut out)?,
-        Format::Md => output::write_md(&root_strs, &entries, &root, &mut out)?,
-        Format::Yml => output::write_yml(&root_strs, &entries, &root, &mut out)?,
-        Format::Paths => output::write_paths(&entries, &root, &mut out)?,
-        Format::Human => output::write_human(&root_strs, &entries, &root, &mut out)?,
-    }
+    write_entries(format, &root_strs, &entries, &root, &mut out).expect("stdout write succeeds");
 
     timings.mark("output");
     if args.timings {
@@ -366,6 +314,106 @@ pub fn run(args: TraverseArgs, direction: Direction) -> Result<()> {
     }
 
     Ok(())
+}
+
+struct TraversalCtx<'a> {
+    root: &'a Path,
+    tsconfig: &'a TsConfig,
+    graph_files: &'a graph::GraphFiles,
+    build_plan: graph::GraphBuildPlan,
+    allowed: Option<&'a std::collections::HashSet<EdgeKind>>,
+}
+
+fn resolve_tsconfig(args: &TraverseArgs, root: &Path) -> Result<TsConfig> {
+    match args.tsconfig {
+        Some(ref path) => crate::codebase::ts_resolver::load_tsconfig(path),
+        None => match crate::codebase::ts_resolver::find_tsconfig(root) {
+            Some(path) => crate::codebase::ts_resolver::load_tsconfig(&path),
+            None => Ok(crate::codebase::ts_resolver::TsConfig {
+                dir: root.to_path_buf(),
+                paths: vec![],
+                paths_dir: root.to_path_buf(),
+                base_url: None,
+            }),
+        },
+    }
+}
+
+fn deps_entries(
+    args: &TraverseArgs,
+    roots: &[NodeId],
+    ctx: &TraversalCtx<'_>,
+) -> Vec<graph::NodeEntry> {
+    if relationships_are_import_only(&args.relationships) {
+        graph::lazy_import_deps_of_with_files(
+            roots,
+            ctx.root,
+            ctx.tsconfig,
+            args.depth,
+            ctx.graph_files,
+        )
+    } else {
+        graph::DepGraph::build_with_plan_and_files(
+            ctx.root,
+            ctx.tsconfig,
+            ctx.build_plan,
+            ctx.graph_files,
+        )
+        .deps_of(roots, args.depth, ctx.allowed)
+    }
+}
+
+fn build_dependents_graph(
+    ctx: &TraversalCtx<'_>,
+    symbol_facts: Option<&crate::codebase::ts_source::facts::TsFactMap>,
+) -> graph::DepGraph {
+    match symbol_facts {
+        Some(facts) => graph::DepGraph::build_with_plan_files_and_facts(
+            ctx.root,
+            ctx.tsconfig,
+            ctx.build_plan,
+            ctx.graph_files,
+            Some(facts),
+        ),
+        None => graph::DepGraph::build_with_plan_and_files(
+            ctx.root,
+            ctx.tsconfig,
+            ctx.build_plan,
+            ctx.graph_files,
+        ),
+    }
+}
+
+fn write_entries(
+    format: Format,
+    root_strs: &[String],
+    entries: &[graph::NodeEntry],
+    root: &Path,
+    out: &mut dyn Write,
+) -> Result<()> {
+    match format {
+        Format::Json => output::write_json(root_strs, entries, root, out),
+        Format::Md => output::write_md(root_strs, entries, root, out),
+        Format::Yml => output::write_yml(root_strs, entries, root, out),
+        Format::Paths => output::write_paths(entries, root, out),
+        Format::Human => output::write_human(root_strs, entries, root, out),
+    }
+}
+
+fn resolve_format(json: bool, format: Option<Format>, stdout_is_terminal: bool) -> Format {
+    if json {
+        Format::Json
+    } else if let Some(format) = format {
+        format
+    } else if stdout_is_terminal {
+        Format::Human
+    } else {
+        Format::Json
+    }
+}
+
+fn sort_node_entries(entries: &mut [graph::NodeEntry], root: &Path) {
+    entries.sort_by_key(|entry| (entry.depth, entry.node.display_name(root)));
 }
 
 fn merge_node_entries(

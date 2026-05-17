@@ -163,3 +163,25 @@ fn fixture_backend_walker_covers_statement_shadowing_and_route_shapes() {
     assert!(patterns.contains(&"/export-function"));
     assert!(!patterns.iter().any(|pattern| pattern.contains("ignored")));
 }
+
+#[test]
+fn collect_backend_routes_helpers_filter_files_and_directories() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/ast-snippets");
+    let source = root.join("ts-routes/backend-walk-all.ts");
+    let outside = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+    let mut builder = globset::GlobSetBuilder::new();
+    builder.add(globset::Glob::new("ts-routes/**/*.ts").unwrap());
+    let globset = builder.build().unwrap();
+
+    let from_files = collect_backend_routes_from_files(
+        &root,
+        &[root.clone(), outside, source.clone()],
+        "app",
+        &globset,
+    );
+    assert!(from_files.iter().any(|(_, route)| route == "/chain"));
+
+    let from_dir = collect_backend_routes_in_dir(&root, "app", &globset);
+    assert!(from_dir.iter().any(|(_, route)| route == "/chain"));
+    assert!(!globset.is_match("ts-routes/backend-walk-all.tsx"));
+}

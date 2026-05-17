@@ -535,6 +535,33 @@ fn load_tsconfig_extends_nonstring_toplevel_errors() {
     assert!(load_tsconfig(&child_p).is_err());
 }
 
+#[test]
+fn resolver_falls_back_when_cache_is_poisoned() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("src").join("main.mts");
+    let dep = dir.path().join("src").join("dep.mts");
+    write(&file, "");
+    write(&dep, "");
+    let tc = TsConfig {
+        dir: dir.path().to_path_buf(),
+        paths: vec![],
+        paths_dir: dir.path().to_path_buf(),
+        base_url: None,
+    };
+    let resolver = ImportResolver::new(&tc);
+    std::thread::scope(|scope| {
+        let cache = &resolver.cache;
+        let _ = scope
+            .spawn(move || {
+                let _guard = cache.lock().unwrap();
+                panic!("poison resolver cache");
+            })
+            .join();
+    });
+
+    assert_eq!(resolver.resolve("./dep.mts", &file), Some(dep));
+}
+
 // ── normalize_path ────────────────────────────────────────────────────
 
 #[test]
@@ -550,4 +577,14 @@ fn normalize_path_double_parent_from_root() {
     let p = normalize_path(Path::new("/../../b"));
     let s = p.to_string_lossy();
     assert!(s.contains("b"));
+}
+
+#[test]
+fn normalize_path_drops_current_dir_components() {
+    assert_eq!(normalize_path(Path::new("./a/./b")), Path::new("a/b"));
+}
+
+#[test]
+fn match_alias_captures_wildcard_segment() {
+    assert_eq!(match_alias("@/*", "@/foo"), Some("foo".to_string()));
 }

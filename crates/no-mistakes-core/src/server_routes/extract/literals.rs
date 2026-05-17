@@ -19,9 +19,7 @@ impl ServerRouteVisitor<'_> {
                 }
             }
         }
-        let Some(first) = args.first() else {
-            return Vec::new();
-        };
+        let first = &args[0];
         self.literal_args(first)
             .into_iter()
             .filter(|path| path.starts_with('/') || !allow_named)

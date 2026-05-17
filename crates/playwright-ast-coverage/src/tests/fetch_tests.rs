@@ -1,6 +1,8 @@
-use crate::analysis::fetch::expand_fetch_edges;
+use crate::analysis::fetch::{collect_fetches_for_routes, expand_fetch_edges};
 use crate::analysis::types::{Edge, FetchIndex};
+use crate::test_support::fixture_path;
 use no_mistakes_core::fetch::types::{CacheKind, FetchOccurrence, FetchSide};
+use no_mistakes_core::routes::Route;
 
 fn server_fetch(path: &str) -> FetchOccurrence {
     FetchOccurrence {
@@ -17,6 +19,20 @@ fn server_fetch(path: &str) -> FetchOccurrence {
         dynamic: false,
         unsupported: false,
     }
+}
+
+#[test]
+fn collect_fetches_for_routes_surfaces_route_parse_errors() {
+    let root = fixture_path(&["ast-snippets", "main", "invalid-route-fetch"]);
+    let frontend_root = root.join("web/app");
+    let routes = vec![Route {
+        file: frontend_root.join("page.tsx"),
+        pattern: "/".to_string(),
+    }];
+
+    let err = collect_fetches_for_routes(&routes, &frontend_root, &root).unwrap_err();
+
+    assert!(format!("{err:#}").contains("page.tsx"));
 }
 
 #[test]

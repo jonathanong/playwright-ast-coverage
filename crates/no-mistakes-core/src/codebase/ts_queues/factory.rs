@@ -15,7 +15,7 @@ pub fn bfs_reachable(entrypoint: &Path, tsconfig: &ts_resolver::TsConfig) -> Has
 
     let start = entrypoint
         .canonicalize()
-        .unwrap_or_else(|_| entrypoint.to_path_buf());
+        .unwrap_or(entrypoint.to_path_buf());
     queue.push_back(start);
 
     while let Some(file) = queue.pop_front() {
@@ -31,7 +31,7 @@ pub fn bfs_reachable(entrypoint: &Path, tsconfig: &ts_resolver::TsConfig) -> Has
 
         for specifier in collect_import_specifiers(&source) {
             if let Some(resolved) = ts_resolver::resolve_import(&specifier, &file, tsconfig) {
-                let canonical = resolved.canonicalize().unwrap_or_else(|_| resolved.clone());
+                let canonical = resolved.canonicalize().unwrap_or(resolved);
                 if !visited.contains(&canonical) {
                     queue.push_back(canonical);
                 }
@@ -112,11 +112,7 @@ pub fn find_create_queue_line(
 }
 
 fn module_export_name_str(name: &ModuleExportName) -> String {
-    match name {
-        ModuleExportName::IdentifierName(id) => id.name.as_str().to_string(),
-        ModuleExportName::IdentifierReference(id) => id.name.as_str().to_string(),
-        ModuleExportName::StringLiteral(s) => s.value.as_str().to_string(),
-    }
+    name.name().as_str().to_string()
 }
 
 fn check_stmt_for_create_queue(
@@ -202,21 +198,19 @@ fn check_expr_for_create_queue(
                 }
             }
 
-            for arg in &call_expr.arguments {
-                if let oxc::ast::ast::Argument::CallExpression(inner) = arg {
-                    let callee_name = match &inner.callee {
-                        Expression::Identifier(id) => Some(id.name.as_str()),
-                        _ => None,
-                    };
-                    if let Some(name) = callee_name {
-                        if let Some((src, imported)) = bindings.get(name) {
-                            if src == factory_specifier && imported == factory_function {
-                                let line = byte_offset_to_line(source, inner.span.start as usize);
-                                return Some(line);
-                            }
-                        }
-                    }
-                }
+            if let Some(line) = call_expr.arguments.iter().find_map(|arg| {
+                let oxc::ast::ast::Argument::CallExpression(inner) = arg else {
+                    return None;
+                };
+                let Expression::Identifier(id) = &inner.callee else {
+                    return None;
+                };
+                bindings.get(id.name.as_str()).and_then(|(src, imported)| {
+                    (src == factory_specifier && imported == factory_function)
+                        .then(|| byte_offset_to_line(source, inner.span.start as usize))
+                })
+            }) {
+                return Some(line);
             }
             None
         }

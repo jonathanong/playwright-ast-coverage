@@ -18,6 +18,7 @@ pub fn run_analyze(
     run_analyze_inner(root, &file_config, targets, depth)
 }
 
+#[inline(never)]
 pub(crate) fn run_analyze_inner(
     root: &Path,
     file_config: &FileConfig,
@@ -25,23 +26,29 @@ pub(crate) fn run_analyze_inner(
     _depth: Option<usize>,
 ) -> Result<Vec<ComponentFacts>> {
     let frontend_root = root.join(file_config.frontend_root.as_deref().unwrap_or("app"));
+    let default_targets;
+    let targets = if targets.is_empty() {
+        default_targets = vec![
+            "**/*.tsx".to_string(),
+            "**/*.ts".to_string(),
+            "**/*.jsx".to_string(),
+            "**/*.js".to_string(),
+        ];
+        default_targets.as_slice()
+    } else {
+        targets
+    };
     // Expand globs from root first; only fall back to frontend_root when root yields no matches.
     // Skip the frontend_root.exists() gate entirely when patterns match at root level.
-    let files = if !targets.is_empty() {
-        let from_root = expand_globs(root, targets)?;
-        if !from_root.is_empty() {
-            from_root
-        } else {
-            if !frontend_root.exists() {
-                anyhow::bail!("frontend root not found: {}", frontend_root.display());
-            }
-            expand_globs(&frontend_root, targets)?
-        }
+    let from_root = expand_globs(root, targets)?;
+    let files = if !from_root.is_empty() {
+        from_root
     } else {
         if !frontend_root.exists() {
             anyhow::bail!("frontend root not found: {}", frontend_root.display());
         }
-        expand_globs(&frontend_root, targets)?
+        expand_globs(&frontend_root, targets)
+            .expect("targets were already validated against the analysis root")
     };
 
     let mut file_cache: HashMap<PathBuf, Vec<ComponentFacts>> = HashMap::new();
@@ -67,6 +74,9 @@ pub(crate) fn run_analyze_inner(
 
     Ok(all_results)
 }
+
+#[cfg(test)]
+mod tests;
 
 fn aggregate_children(
     facts: &ComponentFacts,

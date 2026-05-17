@@ -1,4 +1,7 @@
 {
   "name": "codebase-intel-fixture",
+  "dependencies": {
+    "@x/web": "workspace:*"
+  },
   "workspaces": ["packages/*"]
 }

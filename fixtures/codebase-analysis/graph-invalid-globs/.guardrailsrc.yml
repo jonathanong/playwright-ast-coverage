@@ -1,0 +1,16 @@
+rules:
+  route-consistency:
+    backendPattern: "["
+    backendRegisterObject: "app"
+    frontendRoot: "app"
+    scanPatterns:
+      - "["
+
+  queue-dashboard-reachability:
+    queuePattern: "["
+    factorySpecifier: "@factory/pkg"
+    factoryFunction: "createQueue"
+
+  http-route-static-paths:
+    backendPattern: "["
+    registerObject: "app"

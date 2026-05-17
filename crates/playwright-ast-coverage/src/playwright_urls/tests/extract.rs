@@ -129,6 +129,7 @@ fn extracts_wait_for_url_page_url_match_and_static_route_helpers() {
         await frame.waitForURL(/^https:\/\/example.com\/orders\/absolute$/);
         await page.waitForURL(path());
         await page.waitForURL(getPath()());
+        await page.waitForURL(/not-a-path/);
         await app.waitForURL("/unrelated");
         await page.goto();
         await page.goto(routeName);

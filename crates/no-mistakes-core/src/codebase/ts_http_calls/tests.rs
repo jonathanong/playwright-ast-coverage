@@ -168,3 +168,38 @@ fn fixture_walks_statement_and_expression_shapes() {
     }
     assert!(!paths.contains(&"/other/top"));
 }
+
+#[test]
+fn covers_sparse_statement_declaration_and_default_export_shapes() {
+    let source = r#"
+declare function ambient(): void;
+export declare function exportedAmbient(): void;
+export class Ignored {}
+export default class IgnoredDefault {}
+export default function defaultAmbient(): void;
+export default client.get("/api/default-expression");
+
+if (ready) {
+  client.get("/api/if-only");
+}
+
+try {
+  client.get("/api/try-only");
+} finally {
+  client.get("/api/finally-ignored");
+}
+
+for (i = client.get("/api/for-expr-init"); i < 1; i++) {
+  client.get("/api/for-expr-body");
+}
+"#;
+    let calls = extract_http_calls(source, API_PREFIXES);
+    let paths: Vec<_> = calls.iter().map(|call| call.path.as_str()).collect();
+
+    for expected in ["/api/if-only", "/api/try-only", "/api/for-expr-body"] {
+        assert!(paths.contains(&expected), "missing {expected}");
+    }
+    assert!(!paths.contains(&"/api/default-expression"));
+    assert!(!paths.contains(&"/api/finally-ignored"));
+    assert!(!paths.contains(&"/api/for-expr-init"));
+}

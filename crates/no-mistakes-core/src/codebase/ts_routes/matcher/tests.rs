@@ -79,3 +79,18 @@ fn trailing_slash_stripped() {
 fn root_slash_preserved() {
     assert!(matches("/", "/"));
 }
+
+#[test]
+fn matches_any_reports_any_matching_pattern() {
+    let patterns = vec!["/nope".to_string(), "/api/:id".to_string()];
+
+    assert!(matches_any("/api/42", &patterns));
+    assert!(!matches_any("/other", &patterns));
+}
+
+#[test]
+fn double_star_matches_empty_reference_tail_only_when_final() {
+    assert!(matches("/api", "/api/**"));
+    assert!(!matches("/api", "/api/**/users"));
+    assert!(matches("/api/v1/admin/users", "/api/**/users"));
+}

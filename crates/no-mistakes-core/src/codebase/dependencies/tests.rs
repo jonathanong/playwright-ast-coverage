@@ -1,8 +1,49 @@
 use super::*;
 use clap::Parser;
 
+mod extra;
+
 fn parse(argv: &[&str]) -> TraverseArgs {
     TraverseArgs::parse_from(argv)
+}
+
+fn build_graph(root: &Path, tsconfig: &crate::codebase::ts_resolver::TsConfig) -> graph::DepGraph {
+    let graph_files = graph::GraphFiles::discover(root);
+    graph::DepGraph::build_with_plan_and_files(
+        root,
+        tsconfig,
+        graph::GraphBuildPlan::all(),
+        &graph_files,
+    )
+}
+
+fn fixture_root(name: &str) -> PathBuf {
+    crate::codebase::ts_resolver::normalize_path(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/codebase-analysis")
+            .join(name),
+    )
+}
+
+#[test]
+fn run_surfaces_tsconfig_errors() {
+    let root = fixture_root("symbols-output");
+    let args = TraverseArgs {
+        files: vec![PathBuf::from("src/utils.mts")],
+        root: Some(root.clone()),
+        tsconfig: Some(root.join("tsconfig-invalid.json")),
+        depth: None,
+        filters: Vec::new(),
+        tests: Vec::new(),
+        format: Some(Format::Json),
+        json: false,
+        relationships: Vec::new(),
+        timings: false,
+    };
+
+    let err = run(args, Direction::Deps).unwrap_err();
+
+    assert!(format!("{err:#}").contains("tsconfig-invalid.json"));
 }
 
 // ── TraverseArgs parsing ────────────────────────────────────────────────
@@ -255,7 +296,7 @@ fn deps_fixture_simple_json_output() {
         paths_dir: root.clone(),
         base_url: None,
     };
-    let g = graph::DepGraph::build(&root, &tsconfig).unwrap();
+    let g = build_graph(&root, &tsconfig);
     let a = root.join("a.mts");
     let entries = g.deps_of(&[NodeId::File(a)], None, None);
     assert!(!entries.is_empty(), "a.mts should have deps");
@@ -283,7 +324,7 @@ fn deps_fixture_format_output() {
         paths_dir: root.clone(),
         base_url: None,
     };
-    let g = graph::DepGraph::build(&root, &tsconfig).unwrap();
+    let g = build_graph(&root, &tsconfig);
     let a = root.join("a.mts");
     let entries = g.deps_of(&[NodeId::File(a)], None, None);
 
@@ -313,7 +354,7 @@ fn deps_test_framework_vitest_filter() {
         paths_dir: root.clone(),
         base_url: None,
     };
-    let g = graph::DepGraph::build(&root, &tsconfig).unwrap();
+    let g = build_graph(&root, &tsconfig);
     let idx = root.join("src").join("index.mts");
     let entries = g.dependents_of(&[NodeId::File(idx)], None, None);
 
@@ -347,7 +388,7 @@ fn filter_fixture_excludes_test_files() {
         paths_dir: root.clone(),
         base_url: None,
     };
-    let g = graph::DepGraph::build(&root, &tsconfig).unwrap();
+    let g = build_graph(&root, &tsconfig);
     let main = root.join("src").join("main.mts");
     let entries = g.deps_of(&[NodeId::File(main)], None, None);
     assert!(!entries.is_empty(), "main.mts should have deps");
@@ -389,7 +430,7 @@ fn symbol_export_fixture_alpha_dependents() {
         paths_dir: root.clone(),
         base_url: None,
     };
-    let g = graph::DepGraph::build(&root, &tsconfig).unwrap();
+    let g = build_graph(&root, &tsconfig);
     let source = root.join("source.mts");
     let entries = g.dependents_of(&[NodeId::File(source)], None, None);
     assert!(!entries.is_empty(), "source.mts should have dependents");
@@ -425,7 +466,7 @@ fn folder_suffix_fixture() {
         paths_dir: root.clone(),
         base_url: None,
     };
-    let g = graph::DepGraph::build(&root, &tsconfig).unwrap();
+    let g = build_graph(&root, &tsconfig);
     let main = root.join("main.mts");
     let entries = g.deps_of(&[NodeId::File(main)], None, None);
 

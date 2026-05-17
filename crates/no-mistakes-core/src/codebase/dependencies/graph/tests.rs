@@ -1,5 +1,7 @@
 use super::*;
 
+mod extra;
+
 fn p(s: &str) -> PathBuf {
     PathBuf::from(s)
 }
@@ -33,6 +35,11 @@ fn fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
+fn build_graph(root: &Path, tsconfig: &TsConfig) -> DepGraph {
+    let graph_files = GraphFiles::discover(root);
+    DepGraph::build_with_plan_and_files(root, tsconfig, GraphBuildPlan::all(), &graph_files)
+}
+
 #[test]
 fn node_display_and_normalization_cover_file_and_queue_nodes() {
     let root = p("/repo");
@@ -55,7 +62,7 @@ fn node_display_and_normalization_cover_file_and_queue_nodes() {
 #[test]
 fn graph_build_plan_from_allowed_covers_each_edge_family() {
     assert!(GraphBuildPlan::all().imports);
-    assert!(!GraphBuildPlan::all().import_only());
+    assert!(GraphBuildPlan::all().workspace);
 
     let allowed: HashSet<_> = [
         EdgeKind::TypeImport,
@@ -84,7 +91,17 @@ fn graph_build_plan_from_allowed_covers_each_edge_family() {
     assert!(plan.process);
 
     let import_only: HashSet<_> = [EdgeKind::Require].into();
-    assert!(GraphBuildPlan::from_allowed(Some(&import_only)).import_only());
+    let plan = GraphBuildPlan::from_allowed(Some(&import_only));
+    assert!(plan.imports);
+    assert!(!plan.workspace);
+    assert!(!plan.tests);
+    assert!(!plan.markdown);
+    assert!(!plan.ci);
+    assert!(!plan.routes);
+    assert!(!plan.queues);
+    assert!(!plan.playwright_routes);
+    assert!(!plan.http);
+    assert!(!plan.process);
 }
 
 // ── bfs ─────────────────────────────────────────────────────────────────
@@ -247,7 +264,7 @@ fn build_graph_from_fixture() {
         paths_dir: root.clone(),
         base_url: None,
     };
-    let graph = DepGraph::build(&root, &tsconfig).unwrap();
+    let graph = build_graph(&root, &tsconfig);
 
     let a = root.join("a.mts");
     let b = root.join("b.mts");
@@ -275,7 +292,7 @@ fn build_graph_aliased_fixture() {
     let root = crate::codebase::ts_resolver::normalize_path(&root);
     let tsconfig_path = root.join("tsconfig.json");
     let tsconfig = crate::codebase::ts_resolver::load_tsconfig(&tsconfig_path).unwrap();
-    let graph = DepGraph::build(&root, &tsconfig).unwrap();
+    let graph = build_graph(&root, &tsconfig);
 
     let main = root.join("main.mts");
     let helpers = root.join("utils").join("helpers.mts");
@@ -297,7 +314,7 @@ fn ci_edges_include_workspace_member_bins() {
         paths_dir: root.clone(),
         base_url: None,
     };
-    let graph = DepGraph::build(&root, &tsconfig).unwrap();
+    let graph = build_graph(&root, &tsconfig);
 
     let workflow = root.join(".github").join("workflows").join("ci.yml");
     let implicit_main = root
@@ -371,7 +388,7 @@ fn ci_edges_include_implicit_workspace_member_bins() {
         paths_dir: root.clone(),
         base_url: None,
     };
-    let graph = DepGraph::build(&root, &tsconfig).unwrap();
+    let graph = build_graph(&root, &tsconfig);
 
     let workflow = root.join(".github").join("workflows").join("ci.yml");
     let implicit_main = root
@@ -404,7 +421,7 @@ fn build_graph_excludes_skipped_fixture_files() {
         paths_dir: root.clone(),
         base_url: None,
     };
-    let graph = DepGraph::build(&root, &tsconfig).unwrap();
+    let graph = build_graph(&root, &tsconfig);
 
     let dependents = graph.dependents_of(&[NodeId::File(source)], None, None);
     let paths: Vec<_> = dependents.iter().filter_map(|e| e.node.as_file()).collect();
@@ -432,7 +449,7 @@ fn build_graph_over_fixture_corpus_exercises_all_edge_producers() {
         base_url: Some(root.clone()),
     };
 
-    let graph = DepGraph::build(&root, &tsconfig).unwrap();
+    let graph = build_graph(&root, &tsconfig);
 
     assert_eq!(graph.root(), root.as_path());
     assert!(graph.all_files().count() > 10);
@@ -444,7 +461,16 @@ fn graph_build_plan_import_only_enables_only_imports() {
 
     let plan = GraphBuildPlan::from_allowed(Some(&allowed));
 
-    assert!(plan.import_only());
+    assert!(plan.imports);
+    assert!(!plan.workspace);
+    assert!(!plan.tests);
+    assert!(!plan.markdown);
+    assert!(!plan.ci);
+    assert!(!plan.routes);
+    assert!(!plan.queues);
+    assert!(!plan.playwright_routes);
+    assert!(!plan.http);
+    assert!(!plan.process);
 }
 
 #[test]
@@ -477,7 +503,7 @@ fn lazy_import_deps_walks_only_reachable_import_graph() {
         base_url: None,
     };
 
-    let deps = lazy_import_deps_of(&[NodeId::File(entry)], &root, &tsconfig, None).unwrap();
+    let deps = lazy_import_deps_of(&[NodeId::File(entry)], &root, &tsconfig, None);
 
     assert_eq!(
         deps.iter()
@@ -734,6 +760,27 @@ fn symbol_index_multiple_importers() {
     assert_eq!(importers.len(), 2);
 }
 
+#[test]
+fn graph_private_helpers_cover_noop_branches() {
+    let mut visited_pairs = HashSet::new();
+    let mut queue = VecDeque::new();
+    let pair = (p("/src/a.mts"), "alpha".to_string());
+    visited_pairs.insert(pair.clone());
+    push_unvisited_symbol_pair(&mut visited_pairs, &mut queue, pair);
+    assert!(queue.is_empty());
+
+    let mut forward = EdgeMap::new();
+    let mut reverse = EdgeMap::new();
+    let file = p("/src/worker.mts");
+    let queue_job = NodeId::QueueJob {
+        queue_file: p("/src/queue.mts"),
+        job: "send".to_string(),
+    };
+    add_distinct_worker_file_edges(&mut forward, &mut reverse, &file, &file, &queue_job);
+    assert!(forward.is_empty());
+    assert!(reverse.is_empty());
+}
+
 // ── add_test_edges ───────────────────────────────────────────────────────
 
 #[test]
@@ -749,7 +796,7 @@ fn test_edges_source_finds_test_file() {
         paths_dir: root.clone(),
         base_url: None,
     };
-    let graph = DepGraph::build(&root, &tsconfig).unwrap();
+    let graph = build_graph(&root, &tsconfig);
 
     let index_mts = root.join("index.mts");
     let index_test = root.join("index.test.mts");
@@ -792,7 +839,7 @@ fn md_edges_added_for_codebase_intel_fixture() {
         paths_dir: root.clone(),
         base_url: None,
     };
-    let graph = DepGraph::build(&root, &tsconfig).unwrap();
+    let graph = build_graph(&root, &tsconfig);
 
     let readme = root.join("README.md");
     let deps = graph.deps_of(

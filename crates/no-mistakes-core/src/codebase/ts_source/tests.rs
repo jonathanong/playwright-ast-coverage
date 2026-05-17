@@ -1,7 +1,12 @@
 use super::{
-    discover_files, git_visible_files, has_disable_comment, has_disable_file_comment, is_test_file,
-    starts_with_use_client,
+    discover_files, discover_source_files, git_visible_files, has_disable_comment,
+    has_disable_file_comment, is_skipped_dir, is_test_file, line_number, normalize_discovery_path,
+    relative_slash_path, starts_with_use_client, static_property_key_name, unwrap_ts_wrappers,
 };
+use oxc::allocator::Allocator;
+use oxc::ast::ast::{Expression, ObjectPropertyKind, Statement};
+use oxc::parser::Parser;
+use oxc::span::SourceType;
 use std::path::Path;
 use std::process::Command;
 use tempfile::TempDir;
@@ -95,6 +100,12 @@ fn empty_source_returns_false() {
     assert!(!has_disable_comment("", 2, "my-rule"));
 }
 
+#[test]
+fn disable_next_line_requires_directive_text() {
+    let source = "// ordinary comment\nsome code here";
+    assert!(!has_disable_comment(source, 2, "my-rule"));
+}
+
 // ── has_disable_file_comment ──────────────────────────────────────────────
 
 #[test]
@@ -164,6 +175,12 @@ fn file_disable_wrong_rule_not_matched() {
 }
 
 #[test]
+fn file_disable_matches_with_space_reason() {
+    let source = "// guardrails-disable-file my-rule because generated\nexport const x = 1";
+    assert!(has_disable_file_comment(source, "my-rule"));
+}
+
+#[test]
 fn file_disable_skips_non_matching_file_directives() {
     let source = "// guardrails-disable-file other-rule\n// guardrails-disable-file my-rule\nexport const x = 1";
     assert!(has_disable_file_comment(source, "my-rule"));
@@ -173,6 +190,11 @@ fn file_disable_skips_non_matching_file_directives() {
 fn file_disable_after_code_not_matched() {
     let source = "export const x = 1\n// guardrails-disable-file my-rule";
     assert!(!has_disable_file_comment(source, "my-rule"));
+}
+
+#[test]
+fn file_disable_empty_source_returns_false() {
+    assert!(!has_disable_file_comment("", "my-rule"));
 }
 
 // ── starts_with_use_client ────────────────────────────────────────────────
@@ -231,6 +253,43 @@ fn non_test_file_not_flagged() {
     assert!(!is_test_file("web/lib/api/server/users.ts"));
 }
 
+#[test]
+fn source_helpers_cover_paths_lines_wrappers_and_property_names() {
+    assert!(is_skipped_dir("node_modules"));
+    assert!(!is_skipped_dir("src"));
+    assert_eq!(
+        relative_slash_path(Path::new("/repo"), Path::new("/repo/src\\file.ts")),
+        "src/file.ts"
+    );
+    assert_eq!(line_number("a\nb\nc", 2), 2);
+
+    let allocator = Allocator::default();
+    let parsed = Parser::new(
+        &allocator,
+        "const x = { plain: (value as string)!, \"quoted\": (<string>value) satisfies string, [dyn]: value };",
+        SourceType::ts(),
+    )
+    .parse();
+    let Statement::VariableDeclaration(var_decl) = &parsed.program.body[0] else {
+        panic!("expected variable declaration");
+    };
+    let Expression::ObjectExpression(obj) = var_decl.declarations[0].init.as_ref().expect("init")
+    else {
+        panic!("expected object");
+    };
+    let mut names = Vec::new();
+    for prop in &obj.properties {
+        let ObjectPropertyKind::ObjectProperty(prop) = prop else {
+            continue;
+        };
+        names.push(static_property_key_name(&prop.key));
+        let _ = unwrap_ts_wrappers(&prop.value);
+    }
+
+    assert_eq!(names, vec![Some("plain"), Some("quoted"), None]);
+    assert_eq!(normalize_discovery_path(Path::new("")), Path::new("."));
+}
+
 // ── git-aware discovery ─────────────────────────────────────────────────
 
 #[test]
@@ -259,6 +318,16 @@ fn discover_files_falls_back_outside_git_repositories() {
     let files = discover_files(dir.path(), &[]);
 
     assert_eq!(files, vec![dir.path().join("src/main.mts")]);
+}
+
+#[test]
+fn discover_source_files_filters_non_ts_js_extensions() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/ast-snippets/ts-source");
+
+    let files = discover_source_files(&dir, &[]);
+
+    assert!(files.iter().any(|path| path.ends_with("jsx-walk-all.tsx")));
+    assert!(!files.iter().any(|path| path.ends_with("plain.txt")));
 }
 
 #[test]

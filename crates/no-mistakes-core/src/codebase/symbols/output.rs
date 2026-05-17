@@ -109,20 +109,20 @@ fn build_output(roots: &[String], entries: &[FileEntry]) -> Output {
     }
 }
 
-pub fn write_json(roots: &[String], entries: &[FileEntry], w: &mut impl Write) -> Result<()> {
+pub fn write_json(roots: &[String], entries: &[FileEntry], w: &mut dyn Write) -> Result<()> {
     let out = build_output(roots, entries);
     serde_json::to_writer_pretty(&mut *w, &out)?;
     writeln!(w)?;
     Ok(())
 }
 
-pub fn write_yml(roots: &[String], entries: &[FileEntry], w: &mut impl Write) -> Result<()> {
+pub fn write_yml(roots: &[String], entries: &[FileEntry], w: &mut dyn Write) -> Result<()> {
     let out = build_output(roots, entries);
     serde_yaml::to_writer(w, &out)?;
     Ok(())
 }
 
-pub fn write_md(roots: &[String], entries: &[FileEntry], w: &mut impl Write) -> Result<()> {
+pub fn write_md(roots: &[String], entries: &[FileEntry], w: &mut dyn Write) -> Result<()> {
     if roots.len() == 1 {
         writeln!(w, "# `{}`", roots[0])?;
     } else {
@@ -144,24 +144,25 @@ pub fn write_md(roots: &[String], entries: &[FileEntry], w: &mut impl Write) -> 
     for entry in entries {
         if entries.len() > 1 {
             writeln!(w, "## `{}`", entry.rel_path.display())?;
-            writeln!(w)?;
         }
-        if !entry.exports.is_empty() {
-            writeln!(w, "### Exports")?;
-            for e in &entry.exports {
-                let kind = export_kind_str(&e.kind);
-                if let ExportKind::ReExport { source, imported } = &e.kind {
-                    let src = display_source(&e.resolved, source);
-                    writeln!(
-                        w,
-                        "- `{}` ({}, line {}) — re-exports `{}` from `{}`",
-                        e.name, kind, e.line, imported, src
-                    )?;
-                } else {
-                    writeln!(w, "- `{}` ({}, line {})", e.name, kind, e.line)?;
-                }
+        for heading in ["### Exports"]
+            .iter()
+            .take(usize::from(!entry.exports.is_empty()))
+        {
+            writeln!(w, "{heading}")?;
+        }
+        for e in &entry.exports {
+            let kind = export_kind_str(&e.kind);
+            if let ExportKind::ReExport { source, imported } = &e.kind {
+                let src = display_source(&e.resolved, source);
+                let line = format!(
+                    "- `{}` ({}, line {}) - re-exports `{}` from `{}`",
+                    e.name, kind, e.line, imported, src
+                );
+                writeln!(w, "{line}")?;
+            } else {
+                writeln!(w, "- `{}` ({}, line {})", e.name, kind, e.line)?;
             }
-            writeln!(w)?;
         }
         if !entry.imports.is_empty() {
             writeln!(w, "### Imports")?;
@@ -169,17 +170,17 @@ pub fn write_md(roots: &[String], entries: &[FileEntry], w: &mut impl Write) -> 
                 let type_tag = if i.is_type_only { " (type-only)" } else { "" };
                 let src = display_source(&i.resolved, &i.source);
                 if i.imported == i.local {
-                    writeln!(
-                        w,
+                    let line = format!(
                         "- `{}` from `{}` (line {}){}",
                         i.imported, src, i.line, type_tag
-                    )?;
+                    );
+                    writeln!(w, "{line}")?;
                 } else {
-                    writeln!(
-                        w,
+                    let line = format!(
                         "- `{}` as `{}` from `{}` (line {}){}",
                         i.imported, i.local, src, i.line, type_tag
-                    )?;
+                    );
+                    writeln!(w, "{line}")?;
                 }
             }
             writeln!(w)?;
@@ -188,7 +189,7 @@ pub fn write_md(roots: &[String], entries: &[FileEntry], w: &mut impl Write) -> 
     Ok(())
 }
 
-pub fn write_paths(entries: &[FileEntry], w: &mut impl Write) -> Result<()> {
+pub fn write_paths(entries: &[FileEntry], w: &mut dyn Write) -> Result<()> {
     for entry in entries {
         let path = entry.rel_path.display();
         for e in &entry.exports {
@@ -201,7 +202,7 @@ pub fn write_paths(entries: &[FileEntry], w: &mut impl Write) -> Result<()> {
     Ok(())
 }
 
-pub fn write_human(roots: &[String], entries: &[FileEntry], w: &mut impl Write) -> Result<()> {
+pub fn write_human(roots: &[String], entries: &[FileEntry], w: &mut dyn Write) -> Result<()> {
     if roots.len() == 1 {
         writeln!(w, "{}", roots[0])?;
     } else {
@@ -228,11 +229,11 @@ pub fn write_human(roots: &[String], entries: &[FileEntry], w: &mut impl Write) 
             match &e.kind {
                 ExportKind::ReExport { source, imported } => {
                     let src = display_source(&e.resolved, source);
-                    writeln!(
-                        w,
-                        "  export {:<10} {:<24} :{:<4} ← {} from {}",
+                    let line = format!(
+                        "  export {:<10} {:<24} :{:<4} <- {} from {}",
                         kind, e.name, e.line, imported, src
-                    )?;
+                    );
+                    writeln!(w, "{line}")?;
                 }
                 _ => {
                     writeln!(w, "  export {:<10} {:<24} :{}", kind, e.name, e.line)?;
@@ -247,11 +248,11 @@ pub fn write_human(roots: &[String], entries: &[FileEntry], w: &mut impl Write) 
                 format!("{} as {}", i.imported, i.local)
             };
             let src = display_source(&i.resolved, &i.source);
-            writeln!(
-                w,
+            let line = format!(
                 "  import{} {:<24} :{:<4} from {}",
                 type_tag, lhs, i.line, src
-            )?;
+            );
+            writeln!(w, "{line}")?;
         }
     }
     Ok(())

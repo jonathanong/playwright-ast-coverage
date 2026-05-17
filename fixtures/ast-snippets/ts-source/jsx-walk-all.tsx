@@ -3,6 +3,12 @@ import React from "react";
 const list = [1, 2, 3];
 const object = { a: 1, b: 2 };
 let counter = 0;
+const optional = object?.["a"];
+const optionalCall = object?.missing?.(counter);
+const spreadObject = { ...object };
+const spreadArray = [...list];
+const asserted = (counter as number)!;
+const tagged = String.raw`count-${counter}`;
 
 label:
 {
@@ -39,6 +45,8 @@ for (const key in object) {
   counter += object[key];
 }
 
+object["a"]++;
+
 try {
   counter = object?.missing?.();
 } catch (error) {
@@ -68,6 +76,8 @@ class Box {
 export const Value = (
   <Component
     attr={"value" as string}
+    fallback={<span />}
+    element=<span />
     {...{ label: `count-${counter}` }}
   >
     <>
@@ -87,10 +97,16 @@ export class ExportedBox {
   }
 }
 
-export default function Defaulted() {
+export default class DefaultBox {
+  render() {
+    return <section>{optional}{optionalCall}{spreadObject.a}{spreadArray[0]}{asserted}{tagged}</section>;
+  }
+}
+
+export const Defaulted = function () {
   const fn = function* () {
     yield counter;
   };
   const result = (counter++, counter satisfies number);
   return <button onClick={() => { counter = result; }}>{fn().next().value}</button>;
-}
+};

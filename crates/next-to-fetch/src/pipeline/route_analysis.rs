@@ -5,7 +5,7 @@ use crate::pipeline::cache::Cache;
 use crate::pipeline::target::{route_matches_target, TargetSpec};
 use anyhow::Result;
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub(crate) fn check_route_matches(
     route: &no_mistakes_core::routes::Route,
@@ -28,13 +28,7 @@ pub(crate) fn check_route_matches(
         }
 
         if let Some(target_file) = &target.file {
-            let mut visited_targets = HashSet::new();
-            let reaches_route_target = route_reaches_target(
-                &route.file,
-                target_file,
-                &mut visited_targets,
-                &mut cache.imports,
-            )?;
+            let reaches_route_target = reaches_target(&route.file, target_file, cache)?;
             if reaches_route_target {
                 matched = true;
                 newly_matched.push(target.raw.clone());
@@ -48,13 +42,7 @@ pub(crate) fn check_route_matches(
                     break;
                 }
 
-                let mut wrapper_targets = HashSet::new();
-                let reaches_wrapper_target = route_reaches_target(
-                    wrapper_file,
-                    target_file,
-                    &mut wrapper_targets,
-                    &mut cache.imports,
-                )?;
+                let reaches_wrapper_target = reaches_target(wrapper_file, target_file, cache)?;
                 if reaches_wrapper_target {
                     wrapper_file_matches = true;
                     break;
@@ -70,4 +58,14 @@ pub(crate) fn check_route_matches(
     }
 
     Ok((matched, newly_matched))
+}
+
+fn reaches_target(source_file: &Path, target_file: &Path, cache: &mut Cache) -> Result<bool> {
+    let mut visited_targets = HashSet::new();
+    route_reaches_target(
+        source_file,
+        target_file,
+        &mut visited_targets,
+        &mut cache.imports,
+    )
 }

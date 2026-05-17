@@ -44,18 +44,18 @@ impl ServerRouteVisitor<'_> {
                 };
                 let name = id.name.as_str();
                 if self.hono_names.contains(name) {
-                    return Some(Binding::new(
+                    Some(Binding::new(
                         Framework::Hono,
                         first_object_prefix(&new_expr.arguments),
-                    ));
-                }
-                if self.koa_router_names.contains(name) {
-                    return Some(Binding::new(
+                    ))
+                } else if self.koa_router_names.contains(name) {
+                    Some(Binding::new(
                         Framework::KoaRouter,
                         first_object_prefix(&new_expr.arguments),
-                    ));
+                    ))
+                } else {
+                    None
                 }
-                None
             }
             _ => None,
         }

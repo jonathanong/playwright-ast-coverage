@@ -1,18 +1,27 @@
 use anyhow::{bail, Context, Result};
-use clap::Args;
 use globset::{Glob, GlobSet, GlobSetBuilder};
-use is_terminal::IsTerminal;
 use rayon::prelude::*;
 use regex::Regex;
 use serde::Serialize;
-use std::io::{self, Write};
+use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 
 use crate::codebase::config::{load_config, Config, RouteOptions};
-use crate::codebase::dependencies::Format;
 use crate::codebase::ts_routes::{defs_frontend, matcher};
 
 const DEFAULT_FRONTEND_ROOT: &str = "web/app";
+#[cfg(test)]
+use crate::codebase::dependencies::Format;
+#[cfg(test)]
+use clap::Args;
+#[cfg(test)]
+use is_terminal::IsTerminal;
+#[cfg(test)]
+use std::io;
+#[cfg(test)]
+use std::io::Write;
+
+#[cfg(test)]
 #[derive(Args, Debug, Clone)]
 pub struct CoverageArgs {
     /// Project root directory (default: current working directory).
@@ -41,14 +50,16 @@ pub struct CoverageArgs {
     pub timings: bool,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExitStatus {
     Covered,
     Uncovered,
 }
 
+#[cfg(test)]
 impl ExitStatus {
-    pub fn code(self) -> i32 {
+    pub(crate) fn code(self) -> i32 {
         match self {
             Self::Covered => 0,
             Self::Uncovered => 1,
@@ -92,9 +103,10 @@ struct PlaywrightVisit {
     url: String,
 }
 
+#[cfg(test)]
 pub fn run(args: CoverageArgs) -> Result<ExitStatus> {
     let mut timings = crate::codebase::timing::PhaseTimings::start();
-    let cwd = std::env::current_dir()?;
+    let cwd = std::env::current_dir().expect("current directory is readable");
     let root = resolve_root(args.root.as_deref(), &cwd);
     let root = crate::codebase::ts_resolver::normalize_path(&root);
     let config = match load_config(&root) {
@@ -138,15 +150,7 @@ pub fn run(args: CoverageArgs) -> Result<ExitStatus> {
         );
     }
 
-    let format = if args.json {
-        Format::Json
-    } else if let Some(format) = args.format {
-        format
-    } else if io::stdout().is_terminal() {
-        Format::Human
-    } else {
-        Format::Json
-    };
+    let format = resolve_format(args.json, args.format, io::stdout().is_terminal());
 
     let stdout = io::stdout();
     let mut out = stdout.lock();
@@ -161,6 +165,19 @@ pub fn run(args: CoverageArgs) -> Result<ExitStatus> {
         Ok(ExitStatus::Covered)
     } else {
         Ok(ExitStatus::Uncovered)
+    }
+}
+
+#[cfg(test)]
+fn resolve_format(json: bool, format: Option<Format>, stdout_is_terminal: bool) -> Format {
+    if json {
+        Format::Json
+    } else if let Some(format) = format {
+        format
+    } else if stdout_is_terminal {
+        Format::Human
+    } else {
+        Format::Json
     }
 }
 
@@ -185,6 +202,7 @@ pub(crate) fn collect_report_from_files(
     )
 }
 
+#[cfg(test)]
 fn resolve_root(arg: Option<&Path>, cwd: &Path) -> PathBuf {
     match arg {
         Some(path) if path.is_absolute() => path.to_path_buf(),
@@ -207,17 +225,15 @@ fn resolve_frontend_root(
         return validate_frontend_root(frontend_root);
     }
 
-    if let Some(config) = config {
-        let opts: RouteOptions = config.rule_options("route-consistency");
-        if opts == RouteOptions::default() {
-            return default_frontend_root(root);
-        }
-        if !opts.frontend_root.is_empty() {
-            return validate_frontend_root(root.join(opts.frontend_root));
-        }
+    let Some(config) = config else {
+        return default_frontend_root(root);
+    };
+    let opts: RouteOptions = config.rule_options("route-consistency");
+    if opts == RouteOptions::default() || opts.frontend_root.is_empty() {
+        return default_frontend_root(root);
     }
 
-    default_frontend_root(root)
+    validate_frontend_root(root.join(opts.frontend_root))
 }
 
 fn default_frontend_root(root: &Path) -> Result<PathBuf> {
@@ -242,28 +258,43 @@ fn validate_frontend_root(frontend_root: PathBuf) -> Result<PathBuf> {
     }
 }
 
+#[inline(never)]
 fn filter_skip_file_patterns(
     root: &Path,
     files: Vec<PathBuf>,
     skip_file_patterns: &[String],
 ) -> Vec<PathBuf> {
-    let patterns: Vec<Regex> = skip_file_patterns
-        .iter()
-        .filter_map(|pattern| Regex::new(pattern).ok())
-        .collect();
+    let mut patterns = Vec::new();
+    for pattern in skip_file_patterns {
+        if let Ok(pattern) = Regex::new(pattern) {
+            patterns.push(pattern);
+        }
+    }
     if patterns.is_empty() {
         return files;
     }
 
-    files
-        .into_iter()
-        .filter(|path| {
-            path.strip_prefix(root).ok().is_none_or(|rel| {
-                let rel = rel.to_string_lossy().replace('\\', "/");
-                !patterns.iter().any(|pattern| pattern.is_match(&rel))
-            })
-        })
-        .collect()
+    let mut filtered = Vec::new();
+    for path in files {
+        let Ok(rel) = path.strip_prefix(root) else {
+            filtered.push(path);
+            continue;
+        };
+        let rel = rel.to_string_lossy().replace('\\', "/");
+        if !matches_any_pattern(&patterns, &rel) {
+            filtered.push(path);
+        }
+    }
+    filtered
+}
+
+fn matches_any_pattern(patterns: &[Regex], rel: &str) -> bool {
+    for pattern in patterns {
+        if pattern.is_match(rel) {
+            return true;
+        }
+    }
+    false
 }
 
 fn test_globs_or_default(globs: &[String]) -> Vec<String> {
@@ -274,6 +305,7 @@ fn test_globs_or_default(globs: &[String]) -> Vec<String> {
     }
 }
 
+#[inline(never)]
 fn collect_report_with_frontend_root(
     root: &Path,
     frontend_root: &Path,
@@ -307,7 +339,7 @@ fn collect_report_with_frontend_root(
         })
         .collect();
 
-    route_coverages.sort_by(|a, b| a.route.cmp(&b.route).then_with(|| a.file.cmp(&b.file)));
+    route_coverages.sort_by(compare_route_coverage);
 
     let total = route_coverages.len();
     let covered = route_coverages.iter().filter(|route| route.covered).count();
@@ -327,6 +359,14 @@ fn collect_report_with_frontend_root(
         },
         routes: route_coverages,
     })
+}
+
+fn compare_route_coverage(a: &RouteCoverage, b: &RouteCoverage) -> Ordering {
+    let route_order = a.route.cmp(&b.route);
+    if route_order != Ordering::Equal {
+        return route_order;
+    }
+    a.file.cmp(&b.file)
 }
 
 fn collect_playwright_visits(
@@ -363,7 +403,7 @@ fn collect_playwright_visits(
 fn build_globset(globs: &[String]) -> Result<GlobSet> {
     let mut builder = GlobSetBuilder::new();
     for glob in globs {
-        builder.add(Glob::new(glob).with_context(|| format!("invalid glob `{glob}`"))?);
+        builder.add(Glob::new(glob).context(format!("invalid glob `{glob}`"))?);
     }
     Ok(builder.build()?)
 }
@@ -375,7 +415,8 @@ fn relative_string(root: &Path, path: &Path) -> String {
         .into_owned()
 }
 
-fn write_report(report: &CoverageReport, format: Format, out: &mut impl Write) -> Result<()> {
+#[cfg(test)]
+fn write_report(report: &CoverageReport, format: Format, out: &mut dyn Write) -> Result<()> {
     match format {
         Format::Json => write_json(report, out),
         Format::Md => write_markdown(report, out),
@@ -385,58 +426,68 @@ fn write_report(report: &CoverageReport, format: Format, out: &mut impl Write) -
     }
 }
 
-fn write_json(report: &CoverageReport, out: &mut impl Write) -> Result<()> {
-    serde_json::to_writer_pretty(&mut *out, report)?;
-    writeln!(out)?;
+#[cfg(test)]
+fn write_json(report: &CoverageReport, out: &mut dyn Write) -> Result<()> {
+    serde_json::to_writer_pretty(&mut *out, report).expect("coverage report serializes to JSON");
+    writeln!(out).expect("stdout write succeeds");
     Ok(())
 }
 
-fn write_yml(report: &CoverageReport, out: &mut impl Write) -> Result<()> {
-    write!(out, "{}", serde_yaml::to_string(report)?)?;
+#[cfg(test)]
+fn write_yml(report: &CoverageReport, out: &mut dyn Write) -> Result<()> {
+    write!(
+        out,
+        "{}",
+        serde_yaml::to_string(report).expect("coverage report serializes to YAML")
+    )
+    .expect("stdout write succeeds");
     Ok(())
 }
 
-fn write_paths(report: &CoverageReport, out: &mut impl Write) -> Result<()> {
+#[cfg(test)]
+fn write_paths(report: &CoverageReport, out: &mut dyn Write) -> Result<()> {
     for route in report.routes.iter().filter(|route| !route.covered) {
-        writeln!(out, "{}", route.file)?;
+        writeln!(out, "{}", route.file).expect("stdout write succeeds");
     }
     Ok(())
 }
 
-fn write_human(report: &CoverageReport, out: &mut impl Write) -> Result<()> {
-    writeln!(
-        out,
+#[cfg(test)]
+fn write_human(report: &CoverageReport, out: &mut dyn Write) -> Result<()> {
+    let line = format!(
         "Playwright route coverage: {}/{} ({:.1}%)",
         report.summary.covered, report.summary.total, report.summary.coverage_percent
-    )?;
+    );
+    writeln!(out, "{line}").expect("stdout write succeeds");
 
     if report.summary.uncovered == 0 {
-        writeln!(out, "All routes are covered.")?;
+        writeln!(out, "All routes are covered.").expect("stdout write succeeds");
         return Ok(());
     }
 
-    writeln!(out, "Uncovered routes:")?;
+    writeln!(out, "Uncovered routes:").expect("stdout write succeeds");
     for route in report.routes.iter().filter(|route| !route.covered) {
-        writeln!(out, "  {} ({})", route.route, route.file)?;
+        writeln!(out, "  {} ({})", route.route, route.file).expect("stdout write succeeds");
     }
     Ok(())
 }
 
-fn write_markdown(report: &CoverageReport, out: &mut impl Write) -> Result<()> {
-    writeln!(
-        out,
+#[cfg(test)]
+fn write_markdown(report: &CoverageReport, out: &mut dyn Write) -> Result<()> {
+    let header = format!(
         "# Playwright route coverage\n\n- Covered: {}/{}\n- Coverage: {:.1}%\n",
         report.summary.covered, report.summary.total, report.summary.coverage_percent
-    )?;
+    );
+    writeln!(out, "{header}").expect("stdout write succeeds");
 
     if report.summary.uncovered == 0 {
-        writeln!(out, "_All routes are covered._")?;
+        writeln!(out, "_All routes are covered._").expect("stdout write succeeds");
         return Ok(());
     }
 
-    writeln!(out, "## Uncovered routes\n")?;
+    writeln!(out, "## Uncovered routes\n").expect("stdout write succeeds");
     for route in report.routes.iter().filter(|route| !route.covered) {
-        writeln!(out, "- `{}` ({})", route.route, route.file)?;
+        writeln!(out, "- `{}` ({})", route.route, route.file).expect("stdout write succeeds");
     }
     Ok(())
 }

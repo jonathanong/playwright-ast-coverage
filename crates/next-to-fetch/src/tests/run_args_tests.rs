@@ -1,6 +1,14 @@
 use super::helpers::with_run_args_env;
 use std::fs;
+use std::path::PathBuf;
 use tempfile::tempdir;
+
+fn fixture(category: &str, name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures")
+        .join(category)
+        .join(name)
+}
 
 #[test]
 fn test_run_without_test_argv_uses_real_cli_args() {
@@ -126,4 +134,22 @@ fn test_run_and_main_are_exercised_with_test_argv() {
         let _run_args = with_run_args_env(Some(next_value.to_string()), None);
         assert!(crate::cli::run_cli().is_ok());
     }
+}
+
+#[test]
+fn test_run_cli_markdown_path_with_test_argv() {
+    let root = fixture("nextjs-fetches", "next-app");
+    let next_value = format!("next-to-fetch\x1f--root\x1f{}", root.to_string_lossy());
+    let _run_args = with_run_args_env(Some(next_value), None);
+
+    assert!(crate::cli::run_cli().is_ok());
+}
+
+#[test]
+fn test_run_cli_error_path_with_test_argv() {
+    let missing = fixture("nextjs-fetches", "missing-root");
+    let next_value = format!("next-to-fetch\x1f--root\x1f{}", missing.to_string_lossy());
+    let _run_args = with_run_args_env(Some(next_value), None);
+
+    assert!(crate::cli::run_cli().is_err());
 }

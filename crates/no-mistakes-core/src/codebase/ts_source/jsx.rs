@@ -5,9 +5,10 @@
 //! the hooks they care about and leave the rest as no-ops.
 
 use oxc::ast::ast::{
-    Argument, ArrayExpressionElement, ClassElement, Declaration, ExportDefaultDeclarationKind,
-    Expression, ForStatementInit, ImportDeclaration, JSXAttributeItem, JSXAttributeValue, JSXChild,
-    JSXElement, JSXExpression, JSXOpeningElement, ObjectPropertyKind, Program, Statement,
+    Argument, ArrayExpressionElement, ClassBody, ClassElement, Declaration,
+    ExportDefaultDeclarationKind, Expression, ForStatementInit, FunctionBody, ImportDeclaration,
+    JSXAttributeItem, JSXAttributeValue, JSXChild, JSXElement, JSXExpression, JSXOpeningElement,
+    ObjectPropertyKind, Program, Statement,
 };
 
 /// Hooks rules can override. Defaults are no-ops.
@@ -26,16 +27,14 @@ pub fn walk_program<V: Visitor>(program: &Program, v: &mut V) {
     }
 }
 
-fn walk_statement<V: Visitor>(stmt: &Statement, v: &mut V) {
+fn walk_statement(stmt: &Statement, v: &mut dyn Visitor) {
     match stmt {
         Statement::ImportDeclaration(import) => {
             v.visit_import(import);
         }
         Statement::ExpressionStatement(e) => walk_expression(&e.expression, v),
         Statement::ReturnStatement(r) => {
-            if let Some(arg) = &r.argument {
-                walk_expression(arg, v);
-            }
+            walk_optional_expression(r.argument.as_ref(), v);
         }
         Statement::ThrowStatement(t) => walk_expression(&t.argument, v),
         Statement::BlockStatement(b) => {
@@ -46,9 +45,7 @@ fn walk_statement<V: Visitor>(stmt: &Statement, v: &mut V) {
         Statement::IfStatement(i) => {
             walk_expression(&i.test, v);
             walk_statement(&i.consequent, v);
-            if let Some(alt) = &i.alternate {
-                walk_statement(alt, v);
-            }
+            walk_optional_statement(i.alternate.as_ref(), v);
         }
         Statement::WhileStatement(w) => {
             walk_expression(&w.test, v);
@@ -63,15 +60,11 @@ fn walk_statement<V: Visitor>(stmt: &Statement, v: &mut V) {
                 match init {
                     ForStatementInit::VariableDeclaration(var_decl) => {
                         for d in &var_decl.declarations {
-                            if let Some(i) = &d.init {
-                                walk_expression(i, v);
-                            }
+                            walk_optional_expression(d.init.as_ref(), v);
                         }
                     }
                     other => {
-                        if let Some(expr) = other.as_expression() {
-                            walk_expression(expr, v);
-                        }
+                        walk_optional_expression(other.as_expression(), v);
                     }
                 }
             }
@@ -93,9 +86,7 @@ fn walk_statement<V: Visitor>(stmt: &Statement, v: &mut V) {
         }
         Statement::VariableDeclaration(var_decl) => {
             for d in &var_decl.declarations {
-                if let Some(init) = &d.init {
-                    walk_expression(init, v);
-                }
+                walk_optional_expression(d.init.as_ref(), v);
             }
         }
         Statement::LabeledStatement(l) => walk_statement(&l.body, v),
@@ -126,89 +117,63 @@ fn walk_statement<V: Visitor>(stmt: &Statement, v: &mut V) {
             }
         }
         Statement::FunctionDeclaration(f) => {
-            if let Some(body) = &f.body {
-                for s in &body.statements {
-                    walk_statement(s, v);
-                }
-            }
+            walk_function_body(f.body.as_deref(), v);
         }
-        Statement::ClassDeclaration(class) => {
-            for item in &class.body.body {
-                if let ClassElement::MethodDefinition(m) = item {
-                    if let Some(body) = &m.value.body {
-                        for s in &body.statements {
-                            walk_statement(s, v);
-                        }
-                    }
-                }
-            }
-        }
+        Statement::ClassDeclaration(class) => walk_class_body(&class.body, v),
         Statement::ExportNamedDeclaration(e) => {
-            if let Some(decl) = &e.declaration {
-                walk_declaration(decl, v);
-            }
+            walk_optional_declaration(e.declaration.as_ref(), v);
         }
         Statement::ExportDefaultDeclaration(e) => match &e.declaration {
             ExportDefaultDeclarationKind::FunctionDeclaration(f) => {
-                if let Some(body) = &f.body {
-                    for s in &body.statements {
-                        walk_statement(s, v);
-                    }
-                }
+                walk_function_body(f.body.as_deref(), v);
             }
             ExportDefaultDeclarationKind::ClassDeclaration(class) => {
-                for item in &class.body.body {
-                    if let ClassElement::MethodDefinition(m) = item {
-                        if let Some(body) = &m.value.body {
-                            for s in &body.statements {
-                                walk_statement(s, v);
-                            }
-                        }
-                    }
-                }
+                walk_class_body(&class.body, v)
             }
             other => {
-                if let Some(expr) = other.as_expression() {
-                    walk_expression(expr, v);
-                }
+                walk_optional_expression(other.as_expression(), v);
             }
         },
         _ => {}
     }
 }
 
-fn walk_declaration<V: Visitor>(decl: &Declaration, v: &mut V) {
+fn walk_declaration(decl: &Declaration, v: &mut dyn Visitor) {
     match decl {
         Declaration::VariableDeclaration(var_decl) => {
             for d in &var_decl.declarations {
-                if let Some(init) = &d.init {
-                    walk_expression(init, v);
-                }
+                walk_optional_expression(d.init.as_ref(), v);
             }
         }
         Declaration::FunctionDeclaration(f) => {
-            if let Some(body) = &f.body {
-                for s in &body.statements {
-                    walk_statement(s, v);
-                }
-            }
+            walk_function_body(f.body.as_deref(), v);
         }
-        Declaration::ClassDeclaration(class) => {
-            for item in &class.body.body {
-                if let ClassElement::MethodDefinition(m) = item {
-                    if let Some(body) = &m.value.body {
-                        for s in &body.statements {
-                            walk_statement(s, v);
-                        }
-                    }
-                }
-            }
-        }
+        Declaration::ClassDeclaration(class) => walk_class_body(&class.body, v),
         _ => {}
     }
 }
 
-fn walk_expression<V: Visitor>(expr: &Expression, v: &mut V) {
+fn walk_function_body(body: Option<&FunctionBody>, v: &mut dyn Visitor) {
+    if let Some(body) = body {
+        walk_statements(&body.statements, v);
+    }
+}
+
+fn walk_class_body(body: &ClassBody, v: &mut dyn Visitor) {
+    for item in &body.body {
+        if let ClassElement::MethodDefinition(method) = item {
+            walk_function_body(method.value.body.as_deref(), v);
+        }
+    }
+}
+
+fn walk_statements(statements: &[Statement], v: &mut dyn Visitor) {
+    for statement in statements {
+        walk_statement(statement, v);
+    }
+}
+
+fn walk_expression(expr: &Expression, v: &mut dyn Visitor) {
     v.visit_expression(expr);
     match expr {
         Expression::CallExpression(call) => {
@@ -231,12 +196,7 @@ fn walk_expression<V: Visitor>(expr: &Expression, v: &mut V) {
                 }
             }
             other => {
-                if let Some(member) = other.as_member_expression() {
-                    walk_expression(member.object(), v);
-                    if let oxc::ast::ast::MemberExpression::ComputedMemberExpression(cm) = member {
-                        walk_expression(&cm.expression, v);
-                    }
-                }
+                walk_member_expression(other.as_member_expression(), v);
             }
         },
         Expression::AwaitExpression(a) => walk_expression(&a.argument, v),
@@ -251,12 +211,7 @@ fn walk_expression<V: Visitor>(expr: &Expression, v: &mut V) {
             walk_expression(&m.expression, v);
         }
         Expression::AssignmentExpression(a) => {
-            if let Some(member) = a.left.as_member_expression() {
-                walk_expression(member.object(), v);
-                if let oxc::ast::ast::MemberExpression::ComputedMemberExpression(cm) = member {
-                    walk_expression(&cm.expression, v);
-                }
-            }
+            walk_member_expression(a.left.as_member_expression(), v);
             walk_expression(&a.right, v);
         }
         Expression::ArrowFunctionExpression(a) => {
@@ -265,11 +220,7 @@ fn walk_expression<V: Visitor>(expr: &Expression, v: &mut V) {
             }
         }
         Expression::FunctionExpression(f) => {
-            if let Some(body) = &f.body {
-                for s in &body.statements {
-                    walk_statement(s, v);
-                }
-            }
+            walk_function_body(f.body.as_deref(), v);
         }
         Expression::ConditionalExpression(c) => {
             walk_expression(&c.test, v);
@@ -286,12 +237,7 @@ fn walk_expression<V: Visitor>(expr: &Expression, v: &mut V) {
         }
         Expression::UnaryExpression(u) => walk_expression(&u.argument, v),
         Expression::UpdateExpression(u) => {
-            if let Some(member) = u.argument.as_member_expression() {
-                walk_expression(member.object(), v);
-                if let oxc::ast::ast::MemberExpression::ComputedMemberExpression(cm) = member {
-                    walk_expression(&cm.expression, v);
-                }
-            }
+            walk_member_expression(u.argument.as_member_expression(), v);
         }
         Expression::SequenceExpression(s) => {
             for e in &s.expressions {
@@ -336,18 +282,40 @@ fn walk_expression<V: Visitor>(expr: &Expression, v: &mut V) {
     }
 }
 
-fn walk_argument<V: Visitor>(arg: &Argument, v: &mut V) {
-    match arg {
-        Argument::SpreadElement(s) => walk_expression(&s.argument, v),
-        _ => {
-            if let Some(expr) = arg.as_expression() {
-                walk_expression(expr, v);
-            }
+fn walk_member_expression(
+    member: Option<&oxc::ast::ast::MemberExpression<'_>>,
+    v: &mut dyn Visitor,
+) {
+    if let Some(member) = member {
+        walk_expression(member.object(), v);
+        if let oxc::ast::ast::MemberExpression::ComputedMemberExpression(cm) = member {
+            walk_expression(&cm.expression, v);
         }
     }
 }
 
-fn walk_jsx_element<V: Visitor>(elem: &JSXElement, v: &mut V) {
+fn walk_argument(arg: &Argument, v: &mut dyn Visitor) {
+    match arg {
+        Argument::SpreadElement(s) => walk_expression(&s.argument, v),
+        _ => {
+            walk_optional_expression(arg.as_expression(), v);
+        }
+    }
+}
+
+fn walk_optional_expression(expr: Option<&Expression>, v: &mut dyn Visitor) {
+    let _ = expr.map(|expr| walk_expression(expr, v));
+}
+
+fn walk_optional_statement(stmt: Option<&Statement>, v: &mut dyn Visitor) {
+    let _ = stmt.map(|stmt| walk_statement(stmt, v));
+}
+
+fn walk_optional_declaration(decl: Option<&Declaration>, v: &mut dyn Visitor) {
+    let _ = decl.map(|decl| walk_declaration(decl, v));
+}
+
+fn walk_jsx_element(elem: &JSXElement, v: &mut dyn Visitor) {
     v.visit_jsx_opening(&elem.opening_element);
     for attr in &elem.opening_element.attributes {
         match attr {
@@ -369,7 +337,7 @@ fn walk_jsx_element<V: Visitor>(elem: &JSXElement, v: &mut V) {
     }
 }
 
-fn walk_jsx_child<V: Visitor>(child: &JSXChild, v: &mut V) {
+fn walk_jsx_child(child: &JSXChild, v: &mut dyn Visitor) {
     match child {
         JSXChild::Element(elem) => walk_jsx_element(elem, v),
         JSXChild::Fragment(frag) => {
@@ -436,26 +404,24 @@ pub fn find_string_attr<'a>(
         if attr_name != name {
             continue;
         }
-        return Some(match &attr.value {
-            None => (true, None),
-            Some(JSXAttributeValue::StringLiteral(s)) => (true, Some(s.value.as_str())),
-            Some(JSXAttributeValue::ExpressionContainer(c)) => {
-                if let Some(expr) = c.expression.as_expression() {
-                    if let Expression::StringLiteral(s) =
-                        crate::codebase::ts_source::unwrap_ts_wrappers(expr)
-                    {
-                        (true, Some(s.value.as_str()))
-                    } else {
-                        (true, None)
-                    }
-                } else {
-                    (true, None)
-                }
-            }
-            _ => (true, None),
-        });
+        return Some(jsx_attr_value(&attr.value));
     }
     None
+}
+
+fn jsx_attr_value<'a>(value: &'a Option<JSXAttributeValue<'a>>) -> (bool, Option<&'a str>) {
+    match value {
+        None => (true, None),
+        Some(JSXAttributeValue::StringLiteral(s)) => (true, Some(s.value.as_str())),
+        Some(JSXAttributeValue::ExpressionContainer(c)) => match c.expression.as_expression() {
+            Some(expr) => match crate::codebase::ts_source::unwrap_ts_wrappers(expr) {
+                Expression::StringLiteral(s) => (true, Some(s.value.as_str())),
+                _ => (true, None),
+            },
+            None => (true, None),
+        },
+        Some(_) => (true, None),
+    }
 }
 
 #[cfg(test)]
