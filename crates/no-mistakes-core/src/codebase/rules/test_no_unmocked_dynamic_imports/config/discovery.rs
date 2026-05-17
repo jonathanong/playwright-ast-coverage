@@ -1,7 +1,10 @@
+mod regex_literals;
+
 use crate::config::v2::{ConfigView, NoMistakesConfig};
 use anyhow::Result;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use regex::Regex;
+use regex_literals::extract_test_regex_literals;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy)]
@@ -162,16 +165,7 @@ pub(super) fn extract_test_property_strings(source: &str, property: &str) -> Vec
 
 pub(super) fn extract_test_regexes(source: &str) -> Vec<String> {
     let mut regexes = extract_property_strings(source, "testRegex");
-    let literals = Regex::new(r#"(?s)\btestRegex\s*:\s*(\[[^\]]*\]|/[^/\n]+/[a-z]*)"#)
-        .expect("testRegex regex compiles");
-    let literal_re = Regex::new(r#"/([^/\n]+)/[a-z]*"#).expect("regex literal regex compiles");
-    for capture in literals.captures_iter(source) {
-        for regex in literal_re.captures_iter(&capture[1]) {
-            if let Some(pattern) = regex.get(1) {
-                regexes.push(pattern.as_str().to_string());
-            }
-        }
-    }
+    regexes.extend(extract_test_regex_literals(source));
     regexes
 }
 

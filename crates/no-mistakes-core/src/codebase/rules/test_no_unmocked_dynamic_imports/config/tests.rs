@@ -232,6 +232,23 @@ fn jest_test_regex_literal_is_used_as_include_pattern() {
 }
 
 #[test]
+fn jest_test_regex_literal_accepts_escaped_slashes_and_arrays() {
+    let source = r#"module.exports = {
+        testRegex: [/stories\/.*\.test\.tsx$/i, /__tests__[/\\].*\.mts$/],
+    }"#;
+    assert_eq!(
+        extract_test_regexes(source),
+        vec![r#"stories\/.*\.test\.tsx$"#, r#"__tests__[/\\].*\.mts$"#]
+    );
+}
+
+#[test]
+fn malformed_jest_test_regex_literals_are_ignored() {
+    assert!(extract_test_regexes("module.exports = { testRegex: /unterminated").is_empty());
+    assert!(extract_test_regexes("module.exports = { testRegex: [/unterminated]").is_empty());
+}
+
+#[test]
 fn test_filter_matches_jest_regex_includes() {
     let root = crate::codebase::ts_resolver::normalize_path(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR"))

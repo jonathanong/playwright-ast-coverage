@@ -1,14 +1,16 @@
 mod ast;
 mod config;
 mod manual_mocks;
+mod runtime;
 
 use super::RuleFinding;
-use crate::codebase::dependencies::graph::{DepGraph, EdgeKind, GraphBuildPlan, NodeId};
+use crate::codebase::dependencies::graph::{DepGraph, GraphBuildPlan};
 use crate::codebase::ts_resolver::{load_tsconfig, normalize_path, ImportResolver, TsConfig};
 use crate::codebase::ts_source::{discover_files, has_disable_comment, has_disable_file_comment};
 use crate::config::v2::NoMistakesConfig;
 use anyhow::Result;
-use std::collections::HashSet;
+use runtime::runtime_deps;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 pub const RULE_ID: &str = "test-no-unmocked-dynamic-imports";
@@ -23,6 +25,7 @@ pub fn check(
     let resolver = ImportResolver::new(&tsconfig);
     let graph = DepGraph::build_with_plan(root, &tsconfig, GraphBuildPlan::all())?;
     let manual_mocks = manual_mocks::discover(root, &config.filesystem.skip_directories);
+    let mut dependency_cache = HashMap::new();
     let mut findings = Vec::new();
 
     for file in matching_test_files(root, &files, config)? {
@@ -38,19 +41,20 @@ pub fn check(
             &file,
             &resolver,
         ));
+        let mut check_context = DynamicCheckContext {
+            root,
+            file: &file,
+            resolver: &resolver,
+            graph: &graph,
+            mocks: &mocks,
+            dependency_cache: &mut dependency_cache,
+            findings: &mut findings,
+        };
         for import in facts.dynamic_imports {
             if has_disable_comment(&source, import.line as u32, RULE_ID) {
                 continue;
             }
-            check_dynamic_import(
-                root,
-                &file,
-                import,
-                &resolver,
-                &graph,
-                &mocks,
-                &mut findings,
-            );
+            check_dynamic_import(&mut check_context, import);
         }
     }
 
@@ -58,57 +62,58 @@ pub fn check(
     Ok(findings)
 }
 
-fn check_dynamic_import(
-    root: &Path,
-    file: &Path,
-    import: ast::DynamicImport,
-    resolver: &ImportResolver<'_>,
-    graph: &DepGraph,
-    mocks: &HashSet<PathBuf>,
-    findings: &mut Vec<RuleFinding>,
-) {
+struct DynamicCheckContext<'a> {
+    root: &'a Path,
+    file: &'a Path,
+    resolver: &'a ImportResolver<'a>,
+    graph: &'a DepGraph,
+    mocks: &'a HashSet<PathBuf>,
+    dependency_cache: &'a mut HashMap<PathBuf, Vec<PathBuf>>,
+    findings: &'a mut Vec<RuleFinding>,
+}
+
+fn check_dynamic_import(ctx: &mut DynamicCheckContext<'_>, import: ast::DynamicImport) {
     let Some(specifier) = import.specifier else {
-        push_finding(root, file, import.line, None, None, findings);
+        push_finding(ctx.root, ctx.file, import.line, None, None, ctx.findings);
         return;
     };
-    let Some(target) = resolver.resolve(&specifier, file) else {
-        if !mocks.contains(&PathBuf::from(&specifier)) {
-            push_finding(root, file, import.line, Some(specifier), None, findings);
+    let Some(target) = ctx.resolver.resolve(&specifier, ctx.file) else {
+        if !ctx.mocks.contains(&PathBuf::from(&specifier)) {
+            push_finding(
+                ctx.root,
+                ctx.file,
+                import.line,
+                Some(specifier),
+                None,
+                ctx.findings,
+            );
         }
         return;
     };
-    if mocks.contains(&target) {
+    if ctx.mocks.contains(&target) {
         return;
     }
     let mut required = vec![target.clone()];
-    required.extend(runtime_deps(graph, target));
+    let dependencies = if let Some(dependencies) = ctx.dependency_cache.get(&target) {
+        dependencies.clone()
+    } else {
+        let dependencies = runtime_deps(ctx.graph, target.clone());
+        ctx.dependency_cache.insert(target, dependencies.clone());
+        dependencies
+    };
+    required.extend(dependencies);
     for dependency in required {
-        if !mocks.contains(&dependency) {
+        if !ctx.mocks.contains(&dependency) {
             push_finding(
-                root,
-                file,
+                ctx.root,
+                ctx.file,
                 import.line,
                 Some(specifier.clone()),
                 Some(dependency),
-                findings,
+                ctx.findings,
             );
         }
     }
-}
-
-fn runtime_deps(graph: &DepGraph, target: PathBuf) -> Vec<PathBuf> {
-    let allowed = [
-        EdgeKind::Import,
-        EdgeKind::DynamicImport,
-        EdgeKind::Require,
-        EdgeKind::WorkspaceImport,
-    ]
-    .into();
-    graph
-        .deps_of(&[NodeId::File(target)], None, Some(&allowed))
-        .into_iter()
-        .filter_map(|entry| entry.node.as_file().map(Path::to_path_buf))
-        .collect()
 }
 
 fn push_finding(

@@ -46,18 +46,24 @@ fn next_line_disable_and_unresolved_import_branches_are_reported() {
     };
     let resolver = ImportResolver::new(&tsconfig);
     let graph = DepGraph::from_raw_maps(root.clone(), Default::default(), Default::default());
+    let mocks = HashSet::new();
+    let mut dependency_cache = HashMap::new();
     let mut findings = Vec::new();
+    let mut context = DynamicCheckContext {
+        root: &root,
+        file: &disabled,
+        resolver: &resolver,
+        graph: &graph,
+        mocks: &mocks,
+        dependency_cache: &mut dependency_cache,
+        findings: &mut findings,
+    };
     check_dynamic_import(
-        &root,
-        &disabled,
+        &mut context,
         ast::DynamicImport {
             specifier: Some("./missing.mts".to_string()),
             line: 1,
         },
-        &resolver,
-        &graph,
-        &Default::default(),
-        &mut findings,
     );
     assert_eq!(findings[0].import.as_deref(), Some("./missing.mts"));
     assert!(check(&root, &config, None)
@@ -76,20 +82,63 @@ fn mocked_dynamic_import_target_skips_transitive_dependency_checks() {
     let target = root.join("src").join("lazy.mts");
     let mut mocks = HashSet::new();
     mocks.insert(target);
+    let mut dependency_cache = HashMap::new();
     let mut findings = Vec::new();
+    let mut context = DynamicCheckContext {
+        root: &root,
+        file: &test_file,
+        resolver: &resolver,
+        graph: &graph,
+        mocks: &mocks,
+        dependency_cache: &mut dependency_cache,
+        findings: &mut findings,
+    };
     check_dynamic_import(
-        &root,
-        &test_file,
+        &mut context,
         ast::DynamicImport {
             specifier: Some("../src/lazy.mts".to_string()),
             line: 1,
         },
-        &resolver,
-        &graph,
-        &mocks,
-        &mut findings,
     );
     assert!(findings.is_empty());
+}
+
+#[test]
+fn repeated_dynamic_import_target_uses_dependency_cache() {
+    let root = fixture();
+    let tsconfig = load_tsconfig(&root.join("tsconfig.json")).unwrap();
+    let resolver = ImportResolver::new(&tsconfig);
+    let graph = DepGraph::build_with_plan(&root, &tsconfig, GraphBuildPlan::all()).unwrap();
+    let test_file = root.join("tests").join("bad.test.mts");
+    let mocks = HashSet::new();
+    let mut dependency_cache = HashMap::new();
+    let mut findings = Vec::new();
+    let mut context = DynamicCheckContext {
+        root: &root,
+        file: &test_file,
+        resolver: &resolver,
+        graph: &graph,
+        mocks: &mocks,
+        dependency_cache: &mut dependency_cache,
+        findings: &mut findings,
+    };
+    check_dynamic_import(
+        &mut context,
+        ast::DynamicImport {
+            specifier: Some("../src/lazy.mts".to_string()),
+            line: 1,
+        },
+    );
+    let cache_len = context.dependency_cache.len();
+    check_dynamic_import(
+        &mut context,
+        ast::DynamicImport {
+            specifier: Some("../src/lazy.mts".to_string()),
+            line: 1,
+        },
+    );
+    assert_eq!(context.dependency_cache.len(), cache_len);
+    assert!(!context.findings.is_empty());
 }
 
 #[test]
