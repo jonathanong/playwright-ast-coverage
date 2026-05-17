@@ -1,6 +1,3 @@
-- Test fixtures live under `fixtures/<category>/<name>/` at the repo root. Do NOT create fixtures inline in test code (no `fs::create_dir_all` / `fs::write` to build a fixture during a test run). Save the files to `fixtures/*` and reference them via the per-crate / per-package fixture helper.
-- All shared Rust code belongs in `no-mistakes-core`. Crates must not depend on one another directly. If two crates need the same helper, lift it into `no-mistakes-core` first.
-
 ## Design principles
 
 Goal: AI-powered AST-based codebase intelligence for AI Agents.
@@ -17,3 +14,15 @@ Goal: AI-powered AST-based codebase intelligence for AI Agents.
 - 100% test coverage
 - Test fixture-based — can't be perfect, but add more tests to improve coverage
 - Heuristics — can't be perfect, but we'll try our best
+
+## Context Management
+
+- By default, show minimum output
+- When showing errors, explain what the error is, where it is, how to fix it. For `check` rules, explain why this check exists.
+
+## Development
+
+- When finding an error, always create a regression test
+- Continuously add test fixtures to `fixtures/**` for cases you find
+- Test fixtures live under `fixtures/<category>/<name>/` at the repo root. Do NOT create fixtures inline in test code (no `fs::create_dir_all` / `fs::write` to build a fixture during a test run). Save the files to `fixtures/*` and reference them via the per-crate / per-package fixture helper.
+- All shared Rust code belongs in `no-mistakes-core`. Crates must not depend on one another directly. If two crates need the same helper, lift it into `no-mistakes-core` first.
