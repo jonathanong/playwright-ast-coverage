@@ -35,6 +35,19 @@ fn reports_duplicate_value_and_type_exports_separately() {
 }
 
 #[test]
+fn root_is_normalized_before_analysis() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/codebase-analysis/unique-exports-basic/.");
+
+    let findings = analyze_project(&root, None, None).unwrap();
+
+    assert_eq!(findings.len(), 2);
+    assert!(findings
+        .iter()
+        .all(|finding| !finding.file.starts_with('/')));
+}
+
+#[test]
 fn strict_mode_reports_cross_type_duplicates() {
     let findings = findings("unique-exports-strict");
     assert_eq!(findings.len(), 1);

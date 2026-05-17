@@ -61,9 +61,6 @@ pub(super) fn collect_file_exports(
                 }
             }
             ExportKind::ReExport { source, imported } => {
-                if export.name == "default" {
-                    continue;
-                }
                 let bucket = if export.is_type_only {
                     ExportBucket::Type
                 } else if imported == "*" {

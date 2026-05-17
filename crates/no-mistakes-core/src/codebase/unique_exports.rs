@@ -1,5 +1,5 @@
 use crate::codebase::config::load_codebase_config_with_path;
-use crate::codebase::ts_resolver::{find_tsconfig, load_tsconfig, ImportResolver};
+use crate::codebase::ts_resolver::{find_tsconfig, load_tsconfig, normalize_path, ImportResolver};
 use crate::codebase::ts_source::discover_files;
 use crate::codebase::ts_symbols::{Export, FileSymbols};
 use crate::codebase::workspaces;
@@ -99,6 +99,8 @@ pub fn analyze_project(
     config_path: Option<&Path>,
     tsconfig_path: Option<&Path>,
 ) -> Result<Vec<UniqueExportFinding>> {
+    let root = normalize_path(root);
+    let root = root.as_path();
     let config = load_codebase_config_with_path(root, config_path)?;
     if !config.is_rule_enabled(RULE_ID) {
         return Ok(Vec::new());
