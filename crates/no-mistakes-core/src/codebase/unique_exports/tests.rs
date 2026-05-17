@@ -68,9 +68,51 @@ fn honors_rule_disable_comments() {
 #[test]
 fn exempts_known_nextjs_framework_exports_only_in_convention_files() {
     let findings = findings("unique-exports-nextjs");
+    let metadata_count = findings
+        .iter()
+        .filter(|finding| finding.export_name == "metadata")
+        .count();
+    assert_eq!(metadata_count, 1);
+    assert!(findings
+        .iter()
+        .any(|finding| finding.export_name == "metadata"
+            && finding.file.starts_with("web/components/")));
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.export_name == "runtime"
+                && finding.file.ends_with("page.test.tsx"))
+    );
+}
+
+#[test]
+fn checks_framework_named_exports_outside_nextjs_projects() {
+    let findings = findings("unique-exports-not-next-app");
     assert_eq!(findings.len(), 1);
     assert_eq!(findings[0].export_name, "metadata");
-    assert!(findings[0].file.starts_with("web/components/"));
+    assert!(nextjs::is_framework_export(
+        "web/app/page",
+        "metadata",
+        true
+    ));
+
+    let next_root = fixture("unique-exports-nextjs");
+    assert!(scan::package_json_has_next_dependency(
+        &next_root.join("package.json")
+    ));
+    assert!(scan::file_is_in_nextjs_project(
+        &next_root,
+        &next_root.join("web/app/users/page.tsx")
+    ));
+
+    let not_next_root = fixture("unique-exports-not-next-app");
+    assert!(!scan::file_is_in_nextjs_project(
+        &not_next_root,
+        Path::new("")
+    ));
+    assert!(!scan::package_json_has_next_dependency(
+        &fixture("unique-exports-not-next-deps").join("package.json")
+    ));
 }
 
 #[test]
@@ -112,8 +154,11 @@ fn covers_reexport_resolution_edge_cases() {
     assert!(names.contains(&("Direct".to_string(), "value".to_string())));
     assert!(names.contains(&("DirectType".to_string(), "type".to_string())));
     assert!(names.contains(&("DefaultAlias".to_string(), "value".to_string())));
+    assert!(names.contains(&("DefaultShapeAlias".to_string(), "type".to_string())));
     assert!(names.contains(&("ChainAlias".to_string(), "type".to_string())));
     assert!(names.contains(&("StarResolved".to_string(), "value".to_string())));
+    assert!(names.contains(&("TypeStarOnly".to_string(), "type".to_string())));
+    assert!(!names.contains(&("TypeStarValue".to_string(), "value".to_string())));
     assert!(names.contains(&("Hidden".to_string(), "value".to_string())));
     assert!(names.contains(&("Skipped".to_string(), "value".to_string())));
 }

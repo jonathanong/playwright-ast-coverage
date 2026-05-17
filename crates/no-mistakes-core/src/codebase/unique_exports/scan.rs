@@ -46,11 +46,47 @@ pub(super) fn collect_source_files(root: &Path, files: &[PathBuf]) -> Vec<Source
                 path: normalize_path(path),
                 rel: relative_slash_path(root, path),
                 disabled: has_disable_file_comment(&source, RULE_ID),
+                is_nextjs_project: file_is_in_nextjs_project(root, path),
                 source,
                 symbols,
             })
         })
         .collect()
+}
+
+pub(super) fn file_is_in_nextjs_project(root: &Path, path: &Path) -> bool {
+    let root = normalize_path(root);
+    let mut current = match path.parent() {
+        Some(parent) => normalize_path(parent),
+        None => root.clone(),
+    };
+    loop {
+        if package_json_has_next_dependency(&current.join("package.json")) {
+            return true;
+        }
+        if current == root || !current.pop() {
+            return false;
+        }
+    }
+}
+
+pub(super) fn package_json_has_next_dependency(path: &Path) -> bool {
+    let Ok(source) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    let Ok(package_json) = serde_json::from_str::<serde_json::Value>(&source) else {
+        return false;
+    };
+    for field in ["dependencies", "devDependencies", "peerDependencies"] {
+        let Some(dependencies) = package_json.get(field).and_then(|value| value.as_object()) else {
+            continue;
+        };
+        if !dependencies.contains_key("next") {
+            continue;
+        }
+        return true;
+    }
+    false
 }
 
 pub(super) fn sorted_paths<'a>(paths: impl Iterator<Item = &'a PathBuf>) -> Vec<&'a PathBuf> {

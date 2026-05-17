@@ -41,6 +41,7 @@ struct SourceFile {
     source: String,
     symbols: FileSymbols,
     disabled: bool,
+    is_nextjs_project: bool,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]

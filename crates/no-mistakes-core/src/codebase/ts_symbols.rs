@@ -233,6 +233,10 @@ fn process_statement(stmt: &Statement, source: &str, out: &mut FileSymbols) {
 
         Statement::ExportDefaultDeclaration(export) => {
             let line = byte_offset_to_line(source, export.span.start as usize);
+            let is_type_only = matches!(
+                &export.declaration,
+                ExportDefaultDeclarationKind::TSInterfaceDeclaration(_)
+            );
             let name = match &export.declaration {
                 ExportDefaultDeclarationKind::FunctionDeclaration(f) => {
                     default_export_name(f.id.as_ref().map(|id| id.name.as_str()))
@@ -250,7 +254,7 @@ fn process_statement(stmt: &Statement, source: &str, out: &mut FileSymbols) {
                 name,
                 kind: ExportKind::Default,
                 line,
-                is_type_only: false,
+                is_type_only,
             });
         }
 

@@ -42,10 +42,20 @@ pub(super) fn collect_file_exports(
                 for mut occurrence in
                     collect_file_exports(&target, files, resolver, workspace, visiting)
                 {
+                    if export.is_type_only {
+                        if occurrence.bucket == ExportBucket::Value {
+                            continue;
+                        }
+                        occurrence.bucket = ExportBucket::Type;
+                    }
                     occurrence.file = file.rel.clone();
                     occurrence.line = export.line;
                     occurrence.kind = export_kind_str(&export.kind).to_string();
-                    if !super::nextjs::is_framework_export(&occurrence.file, &occurrence.name) {
+                    if !super::nextjs::is_framework_export(
+                        &occurrence.file,
+                        &occurrence.name,
+                        file.is_nextjs_project,
+                    ) {
                         out.push(occurrence);
                     }
                 }
@@ -88,7 +98,7 @@ pub(super) fn collect_file_exports(
 
 fn should_skip_export(file: &SourceFile, export: &Export) -> bool {
     has_disable_comment(&file.source, export.line, RULE_ID)
-        || super::nextjs::is_framework_export(&file.rel, &export.name)
+        || super::nextjs::is_framework_export(&file.rel, &export.name, file.is_nextjs_project)
 }
 
 pub(super) fn find_target_export_bucket(
@@ -118,7 +128,7 @@ pub(super) fn find_target_export_bucket(
         .iter()
         .filter(|export| !should_skip_export(file, export))
         .find_map(|export| match &export.kind {
-            ExportKind::Default if imported == "default" => Some(ExportBucket::Value),
+            ExportKind::Default if imported == "default" => Some(ExportBucket::from_export(export)),
             ExportKind::ReExport {
                 source,
                 imported: reimported,

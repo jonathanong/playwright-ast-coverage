@@ -179,6 +179,7 @@ export default value;
 
     let interface_symbols = syms("export default interface DefaultShape {}");
     assert_eq!(interface_symbols.exports[0].name, "DefaultShape");
+    assert!(interface_symbols.exports[0].is_type_only);
 }
 
 // ── Exports — re-exports ─────────────────────────────────────────────────
