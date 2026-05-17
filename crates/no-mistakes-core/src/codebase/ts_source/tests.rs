@@ -333,9 +333,12 @@ fn fallback_walk_includes_github_workflows() {
         .any(|path| path.ends_with(".github/workflows/ci.yml")));
     assert!(files.iter().any(|path| path.ends_with("src/main.mts")));
     assert!(!files.iter().any(|path| path.ends_with(".env")));
-    assert!(!files
+    assert!(files
         .iter()
         .any(|path| path.ends_with(".config/secret.mts")));
+    assert!(!files
+        .iter()
+        .any(|path| path.ends_with(".cache/ignored.mts")));
 }
 
 #[test]

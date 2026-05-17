@@ -35,15 +35,27 @@ pub fn is_skipped_dir(name: &str) -> bool {
 /// (e.g. `config.filesystem.skip_directories`).
 pub fn walk_files(root: &Path, extra_skip: &[String]) -> Vec<PathBuf> {
     let extra_skip: HashSet<String> = extra_skip.iter().cloned().collect();
+
+    let mut files = walk_non_ignored_files(root, &extra_skip, false);
+    let github = root.join(".github");
+    if github.is_dir() {
+        files.extend(walk_non_ignored_files(&github, &extra_skip, true));
+        files.sort();
+        files.dedup();
+    }
+    files
+}
+
+fn walk_non_ignored_files(
+    root: &Path,
+    extra_skip: &HashSet<String>,
+    include_hidden: bool,
+) -> Vec<PathBuf> {
+    let extra_skip = extra_skip.clone();
     WalkBuilder::new(root)
-        .hidden(false)
+        .hidden(!include_hidden)
         .filter_entry(move |e| {
             let name = e.file_name().to_str().unwrap_or("");
-            // Prune hidden files and directories, except `.github` for CI analysis.
-            if e.depth() > 0 && is_hidden_non_github(name) {
-                return false;
-            }
-            // Prune directories that are explicitly skipped.
             if e.file_type().is_some_and(|ft| ft.is_dir()) {
                 return !SKIP_DIRS.contains(&name) && !extra_skip.contains(name);
             }
@@ -54,10 +66,6 @@ pub fn walk_files(root: &Path, extra_skip: &[String]) -> Vec<PathBuf> {
         .filter(|e| e.file_type().is_some_and(|ft| ft.is_file()))
         .map(|e| normalize_discovery_path(e.path()))
         .collect()
-}
-
-fn is_hidden_non_github(name: &str) -> bool {
-    name.starts_with('.') && name != ".github"
 }
 
 /// Return all tracked and untracked non-ignored files under `root`.
