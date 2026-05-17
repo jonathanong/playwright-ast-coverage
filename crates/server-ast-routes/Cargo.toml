@@ -1,6 +1,6 @@
 [package]
 name = "server-ast-routes"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 license = "MIT"
 description = "Static server route dependency graph for Node.js frameworks"
@@ -9,7 +9,7 @@ repository = "https://github.com/jonathanong/no-mistakes"
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-no-mistakes-core = { path = "../no-mistakes-core", version = "0.2.0" }
+no-mistakes-core = { path = "../no-mistakes-core", version = "0.2.1" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
