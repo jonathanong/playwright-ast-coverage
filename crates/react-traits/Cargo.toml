@@ -1,6 +1,6 @@
 [package]
 name = "react-traits"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 license = "MIT"
 description = "Scan React components and report their traits"
@@ -9,7 +9,7 @@ repository = "https://github.com/jonathanong/no-mistakes"
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-no-mistakes-core = { path = "../no-mistakes-core", version = "0.2.2" }
+no-mistakes-core = { path = "../no-mistakes-core", version = "0.2.3" }
 oxc_allocator = "0.130.0"
 oxc_ast = "0.130.0"
 oxc_ast_visit = "0.130.0"
