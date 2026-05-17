@@ -1,0 +1,3 @@
+!.config
+!.config/**
+.github/workflows/ignored.yml

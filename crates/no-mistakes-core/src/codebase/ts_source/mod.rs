@@ -26,30 +26,86 @@ pub fn is_skipped_dir(name: &str) -> bool {
 
 /// Walk all non-ignored files under `root`.
 ///
-/// Uses the `ignore` crate so `.gitignore` rules and hidden directories
-/// (anything starting with `.`, including `.claude/worktrees`) are
-/// automatically excluded. `node_modules` is also always excluded as a safety
-/// net for repos where it is not gitignored.
+/// Uses the `ignore` crate so `.gitignore` rules and hidden directories are
+/// excluded, except `.github` because CI workflow analysis needs those files
+/// when no `.git` metadata is available. `node_modules` is also always excluded
+/// as a safety net for repos where it is not gitignored.
 ///
 /// `extra_skip` is an optional list of additional directory names to prune
 /// (e.g. `config.filesystem.skip_directories`).
 pub fn walk_files(root: &Path, extra_skip: &[String]) -> Vec<PathBuf> {
     let extra_skip: HashSet<String> = extra_skip.iter().cloned().collect();
+
+    let mut files = walk_non_ignored_files(root, &extra_skip);
+    files.extend(walk_github_workflow_files(root, &extra_skip));
+    if !files.is_empty() {
+        files.sort();
+        files.dedup();
+    }
+    files
+}
+
+fn walk_non_ignored_files(root: &Path, extra_skip: &HashSet<String>) -> Vec<PathBuf> {
+    let extra_skip = extra_skip.clone();
     WalkBuilder::new(root)
+        .hidden(true)
         .filter_entry(move |e| {
-            // depth==0 is the walk root itself; never prune it by name.
-            // Only prune directories — never exclude individual files by name.
-            if e.depth() == 0 || !e.file_type().is_some_and(|ft| ft.is_dir()) {
-                return true;
-            }
             let name = e.file_name().to_str().unwrap_or("");
-            !SKIP_DIRS.contains(&name) && !extra_skip.contains(name)
+            if e.depth() > 0 && e.file_type().is_some_and(|ft| ft.is_dir()) {
+                return !SKIP_DIRS.contains(&name) && !extra_skip.contains(name);
+            }
+            true
         })
         .build()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_some_and(|ft| ft.is_file()))
         .map(|e| normalize_discovery_path(e.path()))
         .collect()
+}
+
+fn walk_github_workflow_files(root: &Path, extra_skip: &HashSet<String>) -> Vec<PathBuf> {
+    let github = root.join(".github");
+    if !std::fs::symlink_metadata(github)
+        .ok()
+        .is_some_and(|metadata| metadata.file_type().is_dir())
+    {
+        return Vec::new();
+    }
+
+    let extra_skip = extra_skip.clone();
+    let filter_root = root.to_path_buf();
+    let file_root = root.to_path_buf();
+    WalkBuilder::new(root)
+        .hidden(false)
+        .filter_entry(move |e| {
+            let name = e.file_name().to_str().unwrap_or("");
+            if e.depth() > 0
+                && e.file_type().is_some_and(|ft| ft.is_dir())
+                && (SKIP_DIRS.contains(&name) || extra_skip.contains(name))
+            {
+                return false;
+            }
+            e.depth() == 0 || is_github_workflows_prefix(&filter_root, e.path())
+        })
+        .build()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_some_and(|ft| ft.is_file()))
+        .filter(|e| is_github_workflows_prefix(&file_root, e.path()))
+        .map(|e| normalize_discovery_path(e.path()))
+        .collect()
+}
+
+fn is_github_workflows_prefix(root: &Path, path: &Path) -> bool {
+    let rel = path.strip_prefix(root).unwrap_or(path);
+    let mut components = rel
+        .components()
+        .filter_map(|component| component.as_os_str().to_str().filter(|name| *name != "."));
+
+    if components.next() != Some(".github") {
+        return false;
+    }
+
+    matches!(components.next(), None | Some("workflows"))
 }
 
 /// Return all tracked and untracked non-ignored files under `root`.

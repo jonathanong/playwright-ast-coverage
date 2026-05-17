@@ -2,12 +2,13 @@ use super::{
     discover_files, discover_source_files, git_visible_files, has_disable_comment,
     has_disable_file_comment, is_skipped_dir, is_test_file, line_number, normalize_discovery_path,
     relative_slash_path, starts_with_use_client, static_property_key_name, unwrap_ts_wrappers,
+    walk_files,
 };
 use oxc::allocator::Allocator;
 use oxc::ast::ast::{Expression, ObjectPropertyKind, Statement};
 use oxc::parser::Parser;
 use oxc::span::SourceType;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
 
@@ -47,6 +48,12 @@ fn write(dir: &Path, path: &str, content: &str) {
     let full = dir.join(path);
     std::fs::create_dir_all(full.parent().unwrap()).unwrap();
     std::fs::write(full, content).unwrap();
+}
+
+fn fixture(path: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures")
+        .join(path)
 }
 
 // ── has_disable_comment ──────────────────────────────────────────────────
@@ -321,8 +328,47 @@ fn discover_files_falls_back_outside_git_repositories() {
 }
 
 #[test]
+fn fallback_walk_includes_github_workflows() {
+    let dir = fixture("ast-snippets/ts-source/hidden-walk");
+
+    let files = walk_files(&dir, &[]);
+
+    assert!(files
+        .iter()
+        .any(|path| path.ends_with(".github/workflows/ci.yml")));
+    assert!(!files
+        .iter()
+        .any(|path| path.ends_with(".github/workflows/ignored.yml")));
+    assert!(files.iter().any(|path| path.ends_with("src/main.mts")));
+    assert!(!files.iter().any(|path| path.ends_with(".env")));
+    assert!(files
+        .iter()
+        .any(|path| path.ends_with(".config/secret.mts")));
+    assert!(!files
+        .iter()
+        .any(|path| path.ends_with(".cache/ignored.mts")));
+
+    let files = walk_files(&dir, &[".github".to_string()]);
+    assert!(!files
+        .iter()
+        .any(|path| path.ends_with(".github/workflows/ci.yml")));
+}
+
+#[test]
+fn fallback_walk_does_not_prune_skipped_named_root() {
+    let dir = fixture("ast-snippets/ts-source/dist");
+
+    let files = walk_files(&dir, &[]);
+
+    assert_eq!(files.len(), 1);
+    assert!(files
+        .iter()
+        .any(|path| path.ends_with("dist/root-main.mts")));
+}
+
+#[test]
 fn discover_source_files_filters_non_ts_js_extensions() {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/ast-snippets/ts-source");
+    let dir = fixture("ast-snippets/ts-source");
 
     let files = discover_source_files(&dir, &[]);
 
