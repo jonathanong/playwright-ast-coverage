@@ -1,4 +1,4 @@
-use crate::codebase::config::load_config_with_path;
+use crate::codebase::config::load_codebase_config_with_path;
 use crate::codebase::ts_resolver::{find_tsconfig, load_tsconfig, ImportResolver};
 use crate::codebase::ts_source::discover_files;
 use crate::codebase::ts_symbols::{Export, FileSymbols};
@@ -74,6 +74,14 @@ impl ExportBucket {
             self
         }
     }
+
+    fn message_label(self) -> &'static str {
+        match self {
+            Self::Type => "type export",
+            Self::Value => "value export",
+            Self::Any => "export",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -90,7 +98,7 @@ pub fn analyze_project(
     config_path: Option<&Path>,
     tsconfig_path: Option<&Path>,
 ) -> Result<Vec<UniqueExportFinding>> {
-    let config = load_config_with_path(root, config_path)?;
+    let config = load_codebase_config_with_path(root, config_path)?;
     if !config.is_rule_enabled(RULE_ID) {
         return Ok(Vec::new());
     }
@@ -157,8 +165,8 @@ pub fn analyze_project(
                 export_name: name.clone(),
                 export_kind: bucket.as_str().to_string(),
                 message: format!(
-                    "{} export `{}` is already exported from {}:{}; rename or consolidate this exported API",
-                    bucket.as_str(),
+                    "{} `{}` is already exported from {}:{}; rename or consolidate this exported API",
+                    bucket.message_label(),
                     name,
                     first.file,
                     first.line

@@ -40,6 +40,8 @@ fn strict_mode_reports_cross_type_duplicates() {
     assert_eq!(findings.len(), 1);
     assert_eq!(findings[0].export_name, "Shared");
     assert_eq!(findings[0].export_kind, "export");
+    assert!(findings[0].message.starts_with("export `Shared`"));
+    assert!(!findings[0].message.contains("export export"));
 }
 
 #[test]

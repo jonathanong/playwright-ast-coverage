@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::config::v2::{find_config_root, load_v2_config, schema::NoMistakesConfig};
+use crate::config::CONFIG_EXTENSIONS;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -121,6 +122,45 @@ pub fn load_config_with_path(start: &Path, config_path: Option<&Path>) -> Result
     let mut config = config_from_v2(v2);
     config.augment_from_gitignore(&find_config_root(start));
     Ok(config)
+}
+
+pub fn load_codebase_config_with_path(start: &Path, config_path: Option<&Path>) -> Result<Config> {
+    if config_path.is_some() {
+        return load_config_with_path(start, config_path);
+    }
+
+    let Some(path) = find_codebase_config_path(start) else {
+        let mut config = Config::default();
+        config.augment_from_gitignore(start);
+        return Ok(config);
+    };
+
+    let v2 = load_v2_config(start, Some(&path))?;
+    let mut config = config_from_v2(v2);
+    config.augment_from_gitignore(path.parent().unwrap_or(start));
+    Ok(config)
+}
+
+fn find_codebase_config_path(start: &Path) -> Option<std::path::PathBuf> {
+    for ext in CONFIG_EXTENSIONS {
+        let path = start.join(format!(".no-mistakes.{ext}"));
+        if path.exists() {
+            return Some(path);
+        }
+    }
+
+    let mut current = start.to_path_buf();
+    loop {
+        for ext in CONFIG_EXTENSIONS {
+            let path = current.join(format!(".guardrailsrc.{ext}"));
+            if path.exists() {
+                return Some(path);
+            }
+        }
+        if !current.pop() {
+            return None;
+        }
+    }
 }
 
 fn config_from_v2(v2: NoMistakesConfig) -> Config {
