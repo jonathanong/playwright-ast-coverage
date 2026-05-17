@@ -431,12 +431,12 @@ jobs:
               echo "$pkg $version is already published on crates.io; skipping"
             else
               if [ "$pkg" != "no-mistakes-core" ]; then
-                for attempt in 1 2 3 4 5; do
+                for attempt in {1..20}; do
                   echo "Checking whether no-mistakes-core@$version is visible for $pkg publish..."
                   if curl --fail --silent --output /dev/null "https://crates.io/api/v1/crates/no-mistakes-core/$version"; then
                     break
                   fi
-                  if [ "$attempt" = 5 ]; then
+                  if [ "$attempt" = 20 ]; then
                     echo "Timed out waiting for no-mistakes-core@$version on crates.io"
                     exit 1
                   fi
@@ -444,7 +444,14 @@ jobs:
                 done
               fi
               cargo publish --dry-run --locked -p "$pkg"
-              cargo publish --locked -p "$pkg"
+              publish_log="$RUNNER_TEMP/cargo-publish-$pkg.log"
+              if cargo publish --locked -p "$pkg" 2>&1 | tee "$publish_log"; then
+                :
+              elif grep -q "already exists on crates.io index" "$publish_log"; then
+                echo "$pkg $version is already published on crates.io; skipping"
+              else
+                exit 1
+              fi
             fi
           done
 
