@@ -1,3 +1,6 @@
+mod queues;
+mod server;
+
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 use no_mistakes_core::codebase::dependencies::{self, Direction, TraverseArgs};
@@ -28,6 +31,10 @@ enum Command {
     Symbols(SymbolsArgs),
     /// Analyze React component traits.
     React(ReactArgs),
+    /// Analyze queue producer/worker relationships (BullMQ, glide-mq).
+    Queues(queues::QueuesArgs),
+    /// Analyze server route graphs (Express, Hono, Koa).
+    Server(server::ServerArgs),
 }
 
 #[derive(Args, Debug)]
@@ -97,6 +104,8 @@ fn run() -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         Command::React(args) => run_react(args),
+        Command::Queues(args) => queues::run(args),
+        Command::Server(args) => server::run(args),
     }
 }
 

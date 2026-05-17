@@ -53,3 +53,27 @@ playwright-ast-coverage edges --json
 
 See the [CLI reference](cli-reference.md) for command options and the
 [AST analysis reference](ast-analysis.md) for supported static forms.
+
+## Running related tests with `no-mistakes related`
+
+Use `no-mistakes related` with `--format paths` to pipe affected files to a test
+runner:
+
+```sh
+# Vitest — run tests related to a changed file
+vitest related $(no-mistakes related src/foo.ts --format paths)
+
+# Run only tests related to files changed since the last commit
+git diff --name-only HEAD~1 | xargs no-mistakes related --format paths | xargs vitest related
+```
+
+Use `no-mistakes queues` and `no-mistakes server` to explore queue and server-route
+graphs:
+
+```sh
+# Check for unmatched queue producers/workers
+no-mistakes queues --root . check
+
+# Show all server routes as JSON
+no-mistakes server --root . --json routes
+```

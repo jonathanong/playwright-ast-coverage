@@ -606,6 +606,7 @@ dependencies = [
  "num_cpus",
  "rayon",
  "serde_json",
+ "serde_yaml",
 ]
 
 [[package]]

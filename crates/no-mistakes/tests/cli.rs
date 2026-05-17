@@ -103,6 +103,315 @@ fn help_lists_scoped_subcommands() {
     assert!(help.contains("dependencies"));
     assert!(help.contains("dependents"));
     assert!(help.contains("symbols"));
+    assert!(help.contains("react"));
+    assert!(help.contains("queues"));
+    assert!(help.contains("server"));
+}
+
+fn queue_fixture(name: &str) -> PathBuf {
+    no_mistakes_core::codebase::ts_resolver::normalize_path(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/queue-ast-hop")
+            .join(name),
+    )
+}
+
+fn server_fixture(name: &str) -> PathBuf {
+    no_mistakes_core::codebase::ts_resolver::normalize_path(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/server-ast-routes")
+            .join(name),
+    )
+}
+
+#[test]
+fn queues_edges_json_reports_queue_job() {
+    let root = queue_fixture("basic");
+    let output = run(&[
+        "queues",
+        "--root",
+        root.to_str().unwrap(),
+        "--json",
+        "edges",
+    ]);
+
+    assert!(output.status.success());
+    let json: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert!(json
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|e| { e["from"].as_str().unwrap_or("").contains("sendWelcome") }));
+}
+
+#[test]
+fn queues_related_human_reports_related_files() {
+    let root = queue_fixture("basic");
+    let output = run(&[
+        "queues",
+        "--root",
+        root.to_str().unwrap(),
+        "related",
+        "enqueue.ts",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("sendWelcome"));
+}
+
+#[test]
+fn queues_check_fails_for_unmatched_worker() {
+    let root = queue_fixture("dynamic");
+    let output = run(&["queues", "--root", root.to_str().unwrap(), "check"]);
+
+    assert!(!output.status.success());
+    assert!(stdout(&output).contains("unmatched-worker"));
+}
+
+#[test]
+fn server_routes_json_lists_routes() {
+    let root = server_fixture("express");
+    let output = run(&[
+        "server",
+        "--root",
+        root.to_str().unwrap(),
+        "--json",
+        "routes",
+    ]);
+
+    assert!(output.status.success());
+    let json: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert!(json
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|r| { r["route"].as_str().unwrap_or("").contains("/api/v1/users") }));
+}
+
+#[test]
+fn server_edges_human_shows_edges() {
+    let root = server_fixture("express");
+    let output = run(&["server", "--root", root.to_str().unwrap(), "edges"]);
+
+    assert!(output.status.success());
+    assert!(!stdout(&output).is_empty());
+}
+
+#[test]
+fn server_related_json_shows_edges() {
+    let root = server_fixture("express");
+    let output = run(&[
+        "server",
+        "--root",
+        root.to_str().unwrap(),
+        "--json",
+        "related",
+        "backend/api/users.ts",
+    ]);
+
+    assert!(output.status.success());
+    let json: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert!(json.as_array().is_some());
+}
+
+#[test]
+fn queues_edges_human_format_without_files() {
+    let root = queue_fixture("basic");
+    let output = run(&["queues", "--root", root.to_str().unwrap(), "edges"]);
+
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("->"));
+}
+
+#[test]
+fn queues_edges_with_specific_file() {
+    let root = queue_fixture("basic");
+    let output = run(&[
+        "queues",
+        "--root",
+        root.to_str().unwrap(),
+        "edges",
+        "enqueue.ts",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("->"));
+}
+
+#[test]
+fn queues_edges_json_with_specific_file() {
+    let root = queue_fixture("basic");
+    let output = run(&[
+        "queues",
+        "--root",
+        root.to_str().unwrap(),
+        "--json",
+        "edges",
+        "enqueue.ts",
+    ]);
+
+    assert!(output.status.success());
+    let json: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert!(json.as_array().is_some());
+}
+
+#[test]
+fn queues_check_json_passes_for_clean_fixture() {
+    let root = queue_fixture("basic");
+    let output = run(&[
+        "queues",
+        "--root",
+        root.to_str().unwrap(),
+        "--json",
+        "check",
+    ]);
+
+    assert!(output.status.success());
+    let json: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(json.as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn queues_related_json_shows_edges() {
+    let root = queue_fixture("basic");
+    let output = run(&[
+        "queues",
+        "--root",
+        root.to_str().unwrap(),
+        "--json",
+        "related",
+        "enqueue.ts",
+    ]);
+
+    assert!(output.status.success());
+    let json: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert!(json.as_array().is_some());
+}
+
+#[test]
+fn queues_check_json_reports_findings() {
+    let root = queue_fixture("dynamic");
+    let output = run(&[
+        "queues",
+        "--root",
+        root.to_str().unwrap(),
+        "--json",
+        "check",
+    ]);
+
+    assert!(!output.status.success());
+    let json: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert!(json.as_array().is_some());
+}
+
+#[test]
+fn queues_check_passes_for_clean_fixture() {
+    let root = queue_fixture("basic");
+    let output = run(&["queues", "--root", root.to_str().unwrap(), "check"]);
+
+    assert!(output.status.success());
+}
+
+#[test]
+fn server_routes_human_format() {
+    let root = server_fixture("express");
+    let output = run(&["server", "--root", root.to_str().unwrap(), "routes"]);
+
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("/api/v1/users"));
+}
+
+#[test]
+fn server_routes_with_file_filter() {
+    let root = server_fixture("express");
+    let output = run(&[
+        "server",
+        "--root",
+        root.to_str().unwrap(),
+        "routes",
+        "backend/api/users.ts",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("/api/v1/users"));
+}
+
+#[test]
+fn server_edges_json_format() {
+    let root = server_fixture("express");
+    let output = run(&[
+        "server",
+        "--root",
+        root.to_str().unwrap(),
+        "--json",
+        "edges",
+    ]);
+
+    assert!(output.status.success());
+    let json: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert!(json.as_array().is_some());
+}
+
+#[test]
+fn server_edges_with_root_filter() {
+    let root = server_fixture("express");
+    let output = run(&[
+        "server",
+        "--root",
+        root.to_str().unwrap(),
+        "edges",
+        "backend/api/users.ts",
+    ]);
+
+    assert!(output.status.success());
+}
+
+#[test]
+fn server_related_human_format() {
+    let root = server_fixture("express");
+    let output = run(&[
+        "server",
+        "--root",
+        root.to_str().unwrap(),
+        "related",
+        "backend/api/users.ts",
+    ]);
+
+    assert!(output.status.success());
+}
+
+#[test]
+fn server_routes_json_with_file_filter() {
+    let root = server_fixture("express");
+    let output = run(&[
+        "server",
+        "--root",
+        root.to_str().unwrap(),
+        "--json",
+        "routes",
+        "backend/api/users.ts",
+    ]);
+
+    assert!(output.status.success());
+    let json: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert!(!json.as_array().unwrap().is_empty());
+}
+
+#[test]
+fn server_edges_json_with_root_filter() {
+    let root = server_fixture("express");
+    let output = run(&[
+        "server",
+        "--root",
+        root.to_str().unwrap(),
+        "--json",
+        "edges",
+        "backend/api/users.ts",
+    ]);
+
+    assert!(output.status.success());
+    let json: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert!(json.as_array().is_some());
 }
 
 #[test]
