@@ -5,17 +5,15 @@ pub(super) fn is_framework_export(rel: &str, name: &str, is_nextjs_project: bool
     let rel = rel.replace('\\', "/");
     let file_name = rel.rsplit('/').next().unwrap_or("");
     let stem = convention_stem(file_name);
-    if is_app_router_path(&rel) {
-        return match stem {
+    match router_kind(&rel) {
+        Some(RouterKind::App) => match stem {
             "page" | "layout" => is_app_page_or_layout_export(name),
             "route" => is_app_route_export(name),
             _ => false,
-        };
+        },
+        Some(RouterKind::Pages) => is_pages_router_export(name),
+        None => false,
     }
-    if is_pages_router_path(&rel) {
-        return is_pages_router_export(name);
-    }
-    false
 }
 
 fn convention_stem(file_name: &str) -> &str {
@@ -27,12 +25,18 @@ fn convention_stem(file_name: &str) -> &str {
     file_name
 }
 
-fn is_app_router_path(rel: &str) -> bool {
-    rel.starts_with("app/") || rel.contains("/app/")
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum RouterKind {
+    App,
+    Pages,
 }
 
-fn is_pages_router_path(rel: &str) -> bool {
-    rel.starts_with("pages/") || rel.contains("/pages/")
+fn router_kind(rel: &str) -> Option<RouterKind> {
+    rel.split('/').find_map(|segment| match segment {
+        "app" => Some(RouterKind::App),
+        "pages" => Some(RouterKind::Pages),
+        _ => None,
+    })
 }
 
 fn is_app_page_or_layout_export(name: &str) -> bool {

@@ -72,11 +72,15 @@ fn exempts_known_nextjs_framework_exports_only_in_convention_files() {
         .iter()
         .filter(|finding| finding.export_name == "metadata")
         .count();
-    assert_eq!(metadata_count, 1);
+    assert_eq!(metadata_count, 3);
     assert!(findings
         .iter()
         .any(|finding| finding.export_name == "metadata"
             && finding.file.starts_with("web/components/")));
+    assert!(findings
+        .iter()
+        .any(|finding| finding.export_name == "metadata"
+            && finding.file.starts_with("web/pages/app/")));
     assert!(
         findings
             .iter()
@@ -92,6 +96,11 @@ fn checks_framework_named_exports_outside_nextjs_projects() {
     assert_eq!(findings[0].export_name, "metadata");
     assert!(nextjs::is_framework_export(
         "web/app/page",
+        "metadata",
+        true
+    ));
+    assert!(!nextjs::is_framework_export(
+        "web/pages/app/page.tsx",
         "metadata",
         true
     ));
