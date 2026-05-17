@@ -10,13 +10,6 @@ fn write(path: &Path, content: &str) {
     std::fs::write(path, content).unwrap();
 }
 
-fn package_entry<'a>(map: &'a WorkspaceMap, name: &str) -> Option<&'a PathBuf> {
-    map.packages
-        .iter()
-        .find(|package| package.name == name)
-        .and_then(|package| package.entry.as_ref())
-}
-
 // ── load with no package.json ─────────────────────────────────────────
 
 #[test]
@@ -184,13 +177,13 @@ fn resolve_package_finds_by_name() {
             exports: None,
         }],
     };
-    assert_eq!(package_entry(&map, "@x/api"), Some(&entry));
+    assert_eq!(map.resolve_package("@x/api"), Some(&entry));
 }
 
 #[test]
 fn resolve_package_missing_returns_none() {
     let map = WorkspaceMap::default();
-    assert!(package_entry(&map, "@x/missing").is_none());
+    assert!(map.resolve_package("@x/missing").is_none());
 }
 
 #[test]

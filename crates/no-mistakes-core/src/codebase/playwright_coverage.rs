@@ -10,18 +10,12 @@ use crate::codebase::config::{load_config, Config, RouteOptions};
 use crate::codebase::ts_routes::{defs_frontend, matcher};
 
 const DEFAULT_FRONTEND_ROOT: &str = "web/app";
-#[cfg(test)]
 use crate::codebase::dependencies::Format;
-#[cfg(test)]
 use clap::Args;
-#[cfg(test)]
 use is_terminal::IsTerminal;
-#[cfg(test)]
 use std::io;
-#[cfg(test)]
 use std::io::Write;
 
-#[cfg(test)]
 #[derive(Args, Debug, Clone)]
 pub struct CoverageArgs {
     /// Project root directory (default: current working directory).
@@ -50,16 +44,14 @@ pub struct CoverageArgs {
     pub timings: bool,
 }
 
-#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExitStatus {
     Covered,
     Uncovered,
 }
 
-#[cfg(test)]
 impl ExitStatus {
-    pub(crate) fn code(self) -> i32 {
+    pub fn code(self) -> i32 {
         match self {
             Self::Covered => 0,
             Self::Uncovered => 1,
@@ -103,7 +95,6 @@ struct PlaywrightVisit {
     url: String,
 }
 
-#[cfg(test)]
 pub fn run(args: CoverageArgs) -> Result<ExitStatus> {
     let mut timings = crate::codebase::timing::PhaseTimings::start();
     let cwd = std::env::current_dir().expect("current directory is readable");
@@ -168,7 +159,6 @@ pub fn run(args: CoverageArgs) -> Result<ExitStatus> {
     }
 }
 
-#[cfg(test)]
 fn resolve_format(json: bool, format: Option<Format>, stdout_is_terminal: bool) -> Format {
     if json {
         Format::Json
@@ -202,7 +192,6 @@ pub(crate) fn collect_report_from_files(
     )
 }
 
-#[cfg(test)]
 fn resolve_root(arg: Option<&Path>, cwd: &Path) -> PathBuf {
     match arg {
         Some(path) if path.is_absolute() => path.to_path_buf(),
@@ -415,7 +404,6 @@ fn relative_string(root: &Path, path: &Path) -> String {
         .into_owned()
 }
 
-#[cfg(test)]
 fn write_report(report: &CoverageReport, format: Format, out: &mut dyn Write) -> Result<()> {
     match format {
         Format::Json => write_json(report, out),
@@ -426,14 +414,12 @@ fn write_report(report: &CoverageReport, format: Format, out: &mut dyn Write) ->
     }
 }
 
-#[cfg(test)]
 fn write_json(report: &CoverageReport, out: &mut dyn Write) -> Result<()> {
     serde_json::to_writer_pretty(&mut *out, report).expect("coverage report serializes to JSON");
     writeln!(out).expect("stdout write succeeds");
     Ok(())
 }
 
-#[cfg(test)]
 fn write_yml(report: &CoverageReport, out: &mut dyn Write) -> Result<()> {
     write!(
         out,
@@ -444,7 +430,6 @@ fn write_yml(report: &CoverageReport, out: &mut dyn Write) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
 fn write_paths(report: &CoverageReport, out: &mut dyn Write) -> Result<()> {
     for route in report.routes.iter().filter(|route| !route.covered) {
         writeln!(out, "{}", route.file).expect("stdout write succeeds");
@@ -452,7 +437,6 @@ fn write_paths(report: &CoverageReport, out: &mut dyn Write) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
 fn write_human(report: &CoverageReport, out: &mut dyn Write) -> Result<()> {
     let line = format!(
         "Playwright route coverage: {}/{} ({:.1}%)",
@@ -472,7 +456,6 @@ fn write_human(report: &CoverageReport, out: &mut dyn Write) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
 fn write_markdown(report: &CoverageReport, out: &mut dyn Write) -> Result<()> {
     let header = format!(
         "# Playwright route coverage\n\n- Covered: {}/{}\n- Coverage: {:.1}%\n",

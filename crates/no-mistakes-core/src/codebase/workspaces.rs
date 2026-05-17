@@ -3,7 +3,6 @@ use globset::{Glob, GlobSetBuilder};
 use serde::Deserialize;
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
-#[cfg(test)]
 use walkdir::WalkDir;
 
 use crate::codebase::ts_resolver::normalize_path;
@@ -28,6 +27,14 @@ pub struct WorkspaceMap {
 }
 
 impl WorkspaceMap {
+    /// Resolve a workspace package name to its entry file.
+    pub fn resolve_package(&self, name: &str) -> Option<&PathBuf> {
+        self.packages
+            .iter()
+            .find(|package| package.name == name)
+            .and_then(|package| package.entry.as_ref())
+    }
+
     /// Resolve a bare workspace import specifier to the package entry or an exported subpath.
     pub fn resolve_specifier(&self, specifier: &str) -> Option<PathBuf> {
         let (name, subpath) = package_name_and_subpath(specifier)?;
@@ -78,7 +85,6 @@ struct PnpmWorkspace {
 /// Load the workspace map from `root/package.json` or `root/pnpm-workspace.yaml`.
 ///
 /// Returns an empty map if neither file declares workspaces.
-#[cfg(test)]
 pub fn load(root: &Path) -> Result<WorkspaceMap> {
     let workspace_globs = load_workspace_globs(root)?;
     let dirs = expand_workspace_globs(root, &workspace_globs);
@@ -151,7 +157,6 @@ fn build_glob_set(glob_strs: &[String], excluded: bool) -> globset::GlobSet {
         .expect("globset with individually validated globs should build")
 }
 
-#[cfg(test)]
 fn expand_workspace_globs(root: &Path, glob_strs: &[String]) -> Vec<PathBuf> {
     let include = build_glob_set(glob_strs, false);
     let exclude = build_glob_set(glob_strs, true);

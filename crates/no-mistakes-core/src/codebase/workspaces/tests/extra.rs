@@ -135,19 +135,19 @@ fn fixture_load_covers_entry_resolution_branches() {
     let map = load(&root).unwrap();
 
     assert_eq!(
-        super::package_entry(&map, "@fixtures/exported"),
+        map.resolve_package("@fixtures/exported"),
         Some(&root.join("pkg/exported/index.ts"))
     );
     assert_eq!(
-        super::package_entry(&map, "@fixtures/default-export"),
+        map.resolve_package("@fixtures/default-export"),
         Some(&root.join("default-export/index.ts"))
     );
     assert_eq!(
-        super::package_entry(&map, "@fixtures/types-only"),
+        map.resolve_package("@fixtures/types-only"),
         Some(&root.join("types-only/index.d.ts"))
     );
     assert_eq!(
-        super::package_entry(&map, "@fixtures/main-only"),
+        map.resolve_package("@fixtures/main-only"),
         Some(&root.join("main-only/index.js"))
     );
 }
