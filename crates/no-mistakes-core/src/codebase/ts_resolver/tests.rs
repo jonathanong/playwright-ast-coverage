@@ -16,6 +16,12 @@ fn make_tsconfig(dir: &Path, paths_json: &str) -> TsConfig {
     load_tsconfig(&p).unwrap()
 }
 
+fn fixture(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/codebase-analysis/ts-resolver")
+        .join(name)
+}
+
 // ── load_tsconfig ─────────────────────────────────────────────────────
 
 #[test]
@@ -124,6 +130,23 @@ fn resolves_relative_no_ext_falls_back_to_ts() {
         base_url: None,
     };
     assert_eq!(resolve_import("./utils", &importer, &tc), Some(target));
+}
+
+#[test]
+fn resolves_relative_dotted_stem_by_appending_known_extension() {
+    let root = fixture("dotted-stem");
+    let importer = root.join("src/main.mts");
+    let target = normalize_path(&root.join("src/button.stories.tsx"));
+    let tc = TsConfig {
+        dir: root.clone(),
+        paths: vec![],
+        paths_dir: root,
+        base_url: None,
+    };
+    assert_eq!(
+        resolve_import("./button.stories", &importer, &tc),
+        Some(target)
+    );
 }
 
 #[test]

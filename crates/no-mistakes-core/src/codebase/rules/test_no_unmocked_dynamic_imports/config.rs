@@ -16,10 +16,13 @@ impl TestFilter {
 }
 
 pub fn test_filter(root: &Path, config: &NoMistakesConfig) -> Result<TestFilter> {
-    let mut includes = crate::codebase::dependencies::VITEST_JEST_TEST_GLOBS
-        .iter()
-        .map(|s| (*s).to_string())
-        .collect::<Vec<_>>();
+    let mut includes = project_rule_includes(config);
+    if includes.is_empty() {
+        includes = crate::codebase::dependencies::VITEST_JEST_TEST_GLOBS
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect::<Vec<_>>();
+    }
     let mut excludes = Vec::new();
     for config_file in config_files(root, config) {
         if let Ok(source) = std::fs::read_to_string(&config_file) {
@@ -31,6 +34,33 @@ pub fn test_filter(root: &Path, config: &NoMistakesConfig) -> Result<TestFilter>
         include: build_globset(&includes)?,
         exclude: build_globset(&excludes)?,
     })
+}
+
+fn project_rule_includes(config: &NoMistakesConfig) -> Vec<String> {
+    config
+        .projects
+        .values()
+        .filter(|project| project.rules.iter().any(|rule| rule == super::RULE_ID))
+        .flat_map(|project| {
+            let root = project.root.as_deref().unwrap_or(".");
+            project
+                .include
+                .iter()
+                .map(move |include| scoped_glob(root, include))
+        })
+        .collect()
+}
+
+fn scoped_glob(root: &str, include: &str) -> String {
+    let root = root.trim_matches('/');
+    if root.is_empty() || root == "." {
+        return include.to_string();
+    }
+    format!(
+        "{}/{}",
+        root.trim_start_matches("./"),
+        include.trim_start_matches("./")
+    )
 }
 
 pub fn setup_files(root: &Path, config: &NoMistakesConfig) -> Result<Vec<PathBuf>> {
@@ -58,6 +88,13 @@ fn config_files(root: &Path, config: &NoMistakesConfig) -> Vec<PathBuf> {
         .flatten()
         .chain(view.jest_configs().into_iter().flatten())
         .map(|path| root.join(path));
+    let configured = configured
+        .filter(|path| path.exists())
+        .map(|path| crate::codebase::ts_resolver::normalize_path(&path))
+        .collect::<Vec<_>>();
+    if !configured.is_empty() {
+        return configured;
+    }
     let discovered = [
         "vitest.config.ts",
         "vitest.config.mts",
@@ -70,8 +107,7 @@ fn config_files(root: &Path, config: &NoMistakesConfig) -> Vec<PathBuf> {
     ]
     .into_iter()
     .map(|path| root.join(path));
-    configured
-        .chain(discovered)
+    discovered
         .filter(|path| path.exists())
         .map(|path| crate::codebase::ts_resolver::normalize_path(&path))
         .collect()

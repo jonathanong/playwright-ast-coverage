@@ -214,6 +214,13 @@ pub fn find_tsconfig(start: &Path) -> Option<PathBuf> {
 
 const EXTENSIONS: &[&str] = &[".mts", ".ts", ".tsx", ".mjs", ".js", ".jsx", ".cjs", ".cts"];
 
+fn has_known_extension(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| EXTENSIONS.iter().any(|known| &known[1..] == ext))
+        .unwrap_or(false)
+}
+
 /// Resolve `specifier` (as it appears in an import in `importing_file`) to an
 /// absolute path on disk. Returns `None` for bare npm specifiers or if no file
 /// is found.
@@ -336,13 +343,7 @@ impl<'a> ImportResolver<'a> {
     fn try_path(&self, base: &Path) -> Option<PathBuf> {
         let base = normalize_path(base);
         let s = base.to_string_lossy();
-        let has_ext = base
-            .file_name()
-            .and_then(|n| n.to_str())
-            .map(|n| n.contains('.'))
-            .unwrap_or(false);
-
-        if has_ext {
+        if has_known_extension(&base) {
             if self.path_exists(&base) {
                 return Some(base);
             }
