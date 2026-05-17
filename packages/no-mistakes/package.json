@@ -5,7 +5,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jonathanong/playwright-ast-coverage.git",
+    "url": "git+https://github.com/jonathanong/no-mistakes.git",
     "directory": "packages/no-mistakes"
   },
   "bin": {
@@ -24,6 +24,6 @@
     "postinstall": "node scripts/install.js"
   },
   "dependencies": {
-    "no-mistakes-core": "^0.1.0"
+    "no-mistakes-core": "^0.2.0"
   }
 }

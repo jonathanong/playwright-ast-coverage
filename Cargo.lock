@@ -575,7 +575,7 @@ dependencies = [
 
 [[package]]
 name = "next-to-fetch"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1323,7 +1323,7 @@ checksum = "007d8adb5ddab6f8e3f491ac63566a7d5002cc7ed73901f72057943fa71ae1ae"
 
 [[package]]
 name = "queue-ast-hop"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1372,7 +1372,7 @@ dependencies = [
 
 [[package]]
 name = "react-traits"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1556,7 +1556,7 @@ dependencies = [
 
 [[package]]
 name = "server-ast-routes"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
