@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use jsonc_parser::ParseOptions;
 use serde::de::DeserializeOwned;
 use std::path::{Path, PathBuf};
@@ -61,8 +61,10 @@ fn find_config_path(
 pub fn parse_config<T: DeserializeOwned>(source: &str, path: &Path) -> Result<T> {
     let extension = path.extension().and_then(|e| e.to_str());
     match extension {
-        Some("yaml" | "yml") => Ok(serde_yaml::from_str(source)?),
-        Some("json") => Ok(serde_json::from_str(source)?),
+        Some("yaml" | "yml") => serde_yaml::from_str(source)
+            .with_context(|| format!("failed to parse {}", path.display())),
+        Some("json") => serde_json::from_str(source)
+            .with_context(|| format!("failed to parse {}", path.display())),
         Some("jsonc") => Ok(serde_json::from_value(jsonc_parser::parse_to_serde_value(
             source,
             &jsonc_parse_options(),
