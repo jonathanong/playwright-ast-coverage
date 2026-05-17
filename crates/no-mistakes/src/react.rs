@@ -11,7 +11,7 @@ pub(crate) struct ReactArgs {
     pub(crate) root: PathBuf,
     #[arg(long, global = true)]
     pub(crate) config: Option<PathBuf>,
-    /// Output format: json, paths, human.
+    /// Output format: json, paths, human (md/yml use JSON serialization).
     #[arg(
         long,
         value_enum,

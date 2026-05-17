@@ -4,6 +4,7 @@ use no_mistakes_core::cli::Format;
 use no_mistakes_core::queue::{
     analyze_project, related, CheckFinding, Edge, ProjectReport, RelatedDirection,
 };
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -18,7 +19,7 @@ pub(crate) struct QueuesArgs {
     /// Filter to files matching this glob. Can be repeated.
     #[arg(long = "filter", global = true)]
     filters: Vec<String>,
-    /// Output format: json, paths, human.
+    /// Output format: json, paths, human (md/yml use JSON serialization).
     #[arg(
         long,
         value_enum,
@@ -114,9 +115,12 @@ fn print_edges(report: &ProjectReport, files: &[String], format: Format) -> Resu
             println!("{}", serde_json::to_string_pretty(&edges)?);
         }
         Format::Paths => {
-            for edge in &edges {
-                println!("{}", edge.from);
-                println!("{}", edge.to);
+            let paths: BTreeSet<&str> = edges
+                .iter()
+                .flat_map(|e| [e.from.as_str(), e.to.as_str()])
+                .collect();
+            for p in paths {
+                println!("{p}");
             }
         }
         Format::Human => {
@@ -134,9 +138,12 @@ fn print_related(roots: &[String], edges: &[Edge], format: Format) -> Result<()>
             println!("{}", serde_json::to_string_pretty(edges)?);
         }
         Format::Paths => {
-            for edge in edges {
-                println!("{}", edge.from);
-                println!("{}", edge.to);
+            let paths: BTreeSet<&str> = edges
+                .iter()
+                .flat_map(|e| [e.from.as_str(), e.to.as_str()])
+                .collect();
+            for p in paths {
+                println!("{p}");
             }
         }
         Format::Human => {

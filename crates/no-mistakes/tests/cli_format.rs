@@ -247,6 +247,8 @@ fn global_check_format_json_on_bad_queue_fixture() {
         "json",
     ]);
     assert!(!output.status.success());
+    let json: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert!(json.get("queues").and_then(|q| q.as_array()).is_some());
 }
 
 #[test]
@@ -346,7 +348,6 @@ fn global_check_passes_on_react_fixture_with_no_violations() {
 
 #[test]
 fn global_check_relative_root_resolves() {
-    use std::process::Command;
     let output = Command::new(bin())
         .current_dir(
             std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -362,7 +363,6 @@ fn global_check_relative_root_resolves() {
 
 #[test]
 fn react_analyze_relative_root_resolves() {
-    use std::process::Command;
     let output = Command::new(bin())
         .current_dir(
             std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))

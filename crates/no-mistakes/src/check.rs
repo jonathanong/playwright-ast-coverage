@@ -14,7 +14,7 @@ pub(crate) struct CheckArgs {
     /// Path to config file.
     #[arg(long, global = true)]
     config: Option<PathBuf>,
-    /// Output format: json, paths, human.
+    /// Output format: json, paths, human (md/yml use JSON serialization).
     #[arg(long, value_enum, default_value = "human", global = true)]
     format: Format,
 }
@@ -27,41 +27,48 @@ pub(crate) fn run(args: CheckArgs) -> Result<ExitCode> {
         cwd.join(&args.root)
     };
 
-    let mut any_violations = false;
-
-    // Run react check; if no frontend root exists, skip gracefully.
-    match react_traits::run_check(&root, args.config.as_deref(), &[], false) {
-        Ok(react_violations) if !react_violations.is_empty() => {
-            any_violations = true;
-            if matches!(args.format, Format::Json | Format::Md | Format::Yml) {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&react_violations)
-                        .expect("serialization of Rust structs never fails")
-                );
-            } else {
-                react_traits::print_violations(&react_violations);
+    // Run react check; skip gracefully when no config is present, log genuine errors.
+    // assert_no_fetch defaults to false; enable it via project config.
+    let react_violations =
+        match react_traits::run_check(&root, args.config.as_deref(), &[], false) {
+            Ok(v) => v,
+            Err(err) => {
+                eprintln!("warning: react check skipped: {err:#}");
+                vec![]
             }
-        }
-        Ok(_) => {}
-        Err(_) => {
-            // React analysis is optional; skip when not applicable.
-        }
-    }
+        };
 
     // Run queues check.
     let queue_report = analyze_queues(&root, None, &[])?;
-    if !queue_report.check.is_empty() {
-        any_violations = true;
-        if matches!(args.format, Format::Json | Format::Md | Format::Yml) {
+    let queue_findings = &queue_report.check;
+
+    let any_violations = !react_violations.is_empty() || !queue_findings.is_empty();
+
+    match args.format {
+        Format::Json | Format::Md | Format::Yml => {
             println!(
                 "{}",
-                serde_json::to_string_pretty(&queue_report.check)
-                    .expect("serialization of Rust structs never fails")
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "react": react_violations,
+                    "queues": queue_findings,
+                }))
+                .expect("serialization of Rust structs never fails")
             );
-        } else {
-            for f in &queue_report.check {
-                eprintln!(
+        }
+        Format::Paths => {
+            for v in &react_violations {
+                println!("{}", v.file);
+            }
+            for f in queue_findings {
+                println!("{}:{}", f.file, f.line);
+            }
+        }
+        Format::Human => {
+            if !react_violations.is_empty() {
+                react_traits::print_violations(&react_violations);
+            }
+            for f in queue_findings {
+                println!(
                     "{}[{}] {}:{} {}",
                     f.kind,
                     f.job.as_deref().unwrap_or("*"),
