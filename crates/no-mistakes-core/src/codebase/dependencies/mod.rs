@@ -306,7 +306,7 @@ pub fn run(args: TraverseArgs, direction: Direction) -> Result<()> {
     let stdout = io::stdout();
     let mut out = stdout.lock();
 
-    write_entries(format, &root_strs, &entries, &root, &mut out).expect("stdout write succeeds");
+    write_entries(format, &root_strs, &entries, &root, &mut out)?;
 
     timings.mark("output");
     if args.timings {
