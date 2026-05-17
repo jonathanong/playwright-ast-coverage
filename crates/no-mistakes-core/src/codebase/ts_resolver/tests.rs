@@ -164,6 +164,19 @@ fn resolves_relative_explicit_non_javascript_extension() {
 }
 
 #[test]
+fn unresolved_explicit_non_javascript_extension_does_not_append_ts_extension() {
+    let root = fixture("explicit-css");
+    let importer = root.join("src/main.mts");
+    let tc = TsConfig {
+        dir: root.clone(),
+        paths: vec![],
+        paths_dir: root,
+        base_url: None,
+    };
+    assert!(resolve_import("./styles.css", &importer, &tc).is_none());
+}
+
+#[test]
 fn resolves_relative_parent() {
     let dir = TempDir::new().unwrap();
     let target = dir.path().join("lib.mts");

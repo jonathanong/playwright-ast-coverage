@@ -213,11 +213,15 @@ pub fn find_tsconfig(start: &Path) -> Option<PathBuf> {
 }
 
 const EXTENSIONS: &[&str] = &[".mts", ".ts", ".tsx", ".mjs", ".js", ".jsx", ".cjs", ".cts"];
+const EXPLICIT_EXTENSIONS: &[&str] = &[
+    "mts", "ts", "tsx", "mjs", "js", "jsx", "cjs", "cts", "json", "css", "scss", "sass", "less",
+    "svg", "png", "jpg", "jpeg", "gif", "webp", "avif", "txt", "wasm",
+];
 
-fn has_known_extension(path: &Path) -> bool {
+fn has_explicit_extension(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
-        .map(|ext| EXTENSIONS.iter().any(|known| &known[1..] == ext))
+        .map(|ext| EXPLICIT_EXTENSIONS.contains(&ext))
         .unwrap_or(false)
 }
 
@@ -346,7 +350,7 @@ impl<'a> ImportResolver<'a> {
         if self.path_is_file(&base) {
             return Some(base);
         }
-        if has_known_extension(&base) {
+        if has_explicit_extension(&base) {
             return None;
         }
 

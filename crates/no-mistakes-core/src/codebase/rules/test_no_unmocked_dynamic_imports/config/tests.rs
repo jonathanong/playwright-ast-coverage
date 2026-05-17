@@ -172,6 +172,30 @@ fn resolve_setup_file_accepts_exact_root_dir_token() {
 }
 
 #[test]
+fn matcher_patterns_are_normalized_to_repo_relative_paths() {
+    let root = Path::new("/repo");
+    let base = Path::new("/repo/packages/app");
+    assert_eq!(
+        normalize_matcher_patterns(
+            root,
+            base,
+            vec![
+                "./tests/**/*.test.ts".to_string(),
+                "<rootDir>/src/**/*.spec.ts".to_string(),
+                "<rootDir>".to_string(),
+                "**/*.test.ts".to_string(),
+            ],
+        ),
+        vec![
+            "packages/app/tests/**/*.test.ts",
+            "packages/app/src/**/*.spec.ts",
+            "packages/app",
+            "**/*.test.ts",
+        ]
+    );
+}
+
+#[test]
 fn explicit_config_files_skip_default_discovery() {
     let root = crate::codebase::ts_resolver::normalize_path(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR"))

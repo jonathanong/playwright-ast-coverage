@@ -8,7 +8,7 @@ use crate::codebase::dependencies::graph::{DepGraph, GraphBuildPlan};
 use crate::codebase::ts_resolver::{load_tsconfig, normalize_path, ImportResolver, TsConfig};
 use crate::codebase::ts_source::{discover_files, has_disable_comment, has_disable_file_comment};
 use crate::config::v2::NoMistakesConfig;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use runtime::runtime_deps;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -29,7 +29,8 @@ pub fn check(
     let mut findings = Vec::new();
 
     for file in matching_test_files(root, &files, config)? {
-        let source = std::fs::read_to_string(&file).unwrap_or_default();
+        let source = std::fs::read_to_string(&file)
+            .context(format!("failed to read test file {}", file.display()))?;
         if has_disable_file_comment(&source, RULE_ID) {
             continue;
         }
@@ -182,7 +183,8 @@ fn setup_mocks(
     let mut mocks = HashSet::new();
     let rel_path = crate::codebase::ts_source::relative_slash_path(root, test_file);
     for setup in config::setup_files_for_test(root, config, rel_path)? {
-        let source = std::fs::read_to_string(&setup).unwrap_or_default();
+        let source = std::fs::read_to_string(&setup)
+            .context(format!("failed to read setup file {}", setup.display()))?;
         let facts = ast::extract(&setup, &source)?;
         mocks.extend(resolve_mock_specifiers(
             &facts.mock_specifiers,

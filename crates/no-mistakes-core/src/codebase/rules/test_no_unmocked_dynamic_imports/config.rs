@@ -39,10 +39,23 @@ pub fn test_filter(root: &Path, config: &NoMistakesConfig) -> Result<TestFilter>
     let mut config_includes = Vec::new();
     for config_file in config_files(root, config) {
         let source = std::fs::read_to_string(&config_file.path)?;
-        config_includes.extend(extract_test_property_strings(&source, "include"));
-        config_includes.extend(extract_property_strings(&source, "testMatch"));
+        let base = config_file.path.parent().unwrap_or(root);
+        config_includes.extend(normalize_matcher_patterns(
+            root,
+            base,
+            extract_test_property_strings(&source, "include"),
+        ));
+        config_includes.extend(normalize_matcher_patterns(
+            root,
+            base,
+            extract_property_strings(&source, "testMatch"),
+        ));
         include_regex.extend(extract_test_regexes(&source));
-        excludes.extend(extract_test_property_strings(&source, "exclude"));
+        excludes.extend(normalize_matcher_patterns(
+            root,
+            base,
+            extract_test_property_strings(&source, "exclude"),
+        ));
     }
     if has_project_includes {
         includes.extend(config_includes);
@@ -100,8 +113,13 @@ pub fn setup_files_for_test(
     let mut files = Vec::new();
     for config_file in config_files(root, config) {
         let source = std::fs::read_to_string(&config_file.path)?;
-        let includes = config_file.includes(&source);
-        let excludes = extract_test_property_strings(&source, "exclude");
+        let base = config_file.path.parent().unwrap_or(root);
+        let includes = normalize_matcher_patterns(root, base, config_file.includes(&source));
+        let excludes = normalize_matcher_patterns(
+            root,
+            base,
+            extract_test_property_strings(&source, "exclude"),
+        );
         let filter = TestFilter {
             include: build_globset(&includes)?,
             include_regex: build_regexes(&extract_test_regexes(&source))?,
@@ -114,6 +132,26 @@ pub fn setup_files_for_test(
     files.sort();
     files.dedup();
     Ok(files)
+}
+
+fn normalize_matcher_patterns(root: &Path, base: &Path, patterns: Vec<String>) -> Vec<String> {
+    patterns
+        .into_iter()
+        .map(|pattern| normalize_matcher_pattern(root, base, pattern))
+        .collect()
+}
+
+fn normalize_matcher_pattern(root: &Path, base: &Path, pattern: String) -> String {
+    if pattern == "<rootDir>" {
+        return crate::codebase::ts_source::relative_slash_path(root, base);
+    }
+    if let Some(rest) = pattern.strip_prefix("<rootDir>/") {
+        return crate::codebase::ts_source::relative_slash_path(root, &base.join(rest));
+    }
+    if let Some(rest) = pattern.strip_prefix("./") {
+        return crate::codebase::ts_source::relative_slash_path(root, &base.join(rest));
+    }
+    pattern
 }
 
 fn setup_files_from_configs(root: &Path, config_files: Vec<PathBuf>) -> Result<Vec<PathBuf>> {
