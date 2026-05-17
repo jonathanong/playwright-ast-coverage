@@ -430,20 +430,24 @@ jobs:
             if curl --fail --silent --output /dev/null "https://crates.io/api/v1/crates/$pkg/$version"; then
               echo "$pkg $version is already published on crates.io; skipping"
             else
-              if [ "$pkg" != "no-mistakes-core" ]; then
-                for attempt in {1..20}; do
-                  echo "Checking whether no-mistakes-core@$version is visible for $pkg publish..."
-                  if curl --fail --silent --output /dev/null "https://crates.io/api/v1/crates/no-mistakes-core/$version"; then
-                    break
-                  fi
+              for attempt in {1..20}; do
+                dry_run_log="$RUNNER_TEMP/cargo-publish-dry-run-$pkg.log"
+                if cargo publish --dry-run --locked -p "$pkg" 2>&1 | tee "$dry_run_log"; then
+                  break
+                fi
+                if [ "$pkg" != "no-mistakes-core" ] &&
+                  grep -Eq "no matching package|failed to select a version" "$dry_run_log" &&
+                  grep -q "no-mistakes-core" "$dry_run_log"; then
                   if [ "$attempt" = 20 ]; then
-                    echo "Timed out waiting for no-mistakes-core@$version on crates.io"
+                    echo "Timed out waiting for Cargo to resolve no-mistakes-core@$version"
                     exit 1
                   fi
+                  echo "Cargo cannot resolve no-mistakes-core@$version for $pkg yet; retrying..."
                   sleep 15
-                done
-              fi
-              cargo publish --dry-run --locked -p "$pkg"
+                  continue
+                fi
+                exit 1
+              done
               publish_log="$RUNNER_TEMP/cargo-publish-$pkg.log"
               if cargo publish --locked -p "$pkg" 2>&1 | tee "$publish_log"; then
                 :
