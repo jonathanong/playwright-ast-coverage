@@ -113,13 +113,27 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
+line_limit_for_file() {
+  local root="$1"
+  local file="$2"
+  local normalized
+
+  normalized="${file//\\//}"
+  if [ "$(basename "$root")" = "tests" ] || [ "$(basename "$normalized")" = "tests.rs" ] || [[ "$normalized" == */tests/* ]]; then
+    echo "$test_max"
+  else
+    echo "$src_max"
+  fi
+}
+
 check_dir() {
   local dir="$1"
-  local max="$2"
   local json
   json=$(tokei "$dir" --files --output json ${tokei_excludes[@]+"${tokei_excludes[@]}"})
 
   while IFS=$'\t' read -r lines file; do
+    local max
+    max=$(line_limit_for_file "$dir" "$file")
     if [ -n "$file" ] && [ "$lines" -gt "$max" ]; then
       echo "::error file=$file::$file has $lines code lines (max $max) - split into smaller modules"
       fail=1
@@ -128,11 +142,7 @@ check_dir() {
 }
 
 for path in "${paths[@]}"; do
-  if [ "$(basename "$path")" = "tests" ]; then
-    check_dir "$path" "$test_max"
-  else
-    check_dir "$path" "$src_max"
-  fi
+  check_dir "$path"
 done
 
 if [ "$fail" -eq 0 ]; then

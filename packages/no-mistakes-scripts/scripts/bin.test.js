@@ -122,6 +122,21 @@ test(
 );
 
 test(
+  "rust-max-lines-per-file treats nested tests.rs as test code",
+  { skip: !hasCommand("tokei") || !hasCommand("jq") },
+  async () => {
+    const { stdout } = await run("no-mistakes-rust-max-lines-per-file", [
+      "--src-max",
+      "2",
+      "--test-max",
+      "5",
+      fixture("rust-max-lines-per-file", "nested/src"),
+    ]);
+    assert.match(stdout, /within line limits/);
+  },
+);
+
+test(
   "rust-max-lines-per-file honors excludes",
   { skip: !hasCommand("tokei") || !hasCommand("jq") },
   async () => {

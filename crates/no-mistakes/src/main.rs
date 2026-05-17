@@ -154,11 +154,25 @@ fn find_in_path(executable: &str) -> Option<PathBuf> {
 
 #[cfg(unix)]
 fn is_executable_file(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
+    fn test_executable(test_bin: &str, path: &Path) -> Option<bool> {
+        ProcessCommand::new(test_bin)
+            .arg("-x")
+            .arg(path)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .ok()
+            .map(|status| status.success())
+    }
 
     std::fs::metadata(path)
-        .map(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+        .map(|metadata| metadata.is_file())
         .unwrap_or(false)
+        && ["/usr/bin/test", "/bin/test"]
+            .into_iter()
+            .find_map(|test_bin| test_executable(test_bin, path))
+            .unwrap_or(false)
 }
 
 #[cfg(not(unix))]
