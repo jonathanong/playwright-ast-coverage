@@ -26,30 +26,41 @@ pub fn is_skipped_dir(name: &str) -> bool {
 
 /// Walk all non-ignored files under `root`.
 ///
-/// Uses the `ignore` crate so `.gitignore` rules and hidden directories
-/// (anything starting with `.`, including `.claude/worktrees`) are
-/// automatically excluded. `node_modules` is also always excluded as a safety
-/// net for repos where it is not gitignored.
+/// Uses the `ignore` crate so `.gitignore` rules and hidden directories are
+/// excluded, except `.github` because CI workflow analysis needs those files
+/// when no `.git` metadata is available. `node_modules` is also always excluded
+/// as a safety net for repos where it is not gitignored.
 ///
 /// `extra_skip` is an optional list of additional directory names to prune
 /// (e.g. `config.filesystem.skip_directories`).
 pub fn walk_files(root: &Path, extra_skip: &[String]) -> Vec<PathBuf> {
     let extra_skip: HashSet<String> = extra_skip.iter().cloned().collect();
     WalkBuilder::new(root)
+        .hidden(false)
         .filter_entry(move |e| {
             // depth==0 is the walk root itself; never prune it by name.
             // Only prune directories — never exclude individual files by name.
-            if e.depth() == 0 || !e.file_type().is_some_and(|ft| ft.is_dir()) {
+            if e.depth() == 0 {
                 return true;
             }
             let name = e.file_name().to_str().unwrap_or("");
-            !SKIP_DIRS.contains(&name) && !extra_skip.contains(name)
+            if e.file_type().is_some_and(|ft| ft.is_dir()) {
+                !SKIP_DIRS.contains(&name)
+                    && !extra_skip.contains(name)
+                    && !is_hidden_non_github(name)
+            } else {
+                !is_hidden_non_github(name)
+            }
         })
         .build()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_some_and(|ft| ft.is_file()))
         .map(|e| normalize_discovery_path(e.path()))
         .collect()
+}
+
+fn is_hidden_non_github(name: &str) -> bool {
+    name.starts_with('.') && name != ".github"
 }
 
 /// Return all tracked and untracked non-ignored files under `root`.

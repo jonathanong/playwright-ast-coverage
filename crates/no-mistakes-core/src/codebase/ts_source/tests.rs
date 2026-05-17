@@ -2,6 +2,7 @@ use super::{
     discover_files, discover_source_files, git_visible_files, has_disable_comment,
     has_disable_file_comment, is_skipped_dir, is_test_file, line_number, normalize_discovery_path,
     relative_slash_path, starts_with_use_client, static_property_key_name, unwrap_ts_wrappers,
+    walk_files,
 };
 use oxc::allocator::Allocator;
 use oxc::ast::ast::{Expression, ObjectPropertyKind, Statement};
@@ -318,6 +319,18 @@ fn discover_files_falls_back_outside_git_repositories() {
     let files = discover_files(dir.path(), &[]);
 
     assert_eq!(files, vec![dir.path().join("src/main.mts")]);
+}
+
+#[test]
+fn fallback_walk_includes_github_workflows() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/codebase-analysis/codebase-intel");
+
+    let files = walk_files(&dir, &[]);
+
+    assert!(files
+        .iter()
+        .any(|path| path.ends_with(".github/workflows/ci.yml")));
 }
 
 #[test]
