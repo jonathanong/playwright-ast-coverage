@@ -1,13 +1,13 @@
+mod check;
 mod queues;
+mod react;
 mod server;
 
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 use no_mistakes_core::codebase::dependencies::{self, Direction, TraverseArgs};
 use no_mistakes_core::codebase::symbols::{self, SymbolsArgs};
-use no_mistakes_core::react_traits;
 use rayon::ThreadPoolBuilder;
-use std::path::PathBuf;
 use std::process::ExitCode;
 
 #[derive(Parser)]
@@ -30,39 +30,13 @@ enum Command {
     /// Dump named exports and imports of TS/JS files.
     Symbols(SymbolsArgs),
     /// Analyze React component traits.
-    React(ReactArgs),
+    React(react::ReactArgs),
     /// Analyze queue producer/worker relationships (BullMQ, glide-mq).
     Queues(queues::QueuesArgs),
     /// Analyze server route graphs (Express, Hono, Koa).
     Server(server::ServerArgs),
-}
-
-#[derive(Args, Debug)]
-struct ReactArgs {
-    #[arg(long, default_value = ".", global = true)]
-    root: PathBuf,
-    #[arg(long, global = true)]
-    config: Option<PathBuf>,
-    #[arg(long, global = true)]
-    json: bool,
-    #[command(subcommand)]
-    command: ReactCommand,
-}
-
-#[derive(Subcommand, Debug)]
-enum ReactCommand {
-    /// Analyze component traits and print results.
-    Analyze {
-        #[arg(help = "Glob patterns for component files")]
-        targets: Vec<String>,
-    },
-    /// Check for violations (e.g. assert-no-fetch).
-    Check {
-        #[arg(help = "Glob patterns for component files")]
-        targets: Vec<String>,
-        #[arg(long)]
-        assert_no_fetch: bool,
-    },
+    /// Run all checks across configured projects (react + queues).
+    Check(check::CheckArgs),
 }
 
 #[derive(Args, Debug, Clone, Copy, Default)]
@@ -103,60 +77,10 @@ fn run() -> Result<ExitCode> {
             symbols::run(args)?;
             Ok(ExitCode::SUCCESS)
         }
-        Command::React(args) => run_react(args),
+        Command::React(args) => react::run(args),
         Command::Queues(args) => queues::run(args),
         Command::Server(args) => server::run(args),
-    }
-}
-
-fn run_react(args: ReactArgs) -> Result<ExitCode> {
-    let ReactArgs {
-        root,
-        config,
-        json,
-        command,
-    } = args;
-    let cwd = std::env::current_dir()?;
-    let root = if root.is_absolute() {
-        root
-    } else {
-        cwd.join(root)
-    };
-    match &command {
-        ReactCommand::Analyze { targets } => {
-            let results = react_traits::run_analyze(&root, config.as_deref(), targets, None)?;
-            if json {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&results)
-                        .expect("serialization of Rust structs never fails")
-                );
-            } else {
-                react_traits::print_results(&results, 0);
-            }
-            Ok(ExitCode::SUCCESS)
-        }
-        ReactCommand::Check {
-            targets,
-            assert_no_fetch,
-        } => {
-            let violations =
-                react_traits::run_check(&root, config.as_deref(), targets, *assert_no_fetch)?;
-            if violations.is_empty() {
-                Ok(ExitCode::SUCCESS)
-            } else {
-                if json {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&violations)
-                            .expect("serialization of Rust structs never fails")
-                    );
-                } else {
-                    react_traits::print_violations(&violations);
-                }
-                Ok(ExitCode::from(1))
-            }
-        }
+        Command::Check(args) => check::run(args),
     }
 }
 

@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
+use no_mistakes_core::cli::Format;
 use no_mistakes_core::server_routes::{
     analyze_project, related, Edge, ProjectReport, RelatedDirection, ServerRoute,
 };
@@ -14,8 +15,17 @@ pub(crate) struct ServerArgs {
     /// Filter to files matching this glob. Can be repeated.
     #[arg(long = "filter", global = true)]
     filters: Vec<String>,
-    /// Output as JSON.
-    #[arg(long, global = true)]
+    /// Output format: json, paths, human.
+    #[arg(
+        long,
+        value_enum,
+        default_value = "human",
+        global = true,
+        conflicts_with = "json"
+    )]
+    format: Format,
+    /// Shorthand for --format json (deprecated, use --format json).
+    #[arg(long, global = true, hide = true, conflicts_with = "format")]
     json: bool,
     #[command(subcommand)]
     command: ServerCommand,
@@ -66,23 +76,24 @@ pub(crate) fn run(args: ServerArgs) -> Result<ExitCode> {
     } else {
         base.join(&args.root)
     };
+    let format = if args.json { Format::Json } else { args.format };
     let report = analyze_project(&root, None, &args.filters)?;
     match &args.command {
         ServerCommand::Routes { files } => {
-            print_routes(&report, files, args.json)?;
+            print_routes(&report, files, format)?;
         }
         ServerCommand::Edges { roots } => {
-            print_edges(&report, roots, args.json)?;
+            print_edges(&report, roots, format)?;
         }
         ServerCommand::Related { roots, direction } => {
             let edges = related(&report, roots, (*direction).into());
-            print_related(roots, &edges, args.json)?;
+            print_related(roots, &edges, format)?;
         }
     }
     Ok(ExitCode::SUCCESS)
 }
 
-fn print_routes(report: &ProjectReport, files: &[String], json: bool) -> Result<()> {
+fn print_routes(report: &ProjectReport, files: &[String], format: Format) -> Result<()> {
     let routes: Vec<&ServerRoute> = if files.is_empty() {
         report.routes.iter().collect()
     } else {
@@ -92,17 +103,25 @@ fn print_routes(report: &ProjectReport, files: &[String], json: bool) -> Result<
             .filter(|r| files.iter().any(|f| f == &r.file || f == &r.route))
             .collect()
     };
-    if json {
-        println!("{}", serde_json::to_string_pretty(&routes)?);
-    } else {
-        for route in &routes {
-            println!("{} {} -> {}", route.method, route.file, route.route);
+    match format {
+        Format::Json | Format::Md | Format::Yml => {
+            println!("{}", serde_json::to_string_pretty(&routes)?);
+        }
+        Format::Paths => {
+            for route in &routes {
+                println!("{}", route.file);
+            }
+        }
+        Format::Human => {
+            for route in &routes {
+                println!("{} {} -> {}", route.method, route.file, route.route);
+            }
         }
     }
     Ok(())
 }
 
-fn print_edges(report: &ProjectReport, roots: &[String], json: bool) -> Result<()> {
+fn print_edges(report: &ProjectReport, roots: &[String], format: Format) -> Result<()> {
     let edges: Vec<&Edge> = if roots.is_empty() {
         report.edges.iter().collect()
     } else {
@@ -112,23 +131,41 @@ fn print_edges(report: &ProjectReport, roots: &[String], json: bool) -> Result<(
             .filter(|e| roots.iter().any(|r| r == &e.from))
             .collect()
     };
-    if json {
-        println!("{}", serde_json::to_string_pretty(&edges)?);
-    } else {
-        for edge in &edges {
-            println!("{} -> {}", edge.from, edge.to);
+    match format {
+        Format::Json | Format::Md | Format::Yml => {
+            println!("{}", serde_json::to_string_pretty(&edges)?);
+        }
+        Format::Paths => {
+            for edge in &edges {
+                println!("{}", edge.from);
+                println!("{}", edge.to);
+            }
+        }
+        Format::Human => {
+            for edge in &edges {
+                println!("{} -> {}", edge.from, edge.to);
+            }
         }
     }
     Ok(())
 }
 
-fn print_related(roots: &[String], edges: &[Edge], json: bool) -> Result<()> {
-    if json {
-        println!("{}", serde_json::to_string_pretty(edges)?);
-    } else {
-        println!("{}", roots.join(", "));
-        for edge in edges {
-            println!("  {} -> {}", edge.from, edge.to);
+fn print_related(roots: &[String], edges: &[Edge], format: Format) -> Result<()> {
+    match format {
+        Format::Json | Format::Md | Format::Yml => {
+            println!("{}", serde_json::to_string_pretty(edges)?);
+        }
+        Format::Paths => {
+            for edge in edges {
+                println!("{}", edge.from);
+                println!("{}", edge.to);
+            }
+        }
+        Format::Human => {
+            println!("{}", roots.join(", "));
+            for edge in edges {
+                println!("  {} -> {}", edge.from, edge.to);
+            }
         }
     }
     Ok(())
