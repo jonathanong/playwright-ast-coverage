@@ -36,8 +36,7 @@ fn fixture(name: &str) -> PathBuf {
 }
 
 fn build_graph(root: &Path, tsconfig: &TsConfig) -> DepGraph {
-    let graph_files = GraphFiles::discover(root);
-    DepGraph::build_with_plan_and_files(root, tsconfig, GraphBuildPlan::all(), &graph_files)
+    DepGraph::build_with_plan(root, tsconfig, GraphBuildPlan::all())
 }
 
 #[test]
@@ -264,7 +263,7 @@ fn build_graph_from_fixture() {
         paths_dir: root.clone(),
         base_url: None,
     };
-    let graph = build_graph(&root, &tsconfig);
+    let graph = DepGraph::build(&root, &tsconfig);
 
     let a = root.join("a.mts");
     let b = root.join("b.mts");

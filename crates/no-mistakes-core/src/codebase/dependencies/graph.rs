@@ -2,9 +2,7 @@ pub(crate) mod playwright;
 
 use super::extract::{is_indexable, is_tsx_file, ExtractedImport, ImportExtractor, ImportKind};
 use crate::codebase::ts_resolver::{ImportResolver, TsConfig};
-use crate::codebase::ts_source::facts::TsFactMap;
-#[cfg(test)]
-use crate::codebase::ts_source::facts::{collect_ts_facts, TsFactPlan};
+use crate::codebase::ts_source::facts::{collect_ts_facts, TsFactMap, TsFactPlan};
 use crate::codebase::ts_symbols::ExportKind;
 use anyhow::Result;
 use globset::{Glob, GlobSet, GlobSetBuilder};
@@ -230,6 +228,15 @@ pub struct DepGraph {
 }
 
 impl DepGraph {
+    pub fn build(root: &Path, tsconfig: &TsConfig) -> Self {
+        Self::build_with_plan(root, tsconfig, GraphBuildPlan::all())
+    }
+
+    pub fn build_with_plan(root: &Path, tsconfig: &TsConfig, plan: GraphBuildPlan) -> Self {
+        let graph_files = GraphFiles::discover(root);
+        Self::build_with_plan_and_files(root, tsconfig, plan, &graph_files)
+    }
+
     pub(crate) fn build_with_plan_and_files(
         root: &Path,
         tsconfig: &TsConfig,
@@ -1863,13 +1870,11 @@ impl SymbolIndex {
     ///
     /// This is the companion index required by `DepGraph::dependents_of_symbol`
     /// for `file#exportName` queries.
-    #[cfg(test)]
     pub fn build_from_root(root: &Path, tsconfig: &TsConfig) -> Self {
         let graph_files = GraphFiles::discover(root);
         Self::build_from_files(tsconfig, &graph_files)
     }
 
-    #[cfg(test)]
     pub(crate) fn build_from_files(tsconfig: &TsConfig, graph_files: &GraphFiles) -> Self {
         let facts = collect_ts_facts(graph_files.indexable(), TsFactPlan::imports_and_symbols());
         Self::build_from_facts(tsconfig, graph_files, &facts)

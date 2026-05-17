@@ -415,24 +415,21 @@ fn write_report(report: &CoverageReport, format: Format, out: &mut dyn Write) ->
 }
 
 fn write_json(report: &CoverageReport, out: &mut dyn Write) -> Result<()> {
-    serde_json::to_writer_pretty(&mut *out, report).expect("coverage report serializes to JSON");
-    writeln!(out).expect("stdout write succeeds");
+    serde_json::to_writer_pretty(&mut *out, report)
+        .context("serializing coverage report to JSON")?;
+    writeln!(out)?;
     Ok(())
 }
 
 fn write_yml(report: &CoverageReport, out: &mut dyn Write) -> Result<()> {
-    write!(
-        out,
-        "{}",
-        serde_yaml::to_string(report).expect("coverage report serializes to YAML")
-    )
-    .expect("stdout write succeeds");
+    let yml = serde_yaml::to_string(report).context("serializing coverage report to YAML")?;
+    out.write_all(yml.as_bytes())?;
     Ok(())
 }
 
 fn write_paths(report: &CoverageReport, out: &mut dyn Write) -> Result<()> {
     for route in report.routes.iter().filter(|route| !route.covered) {
-        writeln!(out, "{}", route.file).expect("stdout write succeeds");
+        writeln!(out, "{}", route.file)?;
     }
     Ok(())
 }
@@ -442,16 +439,16 @@ fn write_human(report: &CoverageReport, out: &mut dyn Write) -> Result<()> {
         "Playwright route coverage: {}/{} ({:.1}%)",
         report.summary.covered, report.summary.total, report.summary.coverage_percent
     );
-    writeln!(out, "{line}").expect("stdout write succeeds");
+    writeln!(out, "{line}")?;
 
     if report.summary.uncovered == 0 {
-        writeln!(out, "All routes are covered.").expect("stdout write succeeds");
+        writeln!(out, "All routes are covered.")?;
         return Ok(());
     }
 
-    writeln!(out, "Uncovered routes:").expect("stdout write succeeds");
+    writeln!(out, "Uncovered routes:")?;
     for route in report.routes.iter().filter(|route| !route.covered) {
-        writeln!(out, "  {} ({})", route.route, route.file).expect("stdout write succeeds");
+        writeln!(out, "  {} ({})", route.route, route.file)?;
     }
     Ok(())
 }
@@ -461,16 +458,16 @@ fn write_markdown(report: &CoverageReport, out: &mut dyn Write) -> Result<()> {
         "# Playwright route coverage\n\n- Covered: {}/{}\n- Coverage: {:.1}%\n",
         report.summary.covered, report.summary.total, report.summary.coverage_percent
     );
-    writeln!(out, "{header}").expect("stdout write succeeds");
+    writeln!(out, "{header}")?;
 
     if report.summary.uncovered == 0 {
-        writeln!(out, "_All routes are covered._").expect("stdout write succeeds");
+        writeln!(out, "_All routes are covered._")?;
         return Ok(());
     }
 
-    writeln!(out, "## Uncovered routes\n").expect("stdout write succeeds");
+    writeln!(out, "## Uncovered routes\n")?;
     for route in report.routes.iter().filter(|route| !route.covered) {
-        writeln!(out, "- `{}` ({})", route.route, route.file).expect("stdout write succeeds");
+        writeln!(out, "- `{}` ({})", route.route, route.file)?;
     }
     Ok(())
 }
