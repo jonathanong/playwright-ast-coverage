@@ -13,6 +13,15 @@ fn fixture(name: &str) -> PathBuf {
     )
 }
 
+fn react_fixture(category: &str, name: &str) -> PathBuf {
+    no_mistakes_core::codebase::ts_resolver::normalize_path(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures")
+            .join(category)
+            .join(name),
+    )
+}
+
 fn run(args: &[&str]) -> Output {
     Command::new(bin())
         .args(args)
@@ -94,4 +103,34 @@ fn help_lists_scoped_subcommands() {
     assert!(help.contains("dependencies"));
     assert!(help.contains("dependents"));
     assert!(help.contains("symbols"));
+}
+
+#[test]
+fn react_analyze_json_outputs_components() {
+    let root = react_fixture("react-traits-components", "basic");
+    let output = run(&[
+        "react",
+        "--root",
+        root.to_str().unwrap(),
+        "--json",
+        "analyze",
+        "app/components/Greeting.tsx",
+    ]);
+    assert!(output.status.success());
+    let json: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert!(json.as_array().is_some());
+}
+
+#[test]
+fn react_check_assert_no_fetch_exits_nonzero() {
+    let root = react_fixture("react-traits-config", "assert-no-fetch");
+    let output = run(&[
+        "react",
+        "--root",
+        root.to_str().unwrap(),
+        "check",
+        "--assert-no-fetch",
+        "app/components/Fetcher.tsx",
+    ]);
+    assert_eq!(output.status.code(), Some(1));
 }

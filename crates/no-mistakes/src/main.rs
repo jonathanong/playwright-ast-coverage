@@ -101,11 +101,22 @@ fn run() -> Result<ExitCode> {
 }
 
 fn run_react(args: ReactArgs) -> Result<ExitCode> {
-    match &args.command {
+    let ReactArgs {
+        root,
+        config,
+        json,
+        command,
+    } = args;
+    let cwd = std::env::current_dir()?;
+    let root = if root.is_absolute() {
+        root
+    } else {
+        cwd.join(root)
+    };
+    match &command {
         ReactCommand::Analyze { targets } => {
-            let results =
-                react_traits::run_analyze(&args.root, args.config.as_deref(), targets, None)?;
-            if args.json {
+            let results = react_traits::run_analyze(&root, config.as_deref(), targets, None)?;
+            if json {
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&results)
@@ -120,16 +131,12 @@ fn run_react(args: ReactArgs) -> Result<ExitCode> {
             targets,
             assert_no_fetch,
         } => {
-            let violations = react_traits::run_check(
-                &args.root,
-                args.config.as_deref(),
-                targets,
-                *assert_no_fetch,
-            )?;
+            let violations =
+                react_traits::run_check(&root, config.as_deref(), targets, *assert_no_fetch)?;
             if violations.is_empty() {
                 Ok(ExitCode::SUCCESS)
             } else {
-                if args.json {
+                if json {
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&violations)
