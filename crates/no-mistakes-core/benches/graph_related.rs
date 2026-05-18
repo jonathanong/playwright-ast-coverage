@@ -1,8 +1,8 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use no_mistakes_core::queue::RelatedDirection;
-use no_mistakes_core::queue::ProjectReport;
-use no_mistakes_core::queue::{Edge, EdgeKind};
 use no_mistakes_core::queue::related;
+use no_mistakes_core::queue::ProjectReport;
+use no_mistakes_core::queue::RelatedDirection;
+use no_mistakes_core::queue::{Edge, EdgeKind};
 use std::hint::black_box;
 
 fn create_large_graph() -> ProjectReport {
