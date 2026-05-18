@@ -96,3 +96,24 @@ test("request rejects timeout errors", async () => {
     /timed out after 1ms/,
   );
 });
+
+test("fetchText limits response size", async () => {
+  const server = createServer((_request, response) => {
+    response.writeHead(200);
+    // Send 1MB + 1 byte
+    response.write(Buffer.alloc(1024 * 1024));
+    response.write(Buffer.alloc(1));
+    response.end();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+
+  try {
+    await assert.rejects(
+      () => fetchText(`http://127.0.0.1:${address.port}/large`),
+      /exceeded maximum size/,
+    );
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});

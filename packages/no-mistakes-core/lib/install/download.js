@@ -84,7 +84,6 @@ async function fetchText(url) {
     for await (const chunk of response) {
       totalLength += chunk.length;
       if (totalLength > MAX_LENGTH) {
-        response.destroy(new Error(`Response exceeded maximum size of ${MAX_LENGTH} bytes`));
         throw new Error(`Response exceeded maximum size of ${MAX_LENGTH} bytes`);
       }
       chunks.push(chunk);
