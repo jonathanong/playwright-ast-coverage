@@ -5,7 +5,7 @@ use crate::codebase::ts_symbols::{Export, FileSymbols};
 use crate::codebase::workspaces;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 mod collector;
@@ -92,6 +92,15 @@ struct ExportOccurrence {
     file: String,
     line: u32,
     kind: String,
+    origin: ExportOrigin,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+struct ExportOrigin {
+    file: String,
+    line: u32,
+    name: String,
+    bucket: ExportBucket,
 }
 
 pub fn analyze_project(
@@ -102,11 +111,20 @@ pub fn analyze_project(
     let root = normalize_path(root);
     let root = root.as_path();
     let config = load_codebase_config_with_path(root, config_path)?;
-    if !config.is_rule_enabled(RULE_ID) {
+    let project_roots = config.project_roots_for_rule(root, RULE_ID);
+    if project_roots.is_empty() {
         return Ok(Vec::new());
     }
     let options: UniqueExportsOptions = config.rule_options(RULE_ID);
-    let all_files = discover_files(root, &config.filesystem.skip_directories);
+    let mut all_files = Vec::new();
+    for project_root in &project_roots {
+        all_files.extend(discover_files(
+            project_root,
+            &config.filesystem.skip_directories,
+        ));
+    }
+    all_files.sort();
+    all_files.dedup();
     let files = filter_source_files(root, &all_files, &config.filesystem.skip_file_patterns)?;
     let tsconfig = match tsconfig_path {
         Some(path) => {
@@ -160,11 +178,16 @@ pub fn analyze_project(
     let mut findings = Vec::new();
     for ((name, bucket), mut occurrences) in buckets {
         occurrences.sort_by(|a, b| (&a.file, a.line, &a.kind).cmp(&(&b.file, b.line, &b.kind)));
-        if occurrences.len() < 2 {
+        let mut origins = BTreeSet::new();
+        let unique_occurrences = occurrences
+            .into_iter()
+            .filter(|occurrence| origins.insert(occurrence.origin.clone()))
+            .collect::<Vec<_>>();
+        if unique_occurrences.len() < 2 {
             continue;
         }
-        let first = &occurrences[0];
-        for duplicate in occurrences.iter().skip(1) {
+        let first = &unique_occurrences[0];
+        for duplicate in unique_occurrences.iter().skip(1) {
             findings.push(UniqueExportFinding {
                 rule: RULE_ID.to_string(),
                 file: duplicate.file.clone(),

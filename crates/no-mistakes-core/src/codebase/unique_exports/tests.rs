@@ -60,16 +60,55 @@ fn strict_mode_reports_cross_type_duplicates() {
 #[test]
 fn follows_explicit_and_star_reexports() {
     let findings = findings("unique-exports-reexports");
-    let alpha = findings
+    assert!(findings.is_empty());
+}
+
+#[test]
+fn collapses_source_declarations_and_same_origin_barrels() {
+    let findings = findings("unique-exports-barrels-pass");
+    assert!(findings.is_empty());
+}
+
+#[test]
+fn reports_distinct_declarations_even_when_reexported_through_barrels() {
+    let findings = findings("unique-exports-real-duplicates");
+    let names = finding_names(&findings);
+    assert_eq!(findings.len(), 2);
+    assert!(names.contains(&("Collision".to_string(), "value".to_string())));
+    assert!(names.contains(&("Shape".to_string(), "type".to_string())));
+}
+
+#[test]
+fn checks_only_projects_that_enable_the_rule() {
+    let findings = findings("unique-exports-project-scope");
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].export_name, "ScopedDuplicate");
+    assert!(!findings
         .iter()
-        .filter(|f| f.export_name == "Alpha" && f.export_kind == "value")
-        .count();
-    let beta = findings
-        .iter()
-        .filter(|f| f.export_name == "Beta" && f.export_kind == "type")
-        .count();
-    assert_eq!(alpha, 2);
-    assert_eq!(beta, 2);
+        .any(|finding| finding.export_name == "IgnoredDuplicate"));
+}
+
+#[test]
+fn top_level_disabled_rule_overrides_project_scopes() {
+    assert!(findings("unique-exports-project-scope-disabled").is_empty());
+}
+
+#[test]
+fn keeps_type_and_value_exports_separate_by_default() {
+    assert!(findings("unique-exports-type-value-split").is_empty());
+}
+
+#[test]
+fn strict_mode_still_reports_cross_type_duplicates_after_origin_deduping() {
+    let findings = findings("unique-exports-type-value-strict");
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].export_name, "Shared");
+    assert_eq!(findings[0].export_kind, "export");
+}
+
+#[test]
+fn collapses_workspace_barrels_to_their_source_export() {
+    assert!(findings("unique-exports-workspace-barrels").is_empty());
 }
 
 #[test]
@@ -145,6 +184,23 @@ fn checks_across_workspace_packages() {
 }
 
 #[test]
+fn exempts_nextjs_metadata_asset_convention_exports() {
+    let findings = findings("unique-exports-nextjs-assets");
+    assert!(findings.iter().any(|finding| finding.export_name == "alt"));
+    assert!(findings.iter().any(|finding| finding.export_name == "size"));
+    assert!(findings
+        .iter()
+        .any(|finding| finding.export_name == "contentType"));
+    assert!(!findings.iter().any(|finding| {
+        finding.file.starts_with("web/app/")
+            && matches!(
+                finding.export_name.as_str(),
+                "runtime" | "alt" | "size" | "contentType"
+            )
+    }));
+}
+
+#[test]
 fn disabled_config_skips_rule() {
     assert!(findings("unique-exports-config-disabled").is_empty());
 }
@@ -153,10 +209,7 @@ fn disabled_config_skips_rule() {
 fn explicit_tsconfig_resolves_path_aliases() {
     let root = fixture("unique-exports-tsconfig-paths");
     let findings = analyze_project(&root, None, Some(&root.join("tsconfig.json"))).unwrap();
-    assert_eq!(findings.len(), 2);
-    assert!(findings
-        .iter()
-        .all(|finding| finding.export_name == "ViaConfig"));
+    assert!(findings.is_empty());
 }
 
 #[test]
@@ -164,19 +217,14 @@ fn relative_explicit_tsconfig_resolves_from_project_root() {
     let root = fixture("unique-exports-tsconfig-paths");
     let findings = analyze_project(&root, None, Some(Path::new("tsconfig.json"))).unwrap();
 
-    assert_eq!(findings.len(), 2);
-    assert!(findings
-        .iter()
-        .all(|finding| finding.export_name == "ViaConfig"));
+    assert!(findings.is_empty());
 }
 
 #[test]
 fn nearest_tsconfig_is_discovered_and_explicit_errors_are_reported() {
     let root = fixture("unique-exports-tsconfig-paths");
     let findings = analyze_project(&root, None, None).unwrap();
-    assert!(findings
-        .iter()
-        .any(|finding| finding.export_name == "ViaConfig"));
+    assert!(findings.is_empty());
     assert!(analyze_project(&root, None, Some(&root.join("missing-tsconfig.json"))).is_err());
 }
 
@@ -193,13 +241,13 @@ fn invalid_skip_file_patterns_are_reported_from_project_analysis() {
 fn covers_reexport_resolution_edge_cases() {
     let findings = findings("unique-exports-edge-cases");
     let names = finding_names(&findings);
-    assert!(names.contains(&("Direct".to_string(), "value".to_string())));
-    assert!(names.contains(&("DirectType".to_string(), "type".to_string())));
-    assert!(names.contains(&("DefaultAlias".to_string(), "value".to_string())));
+    assert!(!names.contains(&("Direct".to_string(), "value".to_string())));
+    assert!(!names.contains(&("DirectType".to_string(), "type".to_string())));
+    assert!(!names.contains(&("DefaultAlias".to_string(), "value".to_string())));
     assert!(names.contains(&("DefaultShapeAlias".to_string(), "type".to_string())));
-    assert!(names.contains(&("ChainAlias".to_string(), "type".to_string())));
-    assert!(names.contains(&("StarResolved".to_string(), "value".to_string())));
-    assert!(names.contains(&("TypeStarOnly".to_string(), "type".to_string())));
+    assert!(!names.contains(&("ChainAlias".to_string(), "type".to_string())));
+    assert!(!names.contains(&("StarResolved".to_string(), "value".to_string())));
+    assert!(!names.contains(&("TypeStarOnly".to_string(), "type".to_string())));
     assert!(!names.contains(&("TypeStarValue".to_string(), "value".to_string())));
     assert!(names.contains(&("Namespace".to_string(), "value".to_string())));
     assert!(!names.contains(&("NamespacedOnly".to_string(), "value".to_string())));
@@ -278,7 +326,7 @@ fn defensive_helpers_ignore_missing_targets_and_non_matching_default_exports() {
 
     let mut visiting = HashSet::new();
     assert_eq!(
-        collector::find_target_export_bucket(
+        collector::find_target_export_origin(
             &root.join("src/not-present.ts"),
             "Missing",
             &files,
@@ -291,7 +339,7 @@ fn defensive_helpers_ignore_missing_targets_and_non_matching_default_exports() {
 
     let mut visiting = HashSet::new();
     assert_eq!(
-        collector::find_target_export_bucket(
+        collector::find_target_export_origin(
             &root.join("src/default-source.ts"),
             "NotDefault",
             &files,

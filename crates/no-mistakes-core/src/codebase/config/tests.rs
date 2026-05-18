@@ -25,6 +25,7 @@ fn augment_from_gitignore_adds_plain_directory_names_once() {
             skip_directories: vec!["dist".to_string()],
             skip_file_patterns: vec![],
         },
+        projects: HashMap::new(),
         rules: HashMap::new(),
     };
 

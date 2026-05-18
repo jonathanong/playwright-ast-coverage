@@ -8,6 +8,9 @@ pub(super) fn is_framework_export(rel: &str, name: &str, is_nextjs_project: bool
     match router_kind(&rel) {
         Some(RouterKind::App) => match stem {
             "page" | "layout" => is_app_page_or_layout_export(name),
+            "opengraph-image" | "twitter-image" | "icon" | "apple-icon" => {
+                is_app_metadata_asset_export(name)
+            }
             "route" => is_app_route_export(name),
             _ => false,
         },
@@ -51,6 +54,10 @@ fn is_app_route_export(name: &str) -> bool {
         name,
         "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS"
     ) || is_route_segment_config_export(name)
+}
+
+fn is_app_metadata_asset_export(name: &str) -> bool {
+    matches!(name, "alt" | "size" | "contentType") || is_route_segment_config_export(name)
 }
 
 fn is_route_segment_config_export(name: &str) -> bool {

@@ -1,0 +1,4 @@
+{
+  "name": "@fixture/b",
+  "exports": "./src/index.ts"
+}

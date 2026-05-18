@@ -1,4 +1,4 @@
-use super::{ExportBucket, ExportOccurrence, SourceFile, RULE_ID};
+use super::{ExportBucket, ExportOccurrence, ExportOrigin, SourceFile, RULE_ID};
 use crate::codebase::symbols::export_kind_str;
 use crate::codebase::ts_resolver::{normalize_path, ImportResolver};
 use crate::codebase::ts_source::has_disable_comment;
@@ -69,34 +69,52 @@ pub(super) fn collect_file_exports(
                 }
             }
             ExportKind::ReExport { source, imported } => {
+                let resolved = resolve_export_source(source, &file.path, resolver, workspace);
+                let resolved_origin = resolved.as_ref().and_then(|target| {
+                    find_target_export_origin(
+                        target, imported, files, resolver, workspace, visiting,
+                    )
+                });
                 let bucket = if export.is_type_only {
                     ExportBucket::Type
                 } else if imported == "*" {
                     ExportBucket::Value
                 } else {
-                    resolve_export_source(source, &file.path, resolver, workspace)
-                        .and_then(|target| {
-                            find_target_export_bucket(
-                                &target, imported, files, resolver, workspace, visiting,
-                            )
-                        })
+                    resolved_origin
+                        .as_ref()
+                        .map(|origin| origin.bucket)
                         .unwrap_or_else(|| ExportBucket::from_export(export))
                 };
+                let origin = resolved_origin
+                    .map(|origin| {
+                        if export.is_type_only {
+                            ExportOrigin {
+                                bucket: ExportBucket::Type,
+                                ..origin
+                            }
+                        } else {
+                            origin
+                        }
+                    })
+                    .unwrap_or_else(|| origin_for_export(file, export, bucket));
                 out.push(ExportOccurrence {
                     name: export.name.clone(),
                     bucket,
                     file: file.rel.clone(),
                     line: export.line,
                     kind: export_kind_str(&export.kind).to_string(),
+                    origin,
                 });
             }
             _ => {
+                let bucket = ExportBucket::from_export(export);
                 out.push(ExportOccurrence {
                     name: export.name.clone(),
-                    bucket: ExportBucket::from_export(export),
+                    bucket,
                     file: file.rel.clone(),
                     line: export.line,
                     kind: export_kind_str(&export.kind).to_string(),
+                    origin: origin_for_export(file, export, bucket),
                 });
             }
         }
@@ -113,14 +131,14 @@ fn should_skip_export(file: &SourceFile, export: &Export) -> bool {
         || super::nextjs::is_framework_export(&file.rel, &export.name, file.is_nextjs_project)
 }
 
-pub(super) fn find_target_export_bucket(
+pub(super) fn find_target_export_origin(
     target: &Path,
     imported: &str,
     files: &HashMap<PathBuf, SourceFile>,
     resolver: &ImportResolver<'_>,
     workspace: &WorkspaceMap,
     visiting: &mut HashSet<PathBuf>,
-) -> Option<ExportBucket> {
+) -> Option<ExportOrigin> {
     let target = normalize_path(target);
     if !visiting.insert(target.clone()) {
         return None;
@@ -140,21 +158,33 @@ pub(super) fn find_target_export_bucket(
         .iter()
         .filter(|export| !should_skip_export(file, export))
         .find_map(|export| match &export.kind {
-            ExportKind::Default if imported == "default" => Some(ExportBucket::from_export(export)),
+            ExportKind::Default if imported == "default" => Some(origin_for_export(
+                file,
+                export,
+                ExportBucket::from_export(export),
+            )),
             ExportKind::ReExport {
                 source,
                 imported: reimported,
             } if export.name == imported => {
+                let resolved_origin = resolve_export_source(
+                    source, &file.path, resolver, workspace,
+                )
+                .and_then(|resolved| {
+                    find_target_export_origin(
+                        &resolved, reimported, files, resolver, workspace, visiting,
+                    )
+                });
                 if export.is_type_only {
-                    Some(ExportBucket::Type)
-                } else {
-                    resolve_export_source(source, &file.path, resolver, workspace)
-                        .and_then(|resolved| {
-                            find_target_export_bucket(
-                                &resolved, reimported, files, resolver, workspace, visiting,
-                            )
+                    resolved_origin
+                        .map(|origin| ExportOrigin {
+                            bucket: ExportBucket::Type,
+                            ..origin
                         })
-                        .or(Some(ExportBucket::Value))
+                        .or_else(|| Some(origin_for_export(file, export, ExportBucket::Type)))
+                } else {
+                    resolved_origin
+                        .or_else(|| Some(origin_for_export(file, export, ExportBucket::Value)))
                 }
             }
             ExportKind::ReExport {
@@ -164,13 +194,26 @@ pub(super) fn find_target_export_bucket(
                 source, &file.path, resolver, workspace,
             )
             .and_then(|resolved| {
-                find_target_export_bucket(&resolved, imported, files, resolver, workspace, visiting)
+                find_target_export_origin(&resolved, imported, files, resolver, workspace, visiting)
             }),
-            _ if export.name == imported => Some(ExportBucket::from_export(export)),
+            _ if export.name == imported => Some(origin_for_export(
+                file,
+                export,
+                ExportBucket::from_export(export),
+            )),
             _ => None,
         });
     visiting.remove(&target);
     found
+}
+
+fn origin_for_export(file: &SourceFile, export: &Export, bucket: ExportBucket) -> ExportOrigin {
+    ExportOrigin {
+        file: file.rel.clone(),
+        line: export.line,
+        name: export.name.clone(),
+        bucket,
+    }
 }
 
 fn resolve_export_source(

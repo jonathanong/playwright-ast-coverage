@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::config::resolve;
 use crate::config::v2::{find_config_root, load_v2_config, schema::NoMistakesConfig};
@@ -60,11 +60,19 @@ fn default_true() -> bool {
     true
 }
 
+#[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
+pub struct ProjectConfig {
+    pub root: Option<String>,
+    pub rules: Vec<String>,
+}
+
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
     #[serde(default)]
     pub filesystem: FilesystemConfig,
+    #[serde(default)]
+    pub projects: HashMap<String, ProjectConfig>,
     #[serde(default)]
     pub rules: HashMap<String, RuleConfig>,
 }
@@ -86,6 +94,34 @@ impl Config {
             .get(rule_id)
             .map(|rule| rule.enabled)
             .unwrap_or(true)
+    }
+
+    pub fn project_roots_for_rule(&self, root: &Path, rule_id: &str) -> Vec<PathBuf> {
+        if self.rules.get(rule_id).is_some_and(|rule| !rule.enabled) {
+            return Vec::new();
+        }
+
+        let project_roots = self
+            .projects
+            .values()
+            .filter(|project| project.rules.iter().any(|rule| rule == rule_id))
+            .map(|project| {
+                project
+                    .root
+                    .as_deref()
+                    .map(|project_root| root.join(project_root))
+                    .unwrap_or_else(|| root.to_path_buf())
+            })
+            .collect::<Vec<_>>();
+        if !project_roots.is_empty() {
+            return project_roots;
+        }
+
+        if self.projects.is_empty() || self.rules.contains_key(rule_id) {
+            vec![root.to_path_buf()]
+        } else {
+            Vec::new()
+        }
     }
 
     pub fn augment_from_gitignore(&mut self, root: &Path) {
@@ -206,6 +242,19 @@ fn config_from_v2(v2: NoMistakesConfig) -> Config {
             skip_directories: v2.filesystem.skip_directories,
             skip_file_patterns: v2.filesystem.skip_file_patterns,
         },
+        projects: v2
+            .projects
+            .into_iter()
+            .map(|(name, project)| {
+                (
+                    name,
+                    ProjectConfig {
+                        root: project.root,
+                        rules: project.rules,
+                    },
+                )
+            })
+            .collect(),
         rules,
     }
 }

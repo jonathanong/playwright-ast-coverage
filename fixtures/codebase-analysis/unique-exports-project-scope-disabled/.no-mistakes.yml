@@ -1,0 +1,8 @@
+projects:
+  checked:
+    root: checked
+    rules:
+      - unique-exports
+rules:
+  unique-exports:
+    enabled: false
