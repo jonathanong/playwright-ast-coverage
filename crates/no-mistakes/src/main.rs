@@ -92,17 +92,6 @@ fn proxy_external(args: Vec<OsString>) -> Result<ExitCode> {
         .split_first()
         .expect("clap external subcommands include a command");
     let subcommand = subcommand.to_string_lossy();
-
-    if subcommand.is_empty()
-        || !subcommand
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    {
-        anyhow::bail!(
-            "invalid command name `{subcommand}`; only ASCII letters, digits, hyphens, and underscores are allowed"
-        );
-    }
-
     let executable = format!("no-mistakes-{subcommand}");
     let executable_path = find_in_path(&executable).ok_or_else(|| {
         anyhow::anyhow!("unknown command `{subcommand}`; `{executable}` was not found on PATH")

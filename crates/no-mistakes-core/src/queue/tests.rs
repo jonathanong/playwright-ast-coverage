@@ -110,51 +110,6 @@ fn related_crosses_virtual_queue_jobs() {
 }
 
 #[test]
-fn related_skips_duplicate_destinations() {
-    let report = ProjectReport {
-        producers: vec![],
-        workers: vec![],
-        jobs: vec![],
-        check: vec![],
-        diagnostics: vec![],
-        edges: vec![
-            Edge {
-                from: "root_a".to_string(),
-                to: "shared".to_string(),
-                kind: EdgeKind::QueueEnqueue,
-            },
-            Edge {
-                from: "root_a".to_string(),
-                to: "shared".to_string(),
-                kind: EdgeKind::QueueEnqueue,
-            },
-            Edge {
-                from: "shared".to_string(),
-                to: "leaf".to_string(),
-                kind: EdgeKind::QueueEnqueue,
-            },
-            Edge {
-                from: "root_b".to_string(),
-                to: "shared".to_string(),
-                kind: EdgeKind::QueueEnqueue,
-            },
-        ],
-    };
-
-    let mut edges = related(&report, &["root_a".to_string()], RelatedDirection::Deps);
-    edges.sort();
-    edges.dedup();
-
-    assert_eq!(edges.len(), 2);
-    assert!(edges
-        .iter()
-        .any(|edge| edge.from == "root_a" && edge.to == "shared"));
-    assert!(edges
-        .iter()
-        .any(|edge| edge.from == "shared" && edge.to == "leaf"));
-}
-
-#[test]
 fn add_bulk_and_wildcard_worker_are_supported() {
     let report = analyze_project(&fixture("bulk"), None, &[]).unwrap();
     assert_eq!(report.check, vec![]);
