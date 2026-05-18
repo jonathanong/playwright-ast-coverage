@@ -54,7 +54,7 @@ fn test_with_run_args_restores_existing_value() {
         let run_args = with_run_args_env(Some(args.to_string()), Some(previous.to_string()));
         assert_eq!(std::env::var(ENV_VAR).unwrap(), args);
         let _guard = run_args.release();
-        // Skip exact equality due to parallel tests mutating environment randomly
+        assert_eq!(std::env::var(ENV_VAR).unwrap(), previous);
     }
 }
 
@@ -71,7 +71,7 @@ fn test_with_run_args_restores_unset_value() {
             "next-to-fetch\x1f--root\x1f."
         );
         let _guard = run_args.release();
-        // Skip exact equality due to parallel tests
+        assert!(std::env::var_os(ENV_VAR).is_none());
     }
 }
 
@@ -96,6 +96,7 @@ fn test_with_run_args_env_macro_path() {
     let run_args = with_run_args_env(Some(next.to_string()), Some(previous.to_string()));
     assert_eq!(std::env::var(ENV_VAR).unwrap(), next);
     let _guard = run_args.release();
+    assert_eq!(std::env::var(ENV_VAR).unwrap(), previous);
 }
 
 #[test]
@@ -111,6 +112,7 @@ fn test_with_run_args_state_resumes_panic() {
             panic!("with_run_args_state panic-path");
         }));
         let _guard = run_args.release();
+        assert_eq!(std::env::var(ENV_VAR).unwrap(), previous);
         panic_result
     };
 
