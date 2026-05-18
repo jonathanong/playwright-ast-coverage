@@ -1,5 +1,6 @@
 const { execFile, execFileSync } = require("node:child_process");
-const { join } = require("node:path");
+const { accessSync, constants } = require("node:fs");
+const { delimiter, extname, join } = require("node:path");
 const { promisify } = require("node:util");
 
 const execFileAsync = promisify(execFile);
@@ -12,12 +13,32 @@ function fixture(category, name) {
 }
 
 function hasCommand(command) {
-  try {
-    execFileSync("command", ["-v", command], { shell: true, stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
+  const names = [command];
+  if (process.env.PATHEXT && extname(command) === "") {
+    names.push(
+      ...process.env.PATHEXT.split(";")
+        .filter(Boolean)
+        .map((ext) => `${command}${ext}`),
+    );
   }
+
+  return (process.env.PATH || "")
+    .split(delimiter)
+    .filter(Boolean)
+    .some((dir) => {
+      try {
+        return names.some((name) => {
+          try {
+            accessSync(join(dir, name), constants.X_OK);
+            return true;
+          } catch {
+            return false;
+          }
+        });
+      } catch {
+        return false;
+      }
+    });
 }
 
 function isGitWorktree(path) {
