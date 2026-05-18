@@ -11,7 +11,12 @@ impl<'a> Visit<'a> for CallExpressionVisitor<'a> {
     fn visit_call_expression(&mut self, expr: &CallExpression<'a>) {
         if self.found_expr.is_none() {
             // Unsafe lifecycle bypass for test purpose since we just want the first one
-            self.found_expr = Some(unsafe { std::mem::transmute(expr) });
+            self.found_expr = Some(unsafe {
+                std::mem::transmute::<
+                    &oxc_ast::ast::CallExpression<'_>,
+                    &oxc_ast::ast::CallExpression<'_>,
+                >(expr)
+            });
         }
         walk::walk_call_expression(self, expr);
     }
