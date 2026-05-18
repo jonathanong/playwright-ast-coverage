@@ -53,7 +53,7 @@ fn text_printers_cover_routes_and_selectors() {
             Edge::Route {
                 test_file: std::sync::Arc::new("tests/e2e/app.spec.ts".to_string()),
                 test_name: None,
-                describe_path: vec![].into(),
+                describe_path: std::sync::Arc::new(vec![]),
                 route_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
                 route: std::sync::Arc::new("/".to_string()),
                 url: std::sync::Arc::new("/".to_string()),
@@ -61,7 +61,7 @@ fn text_printers_cover_routes_and_selectors() {
             Edge::Selector {
                 test_file: std::sync::Arc::new("tests/e2e/app.spec.ts".to_string()),
                 test_name: None,
-                describe_path: vec![].into(),
+                describe_path: std::sync::Arc::new(vec![]),
                 app_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
                 attribute: "data-testid".to_string(),
                 value: "save".to_string(),
@@ -127,7 +127,7 @@ fn related_report_includes_fetch_apis() {
         Edge::Route {
             test_file: std::sync::Arc::new("tests/e2e/app.spec.ts".to_string()),
             test_name: None,
-            describe_path: vec![].into(),
+            describe_path: std::sync::Arc::new(vec![]),
             route_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
             route: std::sync::Arc::new("/".to_string()),
             url: std::sync::Arc::new("/".to_string()),
@@ -135,7 +135,7 @@ fn related_report_includes_fetch_apis() {
         Edge::Fetch {
             test_file: std::sync::Arc::new("tests/e2e/app.spec.ts".to_string()),
             test_name: None,
-            describe_path: vec![].into(),
+            describe_path: std::sync::Arc::new(vec![]),
             route_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
             route: std::sync::Arc::new("/".to_string()),
             method: "GET".to_string(),
@@ -155,7 +155,7 @@ fn print_tests_text_covers_html_ids() {
         tests: vec![TestEntry {
             file: "tests/e2e/app.spec.ts".to_string(),
             name: Some("visits home".to_string()),
-            describe_path: vec![].into(),
+            describe_path: vec![],
             test_ids: vec![],
             html_ids: vec!["main-nav".to_string()],
             routes: vec![],
