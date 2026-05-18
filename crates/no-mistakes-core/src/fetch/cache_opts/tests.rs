@@ -247,3 +247,27 @@ fn test_cache_and_next_properties() {
     assert!(cached);
     assert_eq!(kind, CacheKind::FetchNextRevalidate);
 }
+
+#[test]
+fn test_dynamic_cache_key_is_not_static() {
+    let source = "fetch('url', { [dynamicVar]: 'force-cache' });";
+    let (cached, kind) = extract_from_source(source);
+    assert!(!cached);
+    assert_eq!(kind, CacheKind::None);
+}
+
+#[test]
+fn test_next_dynamic_key_is_not_static() {
+    let source = "fetch('url', { next: { [dynamicVar]: 60 } });";
+    let (cached, kind) = extract_from_source(source);
+    assert!(!cached);
+    assert_eq!(kind, CacheKind::None);
+}
+
+#[test]
+fn test_next_revalidate_negative() {
+    let source = "fetch('url', { next: { revalidate: -1 } });";
+    let (cached, kind) = extract_from_source(source);
+    assert!(!cached);
+    assert_eq!(kind, CacheKind::None);
+}
