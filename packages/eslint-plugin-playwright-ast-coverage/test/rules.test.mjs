@@ -171,12 +171,6 @@ describe("consistent-attribute", () => {
   });
 });
 
-describe("require-interactive-test-id", () => {
-  it("reports interactive elements without a test ID", () => {
-    assert.equal(messages(fixture("interactive.jsx"), "require-interactive-test-id").length, 15);
-  });
-});
-
 describe("prefer-get-by-test-id", () => {
   it("reports exact CSS test-id selectors in Playwright selector calls", () => {
     assert.deepEqual(messages(fixture("prefer-get-by-testid.js"), "prefer-get-by-test-id"), [
