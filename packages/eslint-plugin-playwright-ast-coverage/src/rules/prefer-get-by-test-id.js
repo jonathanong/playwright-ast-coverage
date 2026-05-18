@@ -33,7 +33,7 @@ module.exports = rule(
         }
         for (const arg of node.arguments.slice(0, methodName === "dragAndDrop" ? 2 : 1)) {
           const source = literalString(arg);
-          if (!source) {
+          if (typeof source !== "string" || source === "") {
             continue;
           }
           for (const selector of cssSelectorValues(source, attrs)) {
