@@ -2,11 +2,11 @@
 
 const { EventEmitter } = require("node:events");
 
-function runWithChild(run, defaultArgs = [], event, ...eventArgs) {
+function _runWithChild(run, runArgs, event, ...eventArgs) {
   const child = new EventEmitter();
   const exits = [];
   const spawnCalls = [];
-  run(defaultArgs, "linux", { exit: (code) => exits.push(code) }, (bin, argv, options) => {
+  run(...runArgs, { exit: (code) => exits.push(code) }, (bin, argv, options) => {
     spawnCalls.push([bin, argv, options]);
     queueMicrotask(() => child.emit(event, ...eventArgs));
     return child;
@@ -16,33 +16,19 @@ function runWithChild(run, defaultArgs = [], event, ...eventArgs) {
   });
 }
 
-function runWithChildWithEnv(run, defaultArgs = [], event, ...eventArgs) {
-  const child = new EventEmitter();
-  const exits = [];
-  const spawnCalls = [];
-  run(defaultArgs, {}, "linux", { exit: (code) => exits.push(code) }, (bin, argv, options) => {
-    spawnCalls.push([bin, argv, options]);
-    queueMicrotask(() => child.emit(event, ...eventArgs));
-    return child;
-  });
-  return new Promise((resolve) => {
-    setImmediate(() => resolve({ exits, spawnCalls }));
-  });
+function runWithChild(run, defaultArgs, event, ...eventArgs) {
+  return _runWithChild(run, [defaultArgs, "linux"], event, ...eventArgs);
 }
 
-function createLogger() {
-  return function log() {
-    return true;
-  };
+function runWithChildWithEnv(run, defaultArgs, event, ...eventArgs) {
+  return _runWithChild(run, [defaultArgs, {}, "linux"], event, ...eventArgs);
 }
 
 async function testInstallerFailures(main, assert) {
   const exits = [];
   const errors = [];
 
-  const logger = createLogger();
-  logger(); // Call to hit the code coverage
-
+  const logger = () => {};
   await main(
     async () => {
       throw new Error("install failed");
@@ -59,7 +45,8 @@ async function testInstallerFailures(main, assert) {
     { exit: (code) => exits.push(code) },
     { log: logger, error: (message) => errors.push(message) },
   );
-  assert.deepEqual(errors.slice(-1), ["string failed"]);
+  assert.deepEqual(exits, [1, 1]);
+  assert.deepEqual(errors, ["install failed", "string failed"]);
 }
 
 module.exports = {
