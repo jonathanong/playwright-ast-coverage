@@ -3,8 +3,8 @@ mod helpers;
 pub(crate) use helpers::is_class_component;
 pub(crate) use helpers::is_component_expr;
 use oxc_ast::ast::{
-    BindingPattern, Declaration, ExportDefaultDeclaration, ExportNamedDeclaration,
-    ExportDefaultDeclarationKind, Expression, Program, Statement,
+    BindingPattern, Declaration, ExportDefaultDeclaration, ExportDefaultDeclarationKind,
+    ExportNamedDeclaration, Expression, Program, Statement,
 };
 use oxc_span::Span;
 use std::collections::HashMap;
@@ -81,9 +81,7 @@ fn extract_default_export(
         ExportDefaultDeclarationKind::CallExpression(call) => {
             let callee_name = match &call.callee {
                 Expression::Identifier(id) => id.name.as_ref(),
-                Expression::StaticMemberExpression(m)
-                    if matches!(&m.object, Expression::Identifier(obj) if obj.name == "React") =>
-                {
+                Expression::StaticMemberExpression(m) if matches!(&m.object, Expression::Identifier(obj) if obj.name == "React") => {
                     m.property.name.as_ref()
                 }
                 _ => "",
