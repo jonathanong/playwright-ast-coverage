@@ -352,6 +352,15 @@ fn global_check_format_markdown_on_bad_react_fixture() {
 }
 
 #[test]
+fn global_check_warns_when_rules_shared_facts_check_errors() {
+    let root = codebase_fixture("test-no-unmocked-dynamic-imports-invalid");
+    let output = run(&["check", "--root", root.to_str().unwrap()]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).contains("warning: rules check skipped:"));
+}
+
+#[test]
 fn queues_legacy_json_flag_still_works() {
     let root = queue_fixture("basic");
     let output = run(&[

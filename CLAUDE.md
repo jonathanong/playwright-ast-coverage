@@ -5,7 +5,8 @@ Goal: AI-powered AST-based codebase intelligence for AI Agents.
 - Determinism + Heuristics over Probabilistic AI
 - CPUs are cheaper than GPUs
 - Local over Remote
-- Stateless — no caches, no databases, just reading from the file system
+- Stateless across runs — no filesystem caches, databases, or services. In-memory
+  per-run memoization and shared fact maps are allowed to avoid duplicate work.
 - Rules to keep the AST parsable (e.g. no indirection, no dynamism)
 - Reduce Agent token usage
 - Allow custom error messages for agents

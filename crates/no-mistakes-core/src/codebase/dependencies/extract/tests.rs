@@ -249,9 +249,11 @@ fn is_indexable_ts() {
     assert!(is_indexable(Path::new("a.ts")));
     assert!(is_indexable(Path::new("a.mts")));
     assert!(is_indexable(Path::new("a.tsx")));
+    assert!(is_indexable(Path::new("a.cts")));
     assert!(is_indexable(Path::new("a.js")));
     assert!(is_indexable(Path::new("a.mjs")));
     assert!(is_indexable(Path::new("a.jsx")));
+    assert!(is_indexable(Path::new("a.cjs")));
 }
 
 #[test]

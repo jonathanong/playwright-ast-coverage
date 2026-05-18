@@ -6,6 +6,7 @@ fn rule_enabled_defaults_true_and_reads_false() {
     let config = Config::from_yaml(
         r#"
 rules:
+  default-rule: {}
   disabled-rule:
     enabled: false
 "#,
@@ -13,6 +14,7 @@ rules:
     .unwrap();
 
     assert!(config.is_rule_enabled("missing-rule"));
+    assert!(config.is_rule_enabled("default-rule"));
     assert!(!config.is_rule_enabled("disabled-rule"));
 }
 
@@ -101,4 +103,27 @@ fn load_codebase_config_rejects_duplicate_parent_configs() {
     let error = load_codebase_config_with_path(&root, None).unwrap_err();
 
     assert!(error.to_string().contains("multiple config files found"));
+}
+
+#[test]
+fn project_roots_for_rule_covers_default_and_unmatched_projects() {
+    let root = Path::new("/repo");
+    let config = Config::from_yaml(
+        r#"
+projects:
+  app:
+    rules: [unique-exports]
+  other:
+    rules: [different-rule]
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        config.project_roots_for_rule(root, "unique-exports"),
+        vec![PathBuf::from("/repo")]
+    );
+    assert!(config
+        .project_roots_for_rule(root, "missing-rule")
+        .is_empty());
 }

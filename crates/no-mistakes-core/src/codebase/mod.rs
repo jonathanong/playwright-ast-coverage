@@ -1,3 +1,4 @@
+pub mod check_facts;
 pub mod ci_workflows;
 pub mod config;
 pub mod dependencies;

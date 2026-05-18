@@ -137,7 +137,7 @@ pub fn load_config_with_path(start: &Path, config_path: Option<&Path>) -> Result
             resolved
                 .parent()
                 .map(Path::to_path_buf)
-                .unwrap_or_else(|| start.to_path_buf())
+                .expect("resolved config path has a parent")
         }
         None => find_config_root(start),
     };

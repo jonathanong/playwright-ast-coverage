@@ -46,6 +46,34 @@ pub fn analyze_project(
     Ok(build_report(&root, producers, workers, &facts))
 }
 
+pub fn analyze_project_with_facts(
+    root: &Path,
+    tsconfig_path: Option<&Path>,
+    filters: &[String],
+    shared: &crate::codebase::check_facts::CheckFactMap,
+) -> anyhow::Result<ProjectReport> {
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let root = root.as_path();
+    let tsconfig = load_tsconfig(root, tsconfig_path)?;
+    let filter = build_filter(filters)?;
+    let mut facts = HashMap::new();
+    for (path, file_facts) in &shared.ts {
+        if let Some(filter) = &filter {
+            let rel = path.strip_prefix(root).unwrap_or(path);
+            if !filter.is_match(rel) {
+                continue;
+            }
+        }
+        if let Some(queue) = &file_facts.queue {
+            facts.insert(path.clone(), queue.clone());
+        }
+    }
+    let queue_defs = queue_definitions(&facts);
+    let producers = resolve_producers(root, &facts, &queue_defs, &tsconfig);
+    let workers = resolve_workers(root, &facts, &queue_defs, &tsconfig);
+    Ok(build_report(root, producers, workers, &facts))
+}
+
 fn queue_definitions(
     facts: &HashMap<PathBuf, FileFacts>,
 ) -> HashMap<PathBuf, HashMap<String, String>> {

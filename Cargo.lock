@@ -604,6 +604,7 @@ dependencies = [
  "anyhow",
  "clap",
  "no-mistakes-core",
+ "rayon",
  "serde_json",
  "serde_yaml",
 ]

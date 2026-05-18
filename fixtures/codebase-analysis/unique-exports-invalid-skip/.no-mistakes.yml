@@ -1,3 +1,5 @@
 filesystem:
   skipFilePatterns:
     - "["
+rules:
+  unique-exports: {}

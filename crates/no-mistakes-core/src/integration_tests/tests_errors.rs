@@ -45,3 +45,21 @@ fn config_parsers_report_syntax_errors() {
         test_config::vitest::parse_from_path(&empty_source, &empty_path, &root, &root).is_err()
     );
 }
+
+#[test]
+fn check_with_facts_reports_dropped_helper_parse_errors() {
+    let root = fixture("basic");
+    let file = root.join("helpers/openai.mts");
+    let mut shared = crate::codebase::check_facts::CheckFactMap::default();
+    shared.ts.insert(
+        file,
+        crate::codebase::check_facts::CheckFileFacts {
+            parse_error: Some("synthetic helper parse error".to_string()),
+            ..Default::default()
+        },
+    );
+
+    let error = check_with_facts(&root, None, &shared).unwrap_err();
+
+    assert!(error.to_string().contains("synthetic helper parse error"));
+}

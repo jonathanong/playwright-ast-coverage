@@ -1,9 +1,10 @@
-mod ast;
+pub(crate) mod ast;
 mod checker;
 mod config;
 mod manual_mocks;
 mod reachable;
 mod runtime;
+mod with_facts;
 
 use super::RuleFinding;
 use crate::codebase::dependencies::graph::{DepGraph, GraphBuildPlan};
@@ -17,6 +18,7 @@ use anyhow::{Context, Result};
 use runtime::runtime_deps;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+pub use with_facts::check_with_facts;
 
 pub const RULE_ID: &str = "test-no-unmocked-dynamic-imports";
 

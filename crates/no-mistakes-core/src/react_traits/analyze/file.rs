@@ -22,9 +22,20 @@ mod tests;
 
 pub(crate) fn analyze_file(abs_path: &Path, root: &Path) -> Result<FileAnalysis> {
     let source = std::fs::read_to_string(abs_path)?;
+    ast::with_program(abs_path, &source, |program, _src| {
+        analyze_program(abs_path, root, &source, program)
+    })
+}
+
+pub(crate) fn analyze_program(
+    abs_path: &Path,
+    root: &Path,
+    source: &str,
+    program: &oxc_ast::ast::Program<'_>,
+) -> FileAnalysis {
     let rel_path = relative_string(root, abs_path);
 
-    let (components, dependencies) = ast::with_program(abs_path, &source, |program, _src| {
+    let (components, dependencies) = {
         let env = detect_file_environment(program);
         let import_table = build_import_table(abs_path, program);
         let component_defs = extract_components(program);
@@ -48,7 +59,7 @@ pub(crate) fn analyze_file(abs_path: &Path, root: &Path) -> Result<FileAnalysis>
             let uses_memo = traits::memo::detect_uses_memo(program, span, &def);
             let uses_context_provider = traits::context::detect_context_provider(program, span);
             let uses_suspense = traits::suspense::detect_uses_suspense(program, span);
-            let fetch_calls = traits::fetch::collect_fetch_calls(program, &source, &rel_path, span);
+            let fetch_calls = traits::fetch::collect_fetch_calls(program, source, &rel_path, span);
 
             let fetches = fetch_calls
                 .into_iter()
@@ -86,10 +97,10 @@ pub(crate) fn analyze_file(abs_path: &Path, root: &Path) -> Result<FileAnalysis>
         }
 
         (components, deps)
-    })?;
+    };
 
-    Ok(FileAnalysis {
+    FileAnalysis {
         components,
         dependencies,
-    })
+    }
 }

@@ -43,6 +43,11 @@ fn run_analyze_inner_covers_root_fallback_child_aggregation_and_errors() {
         .iter()
         .any(|component| component.name == "default"));
 
+    let default_targets = run_analyze_inner(&root, &file_config, &[], None).unwrap();
+    assert!(default_targets
+        .iter()
+        .any(|component| component.name == "default"));
+
     let missing = run_analyze_inner(
         &root.join("missing"),
         &file_config,

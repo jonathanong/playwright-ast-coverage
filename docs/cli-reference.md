@@ -110,10 +110,15 @@ no-mistakes check --format json
 no-mistakes check --json
 ```
 
-Runs configured React, queue, and codebase rules such as
-`test-no-unmocked-dynamic-imports`. Options: `--root`, `--config`,
-`--tsconfig`, `--format`, and `--json`. `--jobs` is a global wrapper option,
-for example `no-mistakes --jobs 4 check ...`.
+Runs configured React, queue, integration, and codebase rules such as
+`test-no-unmocked-dynamic-imports`. Independent check domains run in parallel,
+and results are printed in deterministic order. Options: `--root`, `--config`,
+`--tsconfig`, `--format`, `--json`, and `--timings`. `--jobs` is a global
+wrapper option, for example `no-mistakes --jobs 4 check ...`.
+
+`check` only runs configured checks. Use direct subcommands such as
+`no-mistakes queues check` when you want a full scan for that domain without
+adding it to `.no-mistakes.yml`.
 
 ### External Script Commands
 
