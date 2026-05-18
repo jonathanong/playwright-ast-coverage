@@ -13,20 +13,23 @@ ruleTester.run("prefer-get-by-test-id", rule, {
   valid: [
     { code: 'page.getByTestId("save")' },
     { code: 'page[method]("[data-pw=\\"computed\\"]")' },
-    { code: 'page.locator()' },
-    { code: 'page.locator(selector)' },
+    { code: "page.locator()" },
+    { code: "page.locator(selector)" },
     { code: 'page.locator("")' },
     { code: 'page.click("[data-testid^=\\"user-\\"]")' },
     { code: 'const selector = "[data-pw=\\"ignored\\"]"' },
-    { code: 'page.locator(`${dynamic}`)' },
-    { code: 'page.locator(123)' },
+    { code: "page.locator(`${dynamic}`)" },
+    { code: "page.locator(123)" },
     { code: 'page.locator(`[data-testid="${dynamic}"]`)' },
-    { code: 'page.locator(null)' },
+    { code: "page.locator(null)" },
     { code: 'page.locator(selector, "[data-pw=\\"ignored\\"]")' },
-    { code: 'page.dragAndDrop(selector, selector)' },
-    { code: 'page.locator("[data-pw=\\"save\\"]", { hasText: "foo" })', options: [{ selectorAttributes: ["data-qa"] }] },
-    { code: 'page.locator(a, b)' },
-    { code: 'page.locator(``)' },
+    { code: "page.dragAndDrop(selector, selector)" },
+    {
+      code: 'page.locator("[data-pw=\\"save\\"]", { hasText: "foo" })',
+      options: [{ selectorAttributes: ["data-qa"] }],
+    },
+    { code: "page.locator(a, b)" },
+    { code: "page.locator(``)" },
   ],
   invalid: [
     {
@@ -38,7 +41,7 @@ ruleTester.run("prefer-get-by-test-id", rule, {
       errors: [{ messageId: "prefer", data: { value: "save" } }],
     },
     {
-      code: 'page.locator("[data-pw=\'open\']")',
+      code: "page.locator(\"[data-pw='open']\")",
       errors: [{ messageId: "prefer", data: { value: "open" } }],
     },
     {
@@ -66,15 +69,11 @@ ruleTester.run("prefer-get-by-test-id", rule, {
     },
     {
       code: 'page.dragAndDrop(selector, "[data-pw=\\"target\\"]")',
-      errors: [
-        { messageId: "prefer", data: { value: "target" } },
-      ],
+      errors: [{ messageId: "prefer", data: { value: "target" } }],
     },
     {
       code: 'page.dragAndDrop("[data-pw=\\"source\\"]", selector)',
-      errors: [
-        { messageId: "prefer", data: { value: "source" } },
-      ],
+      errors: [{ messageId: "prefer", data: { value: "source" } }],
     },
     {
       code: 'page.locator("[data-qa=\\"save\\"]")',
