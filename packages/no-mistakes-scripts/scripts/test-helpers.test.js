@@ -1,8 +1,10 @@
 const assert = require("node:assert/strict");
-const { chmod, mkdtemp, rm, writeFile } = require("node:fs/promises");
-const { tmpdir } = require("node:os");
-const { delimiter, join } = require("node:path");
-const { hasCommand } = require("./test-helpers");
+const { delimiter } = require("node:path");
+const { fixture, hasCommand } = require("./test-helpers");
+
+const executableCommandPath = fixture("commands", "executable");
+const directoryCommandPath = fixture("commands", "directory-candidate");
+const pathExtCommandPath = fixture("commands", "pathext");
 
 async function withPathEnv(env, callback) {
   const originalPath = process.env.PATH;
@@ -32,17 +34,36 @@ test("hasCommand ignores empty PATH segments", async () => {
   });
 });
 
-test("hasCommand checks PATHEXT command candidates", async () => {
-  const tempRoot = await mkdtemp(join(tmpdir(), "no-mistakes-command-"));
-  try {
-    const commandPath = join(tempRoot, "fixture-tool.CMD");
-    await writeFile(commandPath, "");
-    await chmod(commandPath, 0o755);
+test("hasCommand returns false when PATH is unset", async () => {
+  await withPathEnv({ PATH: undefined }, async () => {
+    delete process.env.PATH;
+    assert.equal(hasCommand("definitely-not-installed"), false);
+  });
+});
 
-    await withPathEnv({ PATH: tempRoot, PATHEXT: ".CMD;.EXE" }, async () => {
+test("hasCommand ignores invalid PATH entries", async () => {
+  await withPathEnv(
+    { PATH: ["/definitely/does/not/exist", executableCommandPath].join(delimiter) },
+    async () => {
       assert.equal(hasCommand("fixture-tool"), true);
-    });
-  } finally {
-    await rm(tempRoot, { recursive: true, force: true });
-  }
+    },
+  );
+});
+
+test("hasCommand finds executable files on PATH", async () => {
+  await withPathEnv({ PATH: executableCommandPath }, async () => {
+    assert.equal(hasCommand("fixture-tool"), true);
+  });
+});
+
+test("hasCommand ignores executable directories on PATH", async () => {
+  await withPathEnv({ PATH: directoryCommandPath }, async () => {
+    assert.equal(hasCommand("fixture-tool"), false);
+  });
+});
+
+test("hasCommand checks PATHEXT command candidates", async () => {
+  await withPathEnv({ PATH: pathExtCommandPath, PATHEXT: ".CMD;.EXE" }, async () => {
+    assert.equal(hasCommand("fixture-tool"), true);
+  });
 });
