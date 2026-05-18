@@ -1,34 +1,15 @@
 const assert = require("node:assert/strict");
-const { execFile, execFileSync } = require("node:child_process");
 const { cp, mkdtemp, rm } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const { join } = require("node:path");
-const { promisify } = require("node:util");
-
-const execFileAsync = promisify(execFile);
-const PACKAGE_ROOT = join(__dirname, "..");
-const REPO_ROOT = join(PACKAGE_ROOT, "..", "..");
-const BIN = join(PACKAGE_ROOT, "bin");
-
-function fixture(category, name) {
-  return join(REPO_ROOT, "fixtures", "no-mistakes-scripts", category, name);
-}
-
-function hasCommand(command) {
-  try {
-    execFileSync("command", ["-v", command], { shell: true, stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function run(script, args = [], options = {}) {
-  return execFileAsync("/bin/bash", [join(BIN, script), ...args], {
-    cwd: REPO_ROOT,
-    env: { ...process.env, ...options.env },
-  });
-}
+const {
+  escapeRegExp,
+  fixture,
+  hasCommand,
+  isGitWorktree,
+  REPO_ROOT,
+  run,
+} = require("./test-helpers");
 
 test("rust-no-inline-tests prints help", async () => {
   const { stdout } = await run("no-mistakes-rust-no-inline-tests", ["--help"]);
@@ -170,6 +151,10 @@ test("agents-md-max-size passes scoped fixtures", async () => {
 });
 
 test("agents-md-max-size fails scoped fixtures", async () => {
+  const annotationPath = isGitWorktree(REPO_ROOT)
+    ? "fixtures/no-mistakes-scripts/agents-md-max-size/fail/CLAUDE.md"
+    : "CLAUDE.md";
+
   await assert.rejects(
     run("no-mistakes-agents-md-max-size", [
       "--root",
@@ -179,8 +164,7 @@ test("agents-md-max-size fails scoped fixtures", async () => {
     ]),
     {
       code: 1,
-      stdout:
-        /::error file=fixtures\/no-mistakes-scripts\/agents-md-max-size\/fail\/CLAUDE\.md::.*CLAUDE\.md has 3 lines/,
+      stdout: new RegExp(`::error file=${escapeRegExp(annotationPath)}::.*CLAUDE\\.md has 3 lines`),
     },
   );
 });
