@@ -1,107 +1,23 @@
 use crate::codebase::config::load_codebase_config_with_path;
 use crate::codebase::ts_resolver::{find_tsconfig, load_tsconfig, normalize_path, ImportResolver};
 use crate::codebase::ts_source::discover_files;
-use crate::codebase::ts_symbols::{Export, FileSymbols};
 use crate::codebase::workspaces;
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 mod collector;
 mod nextjs;
+mod origin;
 mod scan;
+mod types;
 
 use collector::collect_file_exports;
 use scan::{collect_source_files, filter_source_files, sorted_paths};
+use types::{ExportBucket, ExportOccurrence, ExportOrigin, SourceFile};
+pub use types::{UniqueExportFinding, UniqueExportsOptions};
 
 pub const RULE_ID: &str = "unique-exports";
-
-#[derive(Debug, Clone, Deserialize, Default)]
-#[serde(rename_all = "camelCase", default)]
-pub struct UniqueExportsOptions {
-    pub unique_across_types_and_values: bool,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UniqueExportFinding {
-    pub rule: String,
-    pub file: String,
-    pub line: u32,
-    pub export_name: String,
-    pub export_kind: String,
-    pub message: String,
-}
-
-#[derive(Debug, Clone)]
-struct SourceFile {
-    path: PathBuf,
-    rel: String,
-    source: String,
-    symbols: FileSymbols,
-    disabled: bool,
-    is_nextjs_project: bool,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
-enum ExportBucket {
-    Type,
-    Value,
-    Any,
-}
-
-impl ExportBucket {
-    fn from_export(export: &Export) -> Self {
-        if export.is_type_only {
-            Self::Type
-        } else {
-            Self::Value
-        }
-    }
-
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Type => "type",
-            Self::Value => "value",
-            Self::Any => "export",
-        }
-    }
-
-    fn key(self, strict: bool) -> Self {
-        if strict {
-            Self::Any
-        } else {
-            self
-        }
-    }
-
-    fn message_label(self) -> &'static str {
-        match self {
-            Self::Type => "type export",
-            Self::Value => "value export",
-            Self::Any => "export",
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct ExportOccurrence {
-    name: String,
-    bucket: ExportBucket,
-    file: String,
-    line: u32,
-    kind: String,
-    origin: ExportOrigin,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-struct ExportOrigin {
-    file: String,
-    line: u32,
-    name: String,
-    bucket: ExportBucket,
-}
 
 pub fn analyze_project(
     root: &Path,
