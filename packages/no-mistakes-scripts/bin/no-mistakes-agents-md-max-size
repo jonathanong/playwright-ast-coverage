@@ -12,14 +12,12 @@ Usage:
   no-mistakes-agents-md-max-size --help
 
 Options:
-  --root <path>    Repository root or subdirectory to check (default: .)
+  --root <path>    Directory to check (default: .)
 
 Defaults:
   max_lines: 200
   max_chars: 12000
 
-Requires:
-  git
 USAGE
 }
 
@@ -80,26 +78,21 @@ max_chars="${positionals[1]:-12000}"
 require_positive_int "max_lines" "$max_lines"
 require_positive_int "max_chars" "$max_chars"
 
-if ! command -v git >/dev/null 2>&1; then
-  echo "Error: git is required." >&2
-  echo "  macOS: brew install git" >&2
-  echo "  Linux: apt-get install git" >&2
+if ! scope_abs=$(cd "$root" && pwd -P); then
+  echo "Error: --root must point to an existing directory." >&2
   exit 1
 fi
 
-if ! git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  echo "Error: must be run from inside a git repository." >&2
-  echo "  Action: cd into your project and try again." >&2
-  exit 1
-fi
+path_base="$scope_abs"
 
-repo_root=$(git -C "$root" rev-parse --show-toplevel)
-scope_abs=$(cd "$root" && pwd -P)
-repo_abs=$(cd "$repo_root" && pwd -P)
-
-if [[ "$scope_abs" != "$repo_abs" && "$scope_abs" != "$repo_abs/"* ]]; then
-  echo "Error: --root must be inside the git repository." >&2
-  exit 1
+if command -v git >/dev/null 2>&1 && git -C "$scope_abs" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  repo_root=$(git -C "$scope_abs" rev-parse --show-toplevel)
+  repo_abs=$(cd "$repo_root" && pwd -P)
+  if [[ "$scope_abs" != "$repo_abs" && "$scope_abs" != "$repo_abs/"* ]]; then
+    echo "Error: --root must be inside the git repository." >&2
+    exit 1
+  fi
+  path_base="$repo_abs"
 fi
 
 if LC_ALL=C.UTF-8 locale >/dev/null 2>&1; then
@@ -114,7 +107,7 @@ fail=0
 
 while IFS= read -r -d '' full_path; do
   case "$full_path" in
-    "$repo_abs"/*) file="${full_path#"$repo_abs/"}" ;;
+    "$path_base"/*) file="${full_path#"$path_base/"}" ;;
     *) continue ;;
   esac
 

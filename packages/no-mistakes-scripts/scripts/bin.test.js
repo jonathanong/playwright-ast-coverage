@@ -1,5 +1,7 @@
 const assert = require("node:assert/strict");
 const { execFile, execFileSync } = require("node:child_process");
+const { cp, mkdtemp, rm } = require("node:fs/promises");
+const { tmpdir } = require("node:os");
 const { join } = require("node:path");
 const { promisify } = require("node:util");
 
@@ -177,6 +179,29 @@ test("agents-md-max-size fails scoped fixtures", async () => {
     ]),
     { code: 1, stdout: /CLAUDE\.md has 3 lines/ },
   );
+});
+
+test("agents-md-max-size checks non-git source trees", async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), "no-mistakes-agents-md-max-size-"));
+  try {
+    await cp(fixture("agents-md-max-size", "pass"), join(tempRoot, "pass"), { recursive: true });
+    await cp(fixture("agents-md-max-size", "fail"), join(tempRoot, "fail"), { recursive: true });
+
+    const { stdout } = await run("no-mistakes-agents-md-max-size", [
+      "--root",
+      join(tempRoot, "pass"),
+      "5",
+      "200",
+    ]);
+    assert.match(stdout, /within size limits/);
+
+    await assert.rejects(
+      run("no-mistakes-agents-md-max-size", ["--root", join(tempRoot, "fail"), "2", "200"]),
+      { code: 1, stdout: /CLAUDE\.md has 3 lines/ },
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("agents-md-max-size rejects invalid limits", async () => {

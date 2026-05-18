@@ -74,8 +74,24 @@ jobs:
       - name: Run CSpell
         run: npm run lint:spell
 
+      - name: Build JavaScript packages
+        run: npm run build:js
+
       - name: Run npm tests
         run: npm run test:ci --ignore-scripts
+
+      - name: Check Cargo packages
+        run: |
+          cargo publish --dry-run --locked -p no-mistakes-core
+          for pkg in no-mistakes playwright-ast-coverage next-to-fetch queue-ast-hop react-traits server-ast-routes; do
+            cargo package --list --locked -p "$pkg" >/dev/null
+          done
+
+      - name: Check npm packages
+        run: |
+          for pkg in no-mistakes-core no-mistakes no-mistakes-scripts playwright-ast-coverage next-to-fetch queue-ast-hop react-traits server-ast-routes eslint-plugin-next-to-fetch eslint-plugin-playwright-ast-coverage; do
+            npm pack --dry-run --workspace "$pkg"
+          done
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
@@ -154,3 +170,15 @@ jobs:
 
       - name: Run script package tests
         run: npx vitest run packages/no-mistakes-scripts/scripts/bin.test.js --coverage.enabled=false
+
+      - name: Run script package tests from source archive
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive_root="$RUNNER_TEMP/source-archive"
+          mkdir -p "$archive_root"
+          git archive --format=tar HEAD | tar -x -C "$archive_root"
+          cd "$archive_root"
+          npm ci --ignore-scripts
+          npx vitest run packages/no-mistakes-scripts/scripts/bin.test.js --coverage.enabled=false
