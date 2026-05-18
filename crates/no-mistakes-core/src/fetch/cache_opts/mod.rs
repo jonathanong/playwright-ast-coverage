@@ -54,8 +54,10 @@ pub fn extract_fetch_cache_options(obj: &oxc_ast::ast::ObjectExpression<'_>) -> 
                                 _ => {}
                             },
                             "tags" => {
-                                cached = true;
-                                cache_kind = CacheKind::FetchNextTags;
+                                if matches!(next_property.value, Expression::ArrayExpression(_)) {
+                                    cached = true;
+                                    cache_kind = CacheKind::FetchNextTags;
+                                }
                             }
                             _ => {}
                         }
