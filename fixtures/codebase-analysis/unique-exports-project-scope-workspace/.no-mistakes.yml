@@ -1,0 +1,12 @@
+projects:
+  package-a:
+    root: packages/a
+    rules:
+      - unique-exports
+  package-b:
+    root: packages/b
+    rules:
+      - unique-exports
+rules:
+  unique-exports:
+    enabled: true

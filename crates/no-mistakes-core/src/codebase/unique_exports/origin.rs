@@ -96,17 +96,25 @@ impl OriginSearch<'_, '_> {
         reimported: &str,
     ) -> Option<ExportOrigin> {
         let resolved_origin =
-            resolve_export_source(source, &file.path, self.resolver, self.workspace)
-                .and_then(|resolved| self.find(&resolved, reimported));
+            match resolve_export_source(source, &file.path, self.resolver, self.workspace) {
+                Some(resolved) => self.find(&resolved, reimported),
+                None => None,
+            };
         if export.is_type_only {
-            resolved_origin
-                .map(|origin| ExportOrigin {
+            if let Some(origin) = resolved_origin {
+                Some(ExportOrigin {
                     bucket: ExportBucket::Type,
                     ..origin
                 })
-                .or_else(|| Some(origin_for_export(file, export, ExportBucket::Type)))
+            } else {
+                Some(origin_for_export(file, export, ExportBucket::Type))
+            }
         } else {
-            resolved_origin.or_else(|| Some(origin_for_export(file, export, ExportBucket::Value)))
+            if resolved_origin.is_some() {
+                resolved_origin
+            } else {
+                Some(origin_for_export(file, export, ExportBucket::Value))
+            }
         }
     }
 }
@@ -130,8 +138,11 @@ pub(super) fn resolve_export_source(
     resolver: &ImportResolver<'_>,
     workspace: &WorkspaceMap,
 ) -> Option<PathBuf> {
-    resolver
-        .resolve(source, importing_file)
-        .or_else(|| workspace.resolve_specifier(source))
-        .map(|path| normalize_path(&path))
+    if let Some(path) = resolver.resolve(source, importing_file) {
+        return Some(normalize_path(&path));
+    }
+    if let Some(path) = workspace.resolve_specifier(source) {
+        return Some(normalize_path(&path));
+    }
+    None
 }

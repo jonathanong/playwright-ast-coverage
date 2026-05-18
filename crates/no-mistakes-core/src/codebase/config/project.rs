@@ -19,17 +19,17 @@ pub(super) fn roots_for_rule(
         return Vec::new();
     }
 
-    let project_roots = projects
-        .values()
-        .filter(|project| project.rules.iter().any(|rule| rule == rule_id))
-        .map(|project| {
-            project
-                .root
-                .as_deref()
-                .map(|project_root| root.join(project_root))
-                .unwrap_or_else(|| root.to_path_buf())
-        })
-        .collect::<Vec<_>>();
+    let mut project_roots = Vec::new();
+    for project in projects.values() {
+        if !project.rules.iter().any(|rule| rule == rule_id) {
+            continue;
+        }
+        if let Some(project_root) = project.root.as_deref() {
+            project_roots.push(root.join(project_root));
+        } else {
+            project_roots.push(root.to_path_buf());
+        }
+    }
     if !project_roots.is_empty() {
         return project_roots;
     }

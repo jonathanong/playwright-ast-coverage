@@ -32,16 +32,24 @@ pub fn analyze_project(
         return Ok(Vec::new());
     }
     let options: UniqueExportsOptions = config.rule_options(RULE_ID);
-    let mut all_files = Vec::new();
+    let workspace_files = discover_files(root, &config.filesystem.skip_directories);
+    let mut analysis_files = Vec::new();
     for project_root in &project_roots {
-        all_files.extend(discover_files(
+        analysis_files.extend(discover_files(
             project_root,
             &config.filesystem.skip_directories,
         ));
     }
-    all_files.sort();
-    all_files.dedup();
-    let files = filter_source_files(root, &all_files, &config.filesystem.skip_file_patterns)?;
+    analysis_files.sort();
+    analysis_files.dedup();
+    let analysis_files =
+        filter_source_files(root, &analysis_files, &config.filesystem.skip_file_patterns)?;
+    let mut symbol_files = workspace_files.clone();
+    symbol_files.extend(analysis_files.iter().cloned());
+    symbol_files.sort();
+    symbol_files.dedup();
+    let symbol_files =
+        filter_source_files(root, &symbol_files, &config.filesystem.skip_file_patterns)?;
     let tsconfig = match tsconfig_path {
         Some(path) => {
             let path = if path.is_absolute() {
@@ -57,8 +65,8 @@ pub fn analyze_project(
             .unwrap_or_default_for(root),
     };
     let resolver = ImportResolver::new(&tsconfig);
-    let workspace = workspaces::load_from_files(root, &all_files).unwrap_or_default();
-    let source_files = collect_source_files(root, &files)?;
+    let workspace = workspaces::load_from_files(root, &workspace_files).unwrap_or_default();
+    let source_files = collect_source_files(root, &symbol_files)?;
     let by_path: HashMap<PathBuf, SourceFile> = source_files
         .into_iter()
         .map(|file| (file.path.clone(), file))
@@ -66,7 +74,7 @@ pub fn analyze_project(
 
     let mut occurrences = Vec::new();
     let mut export_memo = HashMap::new();
-    for path in sorted_paths(by_path.keys()) {
+    for path in sorted_paths(analysis_files.iter()) {
         let mut visiting = HashSet::new();
         occurrences.extend(collect_file_exports(
             path,

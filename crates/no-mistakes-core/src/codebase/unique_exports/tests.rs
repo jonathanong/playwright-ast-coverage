@@ -112,6 +112,11 @@ fn collapses_workspace_barrels_to_their_source_export() {
 }
 
 #[test]
+fn project_scoping_preserves_workspace_resolution_outside_enabled_roots() {
+    assert!(findings("unique-exports-project-scope-workspace").is_empty());
+}
+
+#[test]
 fn honors_rule_disable_comments() {
     let findings = findings("unique-exports-disabled");
     assert!(findings.is_empty());
