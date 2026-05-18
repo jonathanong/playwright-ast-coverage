@@ -173,27 +173,41 @@ describe("consistent-attribute", () => {
 
 describe("require-interactive-test-id", () => {
   it("reports native interactive elements without a test ID", () => {
-    assert.deepEqual(messages("<><button /><input /><select /><textarea /></>;", "require-interactive-test-id"), [
-      "missing", "missing", "missing", "missing"
-    ]);
+    assert.deepEqual(
+      messages("<><button /><input /><select /><textarea /></>;", "require-interactive-test-id"),
+      ["missing", "missing", "missing", "missing"],
+    );
   });
 
   it("reports anchor elements with href without a test ID", () => {
     assert.deepEqual(messages("<><a href='/x' /><a>link</a></>;", "require-interactive-test-id"), [
-      "missing"
+      "missing",
     ]);
   });
 
   it("reports elements with onClick without a test ID", () => {
     assert.deepEqual(messages("<div onClick={() => {}} />;", "require-interactive-test-id"), [
-      "missing"
+      "missing",
     ]);
   });
 
   it("reports elements with interactive roles without a test ID", () => {
-    const roles = ["button", "checkbox", "link", "menuitem", "option", "radio", "switch", "tab", "textbox"];
-    const code = "<>" + roles.map(r => `<div role="${r}" />`).join("") + "</>;";
-    assert.deepEqual(messages(code, "require-interactive-test-id"), roles.map(() => "missing"));
+    const roles = [
+      "button",
+      "checkbox",
+      "link",
+      "menuitem",
+      "option",
+      "radio",
+      "switch",
+      "tab",
+      "textbox",
+    ];
+    const code = "<>" + roles.map((r) => `<div role="${r}" />`).join("") + "</>;";
+    assert.deepEqual(
+      messages(code, "require-interactive-test-id"),
+      roles.map(() => "missing"),
+    );
   });
 
   it("does not report elements with non-interactive roles", () => {
@@ -226,7 +240,7 @@ describe("require-interactive-test-id", () => {
     </>`;
     assert.deepEqual(
       messages(code, "require-interactive-test-id", { selectorAttributes: ["data-qa"] }),
-      ["missing"]
+      ["missing"],
     );
   });
 });
