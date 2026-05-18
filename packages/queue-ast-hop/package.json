@@ -1,6 +1,6 @@
 {
   "name": "queue-ast-hop",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Static queue dependency graph for BullMQ and glide-mq",
   "license": "MIT",
   "repository": {
@@ -24,6 +24,6 @@
     "postinstall": "node scripts/install.js"
   },
   "dependencies": {
-    "no-mistakes-core": "^0.2.3"
+    "no-mistakes-core": "^0.3.0"
   }
 }

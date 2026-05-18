@@ -1,6 +1,6 @@
 {
   "name": "no-mistakes-scripts",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Portable shell checks for no-mistakes projects",
   "license": "MIT",
   "repository": {
