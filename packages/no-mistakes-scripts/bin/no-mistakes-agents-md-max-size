@@ -78,7 +78,7 @@ max_chars="${positionals[1]:-12000}"
 require_positive_int "max_lines" "$max_lines"
 require_positive_int "max_chars" "$max_chars"
 
-if ! scope_abs=$(cd "$root" && pwd -P); then
+if ! scope_abs=$(cd -- "$root" && pwd -P); then
   echo "Error: --root must point to an existing directory." >&2
   exit 1
 fi
@@ -87,7 +87,7 @@ path_base="$scope_abs"
 
 if command -v git >/dev/null 2>&1 && git -C "$scope_abs" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   repo_root=$(git -C "$scope_abs" rev-parse --show-toplevel)
-  repo_abs=$(cd "$repo_root" && pwd -P)
+  repo_abs=$(cd -- "$repo_root" && pwd -P)
   if [[ "$scope_abs" != "$repo_abs" && "$scope_abs" != "$repo_abs/"* ]]; then
     echo "Error: --root must be inside the git repository." >&2
     exit 1
