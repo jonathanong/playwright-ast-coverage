@@ -3,7 +3,8 @@ use anyhow::{bail, Result};
 use oxc::allocator::Allocator;
 use oxc::ast::ast::{
     BindingPattern, Declaration, ExportAllDeclaration, ExportDefaultDeclaration,
-    ExportDefaultDeclarationKind, ExportNamedDeclaration, ImportDeclaration, Program, Statement,
+    ExportDefaultDeclarationKind, ExportNamedDeclaration, ImportDeclaration,
+    ImportDeclarationSpecifier, Program, Statement, VariableDeclarationKind,
 };
 use oxc::parser::Parser;
 use oxc::span::SourceType;
@@ -103,39 +104,39 @@ fn process_statement(stmt: &Statement, source: &str, out: &mut FileSymbols) {
 }
 
 fn process_import_declaration(import: &ImportDeclaration<'_>, source: &str, out: &mut FileSymbols) {
-    let src = import.source.value.as_str().to_string();
+    let src = import.source.value.as_str();
     let is_type = import.import_kind.is_type();
     if let Some(specifiers) = &import.specifiers {
         for spec in specifiers {
             match spec {
-                oxc::ast::ast::ImportDeclarationSpecifier::ImportSpecifier(s) => {
+                ImportDeclarationSpecifier::ImportSpecifier(s) => {
                     let imported = s.imported.name().to_string();
                     let local = s.local.name.as_str().to_string();
                     let line = byte_offset_to_line(source, s.span.start as usize);
                     out.imports.push(NamedImport {
-                        source: src.clone(),
+                        source: src.to_string(),
                         imported,
                         local,
                         line,
                         is_type_only: is_type || s.import_kind.is_type(),
                     });
                 }
-                oxc::ast::ast::ImportDeclarationSpecifier::ImportNamespaceSpecifier(s) => {
+                ImportDeclarationSpecifier::ImportNamespaceSpecifier(s) => {
                     let local = s.local.name.as_str().to_string();
                     let line = byte_offset_to_line(source, s.span.start as usize);
                     out.imports.push(NamedImport {
-                        source: src.clone(),
+                        source: src.to_string(),
                         imported: "*".to_string(),
                         local,
                         line,
                         is_type_only: is_type,
                     });
                 }
-                oxc::ast::ast::ImportDeclarationSpecifier::ImportDefaultSpecifier(s) => {
+                ImportDeclarationSpecifier::ImportDefaultSpecifier(s) => {
                     let local = s.local.name.as_str().to_string();
                     let line = byte_offset_to_line(source, s.span.start as usize);
                     out.imports.push(NamedImport {
-                        source: src.clone(),
+                        source: src.to_string(),
                         imported: "default".to_string(),
                         local,
                         line,
@@ -197,11 +198,11 @@ fn process_export_named_declaration(
             }
             Declaration::VariableDeclaration(var) => {
                 let kind = match var.kind {
-                    oxc::ast::ast::VariableDeclarationKind::Const
-                    | oxc::ast::ast::VariableDeclarationKind::Using
-                    | oxc::ast::ast::VariableDeclarationKind::AwaitUsing => ExportKind::Const,
-                    oxc::ast::ast::VariableDeclarationKind::Let => ExportKind::Let,
-                    oxc::ast::ast::VariableDeclarationKind::Var => ExportKind::Var,
+                    VariableDeclarationKind::Const
+                    | VariableDeclarationKind::Using
+                    | VariableDeclarationKind::AwaitUsing => ExportKind::Const,
+                    VariableDeclarationKind::Let => ExportKind::Let,
+                    VariableDeclarationKind::Var => ExportKind::Var,
                 };
                 for decl in &var.declarations {
                     collect_binding_names(&decl.id, kind.clone(), line, false, out);
