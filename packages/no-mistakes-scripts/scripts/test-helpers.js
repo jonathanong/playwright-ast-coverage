@@ -1,5 +1,5 @@
 const { execFile, execFileSync } = require("node:child_process");
-const { accessSync, constants } = require("node:fs");
+const { accessSync, constants, statSync } = require("node:fs");
 const { delimiter, extname, join } = require("node:path");
 const { promisify } = require("node:util");
 
@@ -26,18 +26,18 @@ function hasCommand(command) {
     .split(delimiter)
     .filter(Boolean)
     .some((dir) => {
-      try {
-        return names.some((name) => {
-          try {
-            accessSync(join(dir, name), constants.X_OK);
-            return true;
-          } catch {
+      return names.some((name) => {
+        const candidate = join(dir, name);
+        try {
+          if (!statSync(candidate).isFile()) {
             return false;
           }
-        });
-      } catch {
-        return false;
-      }
+          accessSync(candidate, constants.X_OK);
+          return true;
+        } catch {
+          return false;
+        }
+      });
     });
 }
 
