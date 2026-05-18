@@ -1,6 +1,6 @@
 {
   "name": "react-traits",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Scan React components and report their traits",
   "license": "MIT",
   "repository": {
@@ -24,6 +24,6 @@
     "postinstall": "node scripts/install.js"
   },
   "dependencies": {
-    "no-mistakes-core": "^0.3.2"
+    "no-mistakes-core": "^0.3.3"
   }
 }
