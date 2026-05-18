@@ -1,5 +1,6 @@
 use super::*;
-use oxc_ast::ast::CallExpression;
+use crate::ast::with_program;
+use oxc_ast::ast::{CallExpression, Expression, Statement};
 use oxc_ast_visit::{walk, Visit};
 use std::path::Path;
 
@@ -72,4 +73,177 @@ fn test_cache_wrapper_name_member_expression() {
         let result = cache_wrapper_name(expr);
         assert!(result.is_none());
     });
+}
+
+fn extract_from_source(source: &str) -> (bool, CacheKind) {
+    let mut result = None;
+    with_program(Path::new("test.ts"), source, |program, _| {
+        for stmt in &program.body {
+            if let Statement::ExpressionStatement(expr_stmt) = stmt {
+                if let Expression::CallExpression(call_expr) = &expr_stmt.expression {
+                    if let Some(arg) = call_expr.arguments.get(1) {
+                        if let Some(Expression::ObjectExpression(obj)) = arg.as_expression() {
+                            result = Some(extract_fetch_cache_options(obj));
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    })
+    .unwrap();
+
+    result.expect("expected fetch(...) call with second argument object")
+}
+
+#[test]
+fn test_cache_force_cache() {
+    let source = "fetch('url', { cache: 'force-cache' });";
+    let (cached, kind) = extract_from_source(source);
+    assert!(cached);
+    assert_eq!(kind, CacheKind::FetchCache);
+}
+
+#[test]
+fn test_next_revalidate() {
+    let source = "fetch('url', { next: { revalidate: 60 } });";
+    let (cached, kind) = extract_from_source(source);
+    assert!(cached);
+    assert_eq!(kind, CacheKind::FetchNextRevalidate);
+}
+
+#[test]
+fn test_next_tags() {
+    let source = "fetch('url', { next: { tags: [] } });";
+    let (cached, kind) = extract_from_source(source);
+    assert!(cached);
+    assert_eq!(kind, CacheKind::FetchNextTags);
+}
+
+#[test]
+fn test_empty_options() {
+    let source = "fetch('url', {});";
+    let (cached, kind) = extract_from_source(source);
+    assert!(!cached);
+    assert_eq!(kind, CacheKind::None);
+}
+
+#[test]
+fn test_other_options() {
+    let source = "fetch('url', { method: 'POST', cache: 'no-store' });";
+    let (cached, kind) = extract_from_source(source);
+    assert!(!cached);
+    assert_eq!(kind, CacheKind::None);
+}
+
+#[test]
+fn test_next_revalidate_zero() {
+    let source = "fetch('url', { next: { revalidate: 0 } });";
+    let (cached, kind) = extract_from_source(source);
+    assert!(!cached);
+    assert_eq!(kind, CacheKind::None);
+}
+
+#[test]
+fn test_next_empty() {
+    let source = "fetch('url', { next: {} });";
+    let (cached, kind) = extract_from_source(source);
+    assert!(!cached);
+    assert_eq!(kind, CacheKind::None);
+}
+
+#[test]
+fn test_spread_options() {
+    let source = "fetch('url', { ...spreadOpts });";
+    let (cached, kind) = extract_from_source(source);
+    assert!(!cached);
+    assert_eq!(kind, CacheKind::None);
+}
+
+#[test]
+fn test_dynamic_cache_key_is_static_string() {
+    let source = "fetch('url', { ['cache']: 'force-cache' });";
+    let (cached, kind) = extract_from_source(source);
+    assert!(cached);
+    assert_eq!(kind, CacheKind::FetchCache);
+}
+
+#[test]
+fn test_cache_not_string() {
+    let source = "fetch('url', { cache: true });";
+    let (cached, kind) = extract_from_source(source);
+    assert!(!cached);
+    assert_eq!(kind, CacheKind::None);
+}
+
+#[test]
+fn test_cache_unknown_mode() {
+    let source = "fetch('url', { cache: 'unknown-mode' });";
+    let (cached, kind) = extract_from_source(source);
+    assert!(!cached);
+    assert_eq!(kind, CacheKind::None);
+}
+
+#[test]
+fn test_next_not_object() {
+    let source = "fetch('url', { next: true });";
+    let (cached, kind) = extract_from_source(source);
+    assert!(!cached);
+    assert_eq!(kind, CacheKind::None);
+}
+
+#[test]
+fn test_next_is_null() {
+    let source = "fetch('url', { next: null });";
+    let (cached, kind) = extract_from_source(source);
+    assert!(!cached);
+    assert_eq!(kind, CacheKind::None);
+}
+
+#[test]
+fn test_next_revalidate_string_value() {
+    let source = "fetch('url', { next: { revalidate: '60' } });";
+    let (cached, kind) = extract_from_source(source);
+    assert!(!cached);
+    assert_eq!(kind, CacheKind::None);
+}
+
+#[test]
+fn test_next_tags_non_array() {
+    let source = "fetch('url', { next: { tags: 'foo' } });";
+    let (cached, kind) = extract_from_source(source);
+    assert!(!cached);
+    assert_eq!(kind, CacheKind::None);
+}
+
+#[test]
+fn test_next_spread() {
+    let source = "fetch('url', { next: { ...spread } });";
+    let (cached, kind) = extract_from_source(source);
+    assert!(!cached);
+    assert_eq!(kind, CacheKind::None);
+}
+
+#[test]
+fn test_next_dynamic_key_is_static_string() {
+    let source = "fetch('url', { next: { ['revalidate']: 60 } });";
+    let (cached, kind) = extract_from_source(source);
+    assert!(cached);
+    assert_eq!(kind, CacheKind::FetchNextRevalidate);
+}
+
+#[test]
+fn test_next_unrelated_key() {
+    let source = "fetch('url', { next: { unrelated: 1 } });";
+    let (cached, kind) = extract_from_source(source);
+    assert!(!cached);
+    assert_eq!(kind, CacheKind::None);
+}
+
+#[test]
+fn test_cache_and_next_properties() {
+    let source = "fetch('url', { cache: 'force-cache', next: { revalidate: 60 } });";
+    let (cached, kind) = extract_from_source(source);
+    assert!(cached);
+    assert_eq!(kind, CacheKind::FetchNextRevalidate);
 }

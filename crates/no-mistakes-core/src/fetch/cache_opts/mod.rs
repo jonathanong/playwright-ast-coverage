@@ -54,8 +54,10 @@ pub fn extract_fetch_cache_options(obj: &oxc_ast::ast::ObjectExpression<'_>) -> 
                                 _ => {}
                             },
                             "tags" => {
-                                cached = true;
-                                cache_kind = CacheKind::FetchNextTags;
+                                if matches!(next_property.value, Expression::ArrayExpression(_)) {
+                                    cached = true;
+                                    cache_kind = CacheKind::FetchNextTags;
+                                }
                             }
                             _ => {}
                         }
@@ -118,5 +120,6 @@ pub fn infer_cached_wrapper_name(source: &str, expr: &CallExpression<'_>) -> Opt
 pub fn is_identifier_char(ch: char) -> bool {
     ch.is_alphanumeric() || ch == '_' || ch == '$'
 }
+
 #[cfg(test)]
 mod tests;
