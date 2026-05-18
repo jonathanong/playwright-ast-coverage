@@ -387,16 +387,18 @@ fn resolve_symbol_dependents(
     symbol_index: &graph::SymbolIndex,
 ) -> Vec<graph::NodeEntry> {
     let mut all_entries: HashMap<NodeId, graph::NodeEntry> = HashMap::new();
+    let plain_roots: Vec<_> = entrypoints
+        .iter()
+        .filter(|ep| ep.symbol.is_none())
+        .map(|ep| NodeId::File(ep.file.clone()))
+        .collect();
+    if !plain_roots.is_empty() {
+        let entries = graph.dependents_of(&plain_roots, depth, allowed);
+        merge_node_entries(&mut all_entries, entries);
+    }
     for ep in entrypoints {
         if let Some(sym) = &ep.symbol {
             let entries = graph.dependents_of_symbol(&ep.file, sym, depth, allowed, symbol_index);
-            merge_node_entries(&mut all_entries, entries);
-        } else {
-            let entries = graph.dependents_of(
-                std::slice::from_ref(&NodeId::File(ep.file.clone())),
-                depth,
-                allowed,
-            );
             merge_node_entries(&mut all_entries, entries);
         }
     }
