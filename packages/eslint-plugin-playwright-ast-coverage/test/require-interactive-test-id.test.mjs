@@ -1,9 +1,11 @@
 import { RuleTester } from "eslint";
-import { describe, it } from "vitest";
+import { afterAll, describe, it, itOnly } from "vitest";
 import rule from "../src/rules/require-interactive-test-id.js";
 
 RuleTester.describe = describe;
 RuleTester.it = it;
+RuleTester.itOnly = itOnly;
+RuleTester.afterAll = afterAll;
 
 const tester = new RuleTester({
   languageOptions: {
@@ -74,36 +76,35 @@ tester.run("require-interactive-test-id", rule, {
       errors: [{ messageId: "missing" }],
     },
     {
-      code: `<>
-        <div role="button" />
-        <div role="checkbox" />
-        <div role="link" />
-        <div role="menuitem" />
-        <div role="option" />
-        <div role="radio" />
-        <div role="switch" />
-        <div role="tab" />
-        <div role="textbox" />
-      </>`,
+      code: [
+        "<>",
+        '  <div role="button" />',
+        '  <div role="checkbox" />',
+        '  <div role="link" />',
+        '  <div role="menuitem" />',
+        '  <div role="option" />',
+        '  <div role="radio" />',
+        '  <div role="switch" />',
+        '  <div role="tab" />',
+        '  <div role="textbox" />',
+        "</>",
+      ].join("\n"),
       errors: [
-        { messageId: "missing" },
-        { messageId: "missing" },
-        { messageId: "missing" },
-        { messageId: "missing" },
-        { messageId: "missing" },
-        { messageId: "missing" },
-        { messageId: "missing" },
-        { messageId: "missing" },
-        { messageId: "missing" },
+        { messageId: "missing", line: 2, column: 4 },
+        { messageId: "missing", line: 3, column: 4 },
+        { messageId: "missing", line: 4, column: 4 },
+        { messageId: "missing", line: 5, column: 4 },
+        { messageId: "missing", line: 6, column: 4 },
+        { messageId: "missing", line: 7, column: 4 },
+        { messageId: "missing", line: 8, column: 4 },
+        { messageId: "missing", line: 9, column: 4 },
+        { messageId: "missing", line: 10, column: 4 },
       ],
     },
     {
-      code: `<>
-        <button data-qa="save" />
-        <button data-pw="save" />
-      </>`,
+      code: '<>\n<button data-qa="save" />\n<button data-pw="save" />\n</>',
       options: [{ selectorAttributes: ["data-qa"] }],
-      errors: [{ messageId: "missing" }],
+      errors: [{ messageId: "missing", line: 3, column: 2 }],
     },
   ],
 });
