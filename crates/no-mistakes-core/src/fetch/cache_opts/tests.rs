@@ -1,6 +1,6 @@
 use super::*;
 use oxc_ast::ast::CallExpression;
-use oxc_ast_visit::{Visit, walk};
+use oxc_ast_visit::{walk, Visit};
 use std::path::Path;
 
 struct CallExpressionVisitor<'a> {
@@ -24,7 +24,9 @@ where
     crate::ast::with_program(Path::new("test.ts"), source, |program, _| {
         let mut visitor = CallExpressionVisitor { found_expr: None };
         visitor.visit_program(program);
-        f(visitor.found_expr.expect("Expected to find a call expression"));
+        f(visitor
+            .found_expr
+            .expect("Expected to find a call expression"));
     })
     .unwrap();
 }
