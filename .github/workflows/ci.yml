@@ -102,9 +102,8 @@ jobs:
       - name: Enforce Rust coverage
         run: |
           mkdir -p target/llvm-cov
-          # Current workspace baseline; keep this from growing as coverage improves.
           cargo llvm-cov --workspace --all-features \
-            --fail-uncovered-lines 18 --fail-uncovered-functions 2 --show-missing-lines --lcov --output-path target/llvm-cov/lcov.info
+            --fail-under-lines 99 --fail-under-functions 99 --show-missing-lines --lcov --output-path target/llvm-cov/lcov.info
 
       - name: Upload Rust coverage to Codecov
         if: ${{ env.CODECOV_TOKEN != '' }}
