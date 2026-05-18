@@ -1,8 +1,8 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use no_mistakes_core::queue::RelatedDirection;
-use no_mistakes_core::queue::ProjectReport;
-use no_mistakes_core::queue::{Edge, EdgeKind};
 use no_mistakes_core::queue::related;
+use no_mistakes_core::queue::ProjectReport;
+use no_mistakes_core::queue::RelatedDirection;
+use no_mistakes_core::queue::{Edge, EdgeKind};
 use std::hint::black_box;
 
 fn create_large_graph() -> ProjectReport {
@@ -43,7 +43,13 @@ pub fn bench_related(c: &mut Criterion) {
     let roots = vec!["node_0".to_string(), "node_500".to_string()];
 
     c.bench_function("related_traversal", |b| {
-        b.iter(|| related(black_box(&report), black_box(&roots), black_box(RelatedDirection::Deps)))
+        b.iter(|| {
+            related(
+                black_box(&report),
+                black_box(&roots),
+                black_box(RelatedDirection::Deps),
+            )
+        })
     });
 }
 
