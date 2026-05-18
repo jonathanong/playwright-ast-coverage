@@ -69,15 +69,15 @@ fn test_cache_wrapper_name_other_function() {
 
 #[test]
 fn test_cache_wrapper_name_iife() {
-    with_call_expression("(function() {})()", |expr| {
+    with_call_expression("(function() {})(fn)", |expr| {
         let result = cache_wrapper_name(expr);
         assert!(result.is_none());
     });
 }
 
 #[test]
-fn test_cache_wrapper_name_arrow_function() {
-    with_call_expression("(() => {})()", |expr| {
+fn test_cache_wrapper_name_parenthesized_identifier() {
+    with_call_expression("(cache)(fn)", |expr| {
         let result = cache_wrapper_name(expr);
         assert!(result.is_none());
     });
@@ -85,7 +85,7 @@ fn test_cache_wrapper_name_arrow_function() {
 
 #[test]
 fn test_cache_wrapper_name_nested_call() {
-    with_call_expression("cache()()", |expr| {
+    with_call_expression("foo(fn)()", |expr| {
         let result = cache_wrapper_name(expr);
         assert!(result.is_none());
     });
