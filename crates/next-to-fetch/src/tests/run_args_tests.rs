@@ -101,6 +101,7 @@ fn test_with_run_args_env_macro_path() {
 
 #[test]
 fn test_with_run_args_state_resumes_panic() {
+    const ENV_VAR: &str = "NEXT_TO_FETCH_TEST_ARGS";
     let previous = "next-to-fetch\x1f--json";
 
     let panic_result = {
