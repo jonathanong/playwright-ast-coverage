@@ -237,6 +237,18 @@ fn export_list_non_component_ignored() {
 }
 
 #[test]
+fn export_function_declaration_default_export_resolves_default_and_named() {
+    let names = check_names("export-function-declaration-default-export");
+    assert_eq!(names, vec!["Foo", "default"]);
+}
+
+#[test]
+fn export_class_declaration_default_export_resolves_default_and_named() {
+    let names = check_names("export-class-declaration-default-export");
+    assert_eq!(names, vec!["Foo", "default"]);
+}
+
+#[test]
 fn export_class_extends_component() {
     let names = check_names("export-class-extends-component");
     assert_eq!(names, vec!["Foo"]);
