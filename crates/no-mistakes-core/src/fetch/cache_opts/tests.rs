@@ -271,3 +271,19 @@ fn test_next_revalidate_negative() {
     assert!(!cached);
     assert_eq!(kind, CacheKind::None);
 }
+
+#[test]
+fn test_next_revalidate_dynamic_expression() {
+    let source = "fetch('url', { next: { revalidate: computedDelay } });";
+    let (cached, kind) = extract_from_source(source);
+    assert!(!cached);
+    assert_eq!(kind, CacheKind::None);
+}
+
+#[test]
+fn test_cache_dynamic_expression() {
+    let source = "fetch('url', { cache: cacheMode });";
+    let (cached, kind) = extract_from_source(source);
+    assert!(!cached);
+    assert_eq!(kind, CacheKind::None);
+}
