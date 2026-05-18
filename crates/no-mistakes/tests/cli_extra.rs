@@ -75,6 +75,21 @@ fn react_check_formats_report_violations() {
 }
 
 #[test]
+fn react_check_targeted_run_skips_disabled_assert_no_fetch() {
+    let root = fixture("react-traits-components", "nested");
+    let output = run(&[
+        "react",
+        "--root",
+        root.to_str().unwrap(),
+        "check",
+        "app/components/Child.tsx",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stdout(&output).is_empty());
+}
+
+#[test]
 fn react_analyze_markdown_and_yaml_formats_render() {
     let root = fixture("react-traits-components", "basic");
     for format in ["md", "yml"] {
@@ -193,6 +208,51 @@ fn global_check_formats_cover_clean_and_failing_projects() {
 }
 
 #[test]
+fn global_check_skips_unconfigured_expensive_checks() {
+    let root = fixture("codebase-analysis", "check-configured-only");
+    let output = run(&["check", "--root", root.to_str().unwrap(), "--json"]);
+
+    assert!(output.status.success());
+    assert!(
+        stderr(&output).is_empty(),
+        "unconfigured checks should not warn: {}",
+        stderr(&output)
+    );
+    let json: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+    for key in ["react", "queues", "rules", "integration", "codebase"] {
+        assert_eq!(
+            json[key].as_array().map(Vec::len),
+            Some(0),
+            "{key} should be empty in {json}"
+        );
+    }
+}
+
+#[test]
+fn global_check_timings_are_reported_in_phase_order() {
+    let root = fixture("codebase-analysis", "check-configured-only");
+    let output = run(&[
+        "check",
+        "--root",
+        root.to_str().unwrap(),
+        "--format",
+        "json",
+        "--timings",
+    ]);
+
+    assert!(output.status.success());
+    let err = stderr(&output);
+    let mut previous = 0;
+    for label in ["react:", "queues:", "rules:", "integration:", "codebase:"] {
+        let index = err
+            .find(label)
+            .unwrap_or_else(|| panic!("missing {label} in {err}"));
+        assert!(index >= previous, "{label} should be in phase order: {err}");
+        previous = index;
+    }
+}
+
+#[test]
 fn global_check_reports_integration_suite_findings() {
     let root = fixture("integration-tests", "basic");
     let json_output = run(&["check", "--root", root.to_str().unwrap(), "--json"]);
@@ -231,8 +291,23 @@ fn global_check_reports_integration_suite_findings() {
 }
 
 #[test]
-fn global_check_warns_when_react_config_is_invalid() {
+fn global_check_fails_when_config_is_invalid() {
     let root = fixture("react-traits-config", "invalid");
+    let output = run(&[
+        "check",
+        "--root",
+        root.to_str().unwrap(),
+        "--format",
+        "human",
+    ]);
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("failed to parse"));
+}
+
+#[test]
+fn global_check_warns_when_enabled_react_scan_fails() {
+    let root = fixture("react-traits-config", "assert-no-fetch-invalid");
     let output = run(&[
         "check",
         "--root",
@@ -243,6 +318,40 @@ fn global_check_warns_when_react_config_is_invalid() {
 
     assert!(output.status.success());
     assert!(stderr(&output).contains("warning: react check skipped:"));
+}
+
+#[test]
+fn global_check_warns_when_react_shared_facts_check_errors() {
+    let root = fixture("react-traits-config", "assert-no-fetch-missing-frontend");
+    let output = run(&[
+        "check",
+        "--root",
+        root.to_str().unwrap(),
+        "--format",
+        "human",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).contains("warning: react check skipped:"));
+}
+
+#[test]
+fn global_check_skips_disabled_unique_exports_rule() {
+    let root = fixture("codebase-analysis", "unique-exports-config-disabled");
+    let output = run(&["check", "--root", root.to_str().unwrap(), "--json"]);
+
+    assert!(output.status.success());
+    let json: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(json["codebase"].as_array().map(Vec::len), Some(0));
+}
+
+#[test]
+fn global_check_surfaces_unique_exports_config_errors() {
+    let root = fixture("codebase-analysis", "unique-exports-invalid-skip");
+    let output = run(&["check", "--root", root.to_str().unwrap()]);
+
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("invalid skip file pattern"));
 }
 
 #[test]

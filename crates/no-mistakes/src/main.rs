@@ -1,4 +1,8 @@
 mod check;
+mod check_discovery;
+mod check_parallel;
+mod check_runner;
+mod check_tasks;
 mod queues;
 mod react;
 mod server;
@@ -42,7 +46,7 @@ enum Command {
     Queues(queues::QueuesArgs),
     /// Analyze server route graphs (Express, Hono, Koa).
     Server(server::ServerArgs),
-    /// Run all checks across configured projects (react + queues).
+    /// Run configured project checks.
     Check(check::CheckArgs),
     /// Proxy to a matching no-mistakes-* executable on PATH.
     #[command(external_subcommand)]

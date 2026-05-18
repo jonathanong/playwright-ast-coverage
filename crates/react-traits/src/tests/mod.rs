@@ -137,7 +137,7 @@ fn cli_check_text_output_with_violation() {
 
 #[test]
 fn cli_analyze_bad_file_returns_error() {
-    // Exercises the `run_analyze(...)?` error branch (line 54 in cli.rs).
+    // Exercises the `run_analyze(...)?` error branch in cli.rs.
     let root = fixture("react-traits-components", "bad-file");
     let args = format!(
         "react-traits\x1f--root\x1f{}\x1fanalyze\x1fapp/components/Broken.tsx",
@@ -150,10 +150,10 @@ fn cli_analyze_bad_file_returns_error() {
 
 #[test]
 fn cli_check_bad_file_returns_error() {
-    // Exercises the `run_check(...)?` error branch (line 70 in cli.rs).
+    // Exercises the `run_check(...)?` error branch in cli.rs.
     let root = fixture("react-traits-components", "bad-file");
     let args = format!(
-        "react-traits\x1f--root\x1f{}\x1fcheck\x1fapp/components/Broken.tsx",
+        "react-traits\x1f--root\x1f{}\x1fcheck\x1f--assert-no-fetch\x1fapp/components/Broken.tsx",
         root.display()
     );
     let _guard = with_run_args_env(Some(args), None);

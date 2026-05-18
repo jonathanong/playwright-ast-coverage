@@ -2,6 +2,11 @@ use super::*;
 use crate::codebase::ts_resolver::normalize_path;
 use crate::codebase::workspaces::WorkspaceMap;
 
+#[path = "tests/origin.rs"]
+mod origin;
+#[path = "tests/shared_facts_disable.rs"]
+mod shared_facts_disable;
+
 fn fixture(name: &str) -> PathBuf {
     normalize_path(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -32,6 +37,131 @@ fn reports_duplicate_value_and_type_exports_separately() {
         .iter()
         .any(|f| f.export_name == "SharedType" && f.export_kind == "type"));
     assert!(!findings.iter().any(|f| f.export_name == "default"));
+}
+
+#[test]
+fn analyzes_project_from_shared_facts() {
+    let root = fixture("unique-exports-basic");
+    let files = crate::codebase::ts_source::discover_files(&root, &[]);
+    let facts = crate::codebase::check_facts::collect_check_facts(
+        &root,
+        files,
+        crate::codebase::check_facts::CheckFactPlan {
+            symbols: true,
+            source: true,
+            ..Default::default()
+        },
+    );
+
+    let tsconfig = Path::new("tsconfig.json");
+    let findings = analyze_project_with_facts(&root, None, Some(tsconfig), &facts).unwrap();
+
+    assert_eq!(findings.len(), 2);
+}
+
+#[test]
+fn analyzes_nextjs_project_from_shared_facts() {
+    let root = fixture("unique-exports-nextjs");
+    let files = crate::codebase::ts_source::discover_files(&root, &[]);
+    let facts = crate::codebase::check_facts::collect_check_facts(
+        &root,
+        files,
+        crate::codebase::check_facts::CheckFactPlan {
+            symbols: true,
+            source: true,
+            ..Default::default()
+        },
+    );
+
+    let findings = analyze_project_with_facts(&root, None, None, &facts).unwrap();
+
+    assert!(findings
+        .iter()
+        .any(|finding| finding.export_name == "metadata"));
+}
+
+#[test]
+fn analyze_project_with_facts_returns_empty_without_enabled_projects() {
+    let root = fixture("unique-exports-config-disabled");
+    let facts = crate::codebase::check_facts::CheckFactMap::default();
+
+    let findings = analyze_project_with_facts(&root, None, None, &facts).unwrap();
+
+    assert!(findings.is_empty());
+}
+
+#[test]
+fn analyze_project_with_facts_honors_disable_comments() {
+    let root = fixture("unique-exports-disabled");
+    let files = crate::codebase::ts_source::discover_files(&root, &[]);
+    let facts = crate::codebase::check_facts::collect_check_facts(
+        &root,
+        files,
+        crate::codebase::check_facts::CheckFactPlan {
+            symbols: true,
+            source: true,
+            ..Default::default()
+        },
+    );
+
+    let findings = analyze_project_with_facts(&root, None, None, &facts).unwrap();
+
+    assert!(findings.is_empty());
+}
+
+#[test]
+fn collect_source_files_from_facts_reports_missing_fact_shapes() {
+    let root = fixture("unique-exports-basic");
+    let file = root.join("src/a.ts");
+    let files = vec![file.clone()];
+    let missing = crate::codebase::check_facts::CheckFactMap::default();
+
+    assert!(
+        scan::collect_source_files_from_facts(&root, &files, &missing)
+            .unwrap_err()
+            .to_string()
+            .contains("missing shared facts")
+    );
+
+    let mut parse_error = crate::codebase::check_facts::CheckFactMap::default();
+    parse_error.ts.insert(
+        file.clone(),
+        crate::codebase::check_facts::CheckFileFacts {
+            source: Some("export const Broken =".to_string()),
+            parse_error: Some("bad syntax".to_string()),
+            ..Default::default()
+        },
+    );
+    assert!(
+        scan::collect_source_files_from_facts(&root, &files, &parse_error)
+            .unwrap_err()
+            .to_string()
+            .contains("bad syntax")
+    );
+
+    let mut missing_source = crate::codebase::check_facts::CheckFactMap::default();
+    missing_source.ts.insert(file.clone(), Default::default());
+    assert!(
+        scan::collect_source_files_from_facts(&root, &files, &missing_source)
+            .unwrap_err()
+            .to_string()
+            .contains("missing source facts")
+    );
+
+    let mut missing_symbols = crate::codebase::check_facts::CheckFactMap::default();
+    missing_symbols.ts.insert(
+        file,
+        crate::codebase::check_facts::CheckFileFacts {
+            source: Some("export const value = 1;".to_string()),
+            ..Default::default()
+        },
+    );
+    assert!(
+        scan::collect_source_files_from_facts(&root, &files, &missing_symbols)
+            .unwrap_err()
+            .to_string()
+            .contains("missing symbol facts")
+    );
 }
 
 #[test]
@@ -291,6 +421,8 @@ fn scan_helpers_cover_filter_and_parse_edges() {
 
     let lookup = scan::NextJsProjectLookup::new(&fixture("unique-exports-nextjs"), &[]);
     assert!(!lookup.contains_file(&root.join("src/direct.ts")));
+    let lookup = scan::NextJsProjectLookup::new(&root, &[PathBuf::from("loose.ts")]);
+    assert!(!lookup.contains_file(Path::new("loose.ts")));
 
     assert!(!scan::package_json_has_next_dependency(
         &fixture("unique-exports-malformed-package").join("package.json")

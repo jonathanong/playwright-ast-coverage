@@ -31,6 +31,19 @@ pub fn run_check(
     test_no_unmocked_dynamic_imports::check(root, &config, tsconfig_path)
 }
 
+pub fn run_check_with_facts(
+    root: &Path,
+    config_path: Option<&Path>,
+    tsconfig_path: Option<&Path>,
+    shared: &crate::codebase::check_facts::CheckFactMap,
+) -> Result<Vec<RuleFinding>> {
+    let config = crate::config::v2::load_v2_config(root, config_path)?;
+    if !rule_enabled(&config, TEST_NO_UNMOCKED_DYNAMIC_IMPORTS) {
+        return Ok(Vec::new());
+    }
+    test_no_unmocked_dynamic_imports::check_with_facts(root, &config, tsconfig_path, shared)
+}
+
 fn rule_enabled(config: &crate::config::v2::NoMistakesConfig, rule_id: &str) -> bool {
     let top_level = config
         .rules

@@ -193,7 +193,7 @@ pub fn is_tsx_file(path: &Path) -> bool {
 pub fn is_indexable(path: &Path) -> bool {
     matches!(
         path.extension().and_then(|e| e.to_str()),
-        Some("ts" | "mts" | "tsx" | "js" | "mjs" | "jsx")
+        Some("ts" | "mts" | "tsx" | "cts" | "js" | "mjs" | "jsx" | "cjs")
     )
 }
 

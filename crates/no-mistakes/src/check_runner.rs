@@ -1,0 +1,176 @@
+use crate::check_parallel::run_domain_checks;
+use crate::check_tasks::{queues_configured, unique_exports_configured};
+use anyhow::Result;
+use no_mistakes_core::codebase::check_facts::{collect_check_facts, CheckFactPlan};
+use no_mistakes_core::codebase::rules::RuleFinding;
+use no_mistakes_core::codebase::unique_exports::UniqueExportFinding;
+use no_mistakes_core::config::v2::load_v2_config;
+use no_mistakes_core::integration_tests::IntegrationFinding;
+use no_mistakes_core::queue::CheckFinding;
+use no_mistakes_core::react_traits;
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
+pub(crate) struct CheckResults {
+    pub(crate) react: Vec<react_traits::Violation>,
+    pub(crate) queues: Vec<CheckFinding>,
+    pub(crate) rules: Vec<RuleFinding>,
+    pub(crate) integration: Vec<IntegrationFinding>,
+    pub(crate) codebase: Vec<UniqueExportFinding>,
+    pub(crate) warnings: Vec<String>,
+    pub(crate) timings: Vec<(&'static str, Duration)>,
+}
+
+impl CheckResults {
+    pub(crate) fn has_findings(&self) -> bool {
+        !self.react.is_empty()
+            || !self.queues.is_empty()
+            || !self.rules.is_empty()
+            || !self.integration.is_empty()
+            || !self.codebase.is_empty()
+    }
+}
+
+pub(crate) fn run_all(
+    root: PathBuf,
+    config_path: Option<PathBuf>,
+    tsconfig_path: Option<PathBuf>,
+) -> Result<CheckResults> {
+    let root = root.canonicalize().unwrap_or(root);
+    let config = load_v2_config(&root, config_path.as_deref())?;
+    let queues_enabled = queues_configured(&config);
+    let unique_exports_enabled = unique_exports_configured(&config);
+    let rules_enabled = test_dynamic_imports_configured(&config);
+    let integration_enabled = integration_configured(&config);
+    let react_enabled = react_traits::check_enabled(&root, config_path.as_deref(), false)?;
+    let react_warning = None;
+    let plan = fact_plan(
+        react_enabled,
+        queues_enabled,
+        rules_enabled,
+        integration_enabled,
+        unique_exports_enabled,
+    );
+    if !plan_requests_facts(&plan) {
+        return Ok(empty_results([react_warning]));
+    }
+    let discover_start = Instant::now();
+    let skip_directories = config.filesystem.skip_directories.clone();
+    let files = crate::check_discovery::discover_check_files(
+        &root,
+        &config,
+        &skip_directories,
+        unique_exports_enabled,
+    );
+    let discover_duration = discover_start.elapsed();
+    let facts_start = Instant::now();
+    let facts = collect_check_facts(&root, files, plan);
+    let facts_duration = facts_start.elapsed();
+
+    let (react, queues, rules, integration, codebase) = run_domain_checks(
+        &root,
+        &config_path,
+        &tsconfig_path,
+        react_enabled,
+        queues_enabled,
+        unique_exports_enabled,
+        &facts,
+    );
+
+    let react = react?;
+    let queues = queues?;
+    let rules = rules?;
+    let integration = integration?;
+    let codebase = codebase?;
+    let warnings = [
+        react_warning,
+        react.warning.clone(),
+        queues.warning.clone(),
+        rules.warning.clone(),
+        integration.warning.clone(),
+        codebase.warning.clone(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+
+    Ok(CheckResults {
+        timings: vec![
+            ("discover", discover_duration),
+            ("parse_extract", facts_duration),
+            ("react", react.duration),
+            ("queues", queues.duration),
+            ("rules", rules.duration),
+            ("integration", integration.duration),
+            ("codebase", codebase.duration),
+        ],
+        react: react.findings,
+        queues: queues.findings,
+        rules: rules.findings,
+        integration: integration.findings,
+        codebase: codebase.findings,
+        warnings,
+    })
+}
+
+fn fact_plan(
+    react: bool,
+    queue: bool,
+    rules: bool,
+    integration: bool,
+    unique_exports: bool,
+) -> CheckFactPlan {
+    CheckFactPlan {
+        imports: rules,
+        symbols: unique_exports,
+        react,
+        queue,
+        integration,
+        dynamic_imports: rules,
+        source: rules || unique_exports,
+    }
+}
+
+fn plan_requests_facts(plan: &CheckFactPlan) -> bool {
+    plan.imports
+        || plan.symbols
+        || plan.react
+        || plan.queue
+        || plan.integration
+        || plan.dynamic_imports
+        || plan.source
+}
+
+fn empty_results(warnings: [Option<String>; 1]) -> CheckResults {
+    let warnings = warnings.into_iter().flatten().collect();
+    CheckResults {
+        react: Vec::new(),
+        queues: Vec::new(),
+        rules: Vec::new(),
+        integration: Vec::new(),
+        codebase: Vec::new(),
+        warnings,
+        timings: vec![
+            ("discover", Duration::ZERO),
+            ("parse_extract", Duration::ZERO),
+            ("react", Duration::ZERO),
+            ("queues", Duration::ZERO),
+            ("rules", Duration::ZERO),
+            ("integration", Duration::ZERO),
+            ("codebase", Duration::ZERO),
+        ],
+    }
+}
+
+fn test_dynamic_imports_configured(
+    config: &no_mistakes_core::config::v2::NoMistakesConfig,
+) -> bool {
+    crate::check_tasks::rule_configured(
+        config,
+        no_mistakes_core::codebase::rules::TEST_NO_UNMOCKED_DYNAMIC_IMPORTS,
+    )
+}
+
+fn integration_configured(config: &no_mistakes_core::config::v2::NoMistakesConfig) -> bool {
+    !config.tests.vitest.suites.is_empty() || !config.tests.playwright.suites.is_empty()
+}

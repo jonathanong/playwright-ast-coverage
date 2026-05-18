@@ -26,7 +26,7 @@ traits a component has.
 | Are queue producers/workers unmatched? | `no-mistakes queues check` |
 | What server routes exist? | `no-mistakes server routes` |
 | Which server route files are related? | `no-mistakes server related <file>` |
-| Run configured project checks | `no-mistakes check` |
+| Run configured project checks in parallel | `no-mistakes check` |
 | Plain text, comments, log messages, exact call lines | `rg` |
 
 ## Quick Workflow

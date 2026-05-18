@@ -1,4 +1,4 @@
-mod extract;
+pub(crate) mod extract;
 mod extract_helpers;
 mod extract_model;
 mod extract_record;
@@ -10,7 +10,7 @@ mod resolver;
 mod source;
 mod types;
 
-pub use graph::{analyze_project, RelatedDirection};
+pub use graph::{analyze_project, analyze_project_with_facts, RelatedDirection};
 pub use graph_model::{CheckFinding, ProjectReport};
 pub use graph_related::related;
 pub use source::{discover_source_files, relative_string};

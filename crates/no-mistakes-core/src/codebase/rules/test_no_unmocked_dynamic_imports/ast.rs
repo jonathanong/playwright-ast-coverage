@@ -1,17 +1,20 @@
 use anyhow::{Context, Result};
 use oxc_allocator::Allocator;
-use oxc_ast::ast::{Argument, CallExpression, Expression, ImportExpression, TemplateLiteral};
+use oxc_ast::ast::{
+    Argument, CallExpression, Expression, ImportExpression, Program, TemplateLiteral,
+};
 use oxc_ast_visit::{walk, Visit};
 use oxc_parser::Parser;
 use oxc_span::SourceType;
 use std::path::Path;
 
+#[derive(Clone)]
 pub struct DynamicImport {
     pub specifier: Option<String>,
     pub line: usize,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct TestFacts {
     pub dynamic_imports: Vec<DynamicImport>,
     pub mock_specifiers: Vec<String>,
@@ -24,12 +27,16 @@ pub fn extract(path: &Path, source: &str) -> Result<TestFacts> {
         path.display()
     ))?;
     let parsed = Parser::new(&allocator, source, source_type).parse();
+    Ok(extract_program(source, &parsed.program))
+}
+
+pub(crate) fn extract_program(source: &str, program: &Program<'_>) -> TestFacts {
     let mut visitor = Collector {
         source,
         facts: TestFacts::default(),
     };
-    visitor.visit_program(&parsed.program);
-    Ok(visitor.facts)
+    visitor.visit_program(program);
+    visitor.facts
 }
 
 struct Collector<'s> {

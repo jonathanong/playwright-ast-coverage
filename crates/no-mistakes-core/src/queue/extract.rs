@@ -5,7 +5,7 @@ use crate::queue::extract_helpers::{
 };
 use crate::queue::extract_record::{record_enqueue, record_flow};
 use crate::queue::source::line_number;
-use oxc_ast::ast::{Argument, CallExpression, Expression, ImportDeclarationSpecifier};
+use oxc_ast::ast::{Argument, CallExpression, Expression, ImportDeclarationSpecifier, Program};
 use oxc_ast_visit::{walk, Visit};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -15,20 +15,24 @@ pub(crate) use crate::queue::extract_model::{FileFacts, ImportBinding, ProducerS
 pub(crate) fn extract_file(path: &Path, _root: &Path) -> anyhow::Result<FileFacts> {
     let source = std::fs::read_to_string(path)?;
     ast::with_program(path, &source, |program, _| {
-        let mut visitor = QueueVisitor {
-            path,
-            source: &source,
-            facts: FileFacts::default(),
-            const_strings: HashMap::new(),
-            queue_classes: HashSet::new(),
-            worker_classes: HashSet::new(),
-            flow_classes: HashSet::new(),
-            flow_bindings: HashSet::new(),
-            namespace_imports: HashMap::new(),
-        };
-        visitor.visit_program(program);
-        visitor.facts
+        extract_program(path, &source, program)
     })
+}
+
+pub(crate) fn extract_program(path: &Path, source: &str, program: &Program<'_>) -> FileFacts {
+    let mut visitor = QueueVisitor {
+        path,
+        source,
+        facts: FileFacts::default(),
+        const_strings: HashMap::new(),
+        queue_classes: HashSet::new(),
+        worker_classes: HashSet::new(),
+        flow_classes: HashSet::new(),
+        flow_bindings: HashSet::new(),
+        namespace_imports: HashMap::new(),
+    };
+    visitor.visit_program(program);
+    visitor.facts
 }
 
 struct QueueVisitor<'a> {

@@ -163,6 +163,10 @@ pub(crate) struct GraphFiles {
 impl GraphFiles {
     pub(crate) fn discover(root: &Path) -> Self {
         let all = crate::codebase::ts_source::discover_files(root, &[]);
+        Self::from_files(all)
+    }
+
+    pub(crate) fn from_files(all: Vec<PathBuf>) -> Self {
         let visible = all.iter().cloned().collect();
         let indexable = all.iter().filter(|p| is_indexable(p)).cloned().collect();
         Self {
@@ -358,6 +362,17 @@ impl DepGraph {
             forward,
             reverse,
         }
+    }
+
+    pub(crate) fn build_with_plan_file_list_and_facts(
+        root: &Path,
+        tsconfig: &TsConfig,
+        plan: GraphBuildPlan,
+        files: Vec<PathBuf>,
+        facts: &TsFactMap,
+    ) -> Self {
+        let graph_files = GraphFiles::from_files(files);
+        Self::build_with_plan_files_and_facts(root, tsconfig, plan, &graph_files, Some(facts))
     }
 
     /// Construct a graph directly from pre-built maps (for testing).

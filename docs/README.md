@@ -38,7 +38,8 @@ selectors, fetch calls, queue hops, server routes, and React component traits.
 
 ## Design Constraints
 
-- Local filesystem input only: no services, databases, or caches.
+- Local filesystem input only: no services, databases, or persistent caches.
+  In-memory per-run memoization is allowed to avoid duplicate reads and AST work.
 - Deterministic AST extraction plus explicit heuristics.
 - Prefer static, literal code forms so agents and CI can reason about behavior.
 - JSON and path outputs are intended for automation; human and Markdown outputs

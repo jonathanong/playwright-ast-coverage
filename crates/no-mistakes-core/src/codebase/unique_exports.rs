@@ -3,19 +3,23 @@ use crate::codebase::ts_resolver::{find_tsconfig, load_tsconfig, normalize_path,
 use crate::codebase::ts_source::discover_files;
 use crate::codebase::workspaces;
 use anyhow::Result;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 mod collector;
+mod findings;
 mod nextjs;
 mod origin;
 mod scan;
 mod types;
+mod with_facts;
 
 use collector::collect_file_exports;
-use scan::{collect_source_files, filter_source_files, sorted_paths};
+use findings::unique_export_findings;
+use scan::{filter_source_files, sorted_paths};
 use types::{ExportBucket, ExportOccurrence, ExportOrigin, SourceFile};
 pub use types::{UniqueExportFinding, UniqueExportsOptions};
+pub use with_facts::analyze_project_with_facts;
 
 pub const RULE_ID: &str = "unique-exports";
 
@@ -27,46 +31,35 @@ pub fn analyze_project(
     let root = normalize_path(root);
     let root = root.as_path();
     let config = load_codebase_config_with_path(root, config_path)?;
-    let project_roots = config.project_roots_for_rule(root, RULE_ID);
-    if project_roots.is_empty() {
-        return Ok(Vec::new());
-    }
-    let options: UniqueExportsOptions = config.rule_options(RULE_ID);
-    let workspace_files = discover_files(root, &config.filesystem.skip_directories);
-    let mut analysis_files = Vec::new();
-    for project_root in &project_roots {
-        analysis_files.extend(discover_files(
-            project_root,
+    let mut workspace_files = discover_files(root, &config.filesystem.skip_directories);
+    for project_root in config.project_roots_for_rule(root, RULE_ID) {
+        workspace_files.extend(discover_files(
+            &project_root,
             &config.filesystem.skip_directories,
         ));
     }
-    analysis_files.sort();
-    analysis_files.dedup();
-    let analysis_files =
-        filter_source_files(root, &analysis_files, &config.filesystem.skip_file_patterns)?;
-    let mut symbol_files = workspace_files.clone();
-    symbol_files.extend(analysis_files.iter().cloned());
-    symbol_files.sort();
-    symbol_files.dedup();
-    let symbol_files =
-        filter_source_files(root, &symbol_files, &config.filesystem.skip_file_patterns)?;
-    let tsconfig = match tsconfig_path {
-        Some(path) => {
-            let path = if path.is_absolute() {
-                path.to_path_buf()
-            } else {
-                root.join(path)
-            };
-            load_tsconfig(&path)?
-        }
-        None => find_tsconfig(root)
-            .map(|path| load_tsconfig(&path))
-            .transpose()?
-            .unwrap_or_default_for(root),
-    };
-    let resolver = ImportResolver::new(&tsconfig);
-    let workspace = workspaces::load_from_files(root, &workspace_files).unwrap_or_default();
-    let source_files = collect_source_files(root, &symbol_files)?;
+    workspace_files.sort();
+    workspace_files.dedup();
+    let facts = crate::codebase::check_facts::collect_check_facts(
+        root,
+        workspace_files,
+        crate::codebase::check_facts::CheckFactPlan {
+            source: true,
+            symbols: true,
+            ..Default::default()
+        },
+    );
+    with_facts::analyze_project_with_facts(root, config_path, tsconfig_path, &facts)
+}
+
+fn analyze_unique_exports(
+    _root: &Path,
+    analysis_files: Vec<PathBuf>,
+    source_files: Vec<SourceFile>,
+    options: UniqueExportsOptions,
+    resolver: ImportResolver<'_>,
+    workspace: crate::codebase::workspaces::WorkspaceMap,
+) -> Result<Vec<UniqueExportFinding>> {
     let by_path: HashMap<PathBuf, SourceFile> = source_files
         .into_iter()
         .map(|file| (file.path.clone(), file))
@@ -86,51 +79,7 @@ pub fn analyze_project(
         ));
     }
 
-    let mut buckets: BTreeMap<(String, ExportBucket), Vec<ExportOccurrence>> = BTreeMap::new();
-    for occurrence in occurrences {
-        buckets
-            .entry((
-                occurrence.name.clone(),
-                occurrence
-                    .bucket
-                    .key(options.unique_across_types_and_values),
-            ))
-            .or_default()
-            .push(occurrence);
-    }
-
-    let mut findings = Vec::new();
-    for ((name, bucket), mut occurrences) in buckets {
-        occurrences.sort_by(|a, b| (&a.file, a.line, &a.kind).cmp(&(&b.file, b.line, &b.kind)));
-        let mut origins = BTreeSet::new();
-        let unique_occurrences = occurrences
-            .into_iter()
-            .filter(|occurrence| origins.insert(occurrence.origin.clone()))
-            .collect::<Vec<_>>();
-        if unique_occurrences.len() < 2 {
-            continue;
-        }
-        let first = &unique_occurrences[0];
-        for duplicate in unique_occurrences.iter().skip(1) {
-            findings.push(UniqueExportFinding {
-                rule: RULE_ID.to_string(),
-                file: duplicate.file.clone(),
-                line: duplicate.line,
-                export_name: name.clone(),
-                export_kind: bucket.as_str().to_string(),
-                message: format!(
-                    "{} `{}` is already exported from {}:{}; rename or consolidate this exported API",
-                    bucket.message_label(),
-                    name,
-                    first.file,
-                    first.line
-                ),
-            });
-        }
-    }
-    findings.sort();
-    findings.dedup();
-    Ok(findings)
+    unique_export_findings(occurrences, options)
 }
 
 trait DefaultTsConfig {

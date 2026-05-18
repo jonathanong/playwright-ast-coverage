@@ -88,12 +88,12 @@ pub(super) enum ImportedName {
     Namespace,
 }
 
-#[derive(Default)]
-pub(super) struct FileAnalysis {
-    pub imports: HashMap<String, ImportBinding>,
-    pub exports: HashMap<String, String>,
-    pub functions: HashMap<String, FunctionInfo>,
-    pub tests: Vec<TestCase>,
+#[derive(Clone, Default)]
+pub(crate) struct FileAnalysis {
+    pub(super) imports: HashMap<String, ImportBinding>,
+    pub(super) exports: HashMap<String, String>,
+    pub(super) functions: HashMap<String, FunctionInfo>,
+    pub(super) tests: Vec<TestCase>,
 }
 
 #[derive(Debug, Clone)]

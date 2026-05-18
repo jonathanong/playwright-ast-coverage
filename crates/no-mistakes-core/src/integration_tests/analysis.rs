@@ -27,7 +27,7 @@ pub(super) fn analyze_files(files: &[PathBuf]) -> Result<BTreeMap<PathBuf, FileA
     Ok(analyses)
 }
 
-fn analyze_program(path: &Path, program: &Program<'_>, source: &str) -> FileAnalysis {
+pub(crate) fn analyze_program(path: &Path, program: &Program<'_>, source: &str) -> FileAnalysis {
     let mut collector = AnalysisCollector {
         path,
         source,

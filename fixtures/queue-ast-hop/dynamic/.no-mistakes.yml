@@ -1,0 +1,9 @@
+projects:
+  backend:
+    type: server
+    root: .
+    queues:
+      enqueues:
+        - "**/*.ts"
+      workers:
+        - "**/*.ts"
