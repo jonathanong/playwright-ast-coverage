@@ -1,10 +1,10 @@
 import { RuleTester } from "eslint";
-import { afterAll, describe, it, itOnly } from "vitest";
+import { afterAll, describe, it } from "vitest";
 import rule from "../src/rules/require-interactive-test-id.js";
 
 RuleTester.describe = describe;
 RuleTester.it = it;
-RuleTester.itOnly = itOnly;
+RuleTester.itOnly = it.only;
 RuleTester.afterAll = afterAll;
 
 const tester = new RuleTester({
