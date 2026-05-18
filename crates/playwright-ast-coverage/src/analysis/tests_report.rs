@@ -26,11 +26,15 @@ pub(crate) fn build_tests_report(edges: &[Edge], files: &[PathBuf], root: &Path)
                 route,
                 ..
             } => {
-                if !filter_files.is_empty() && !filter_files.contains(test_file) {
+                if !filter_files.is_empty() && !filter_files.contains(test_file.as_str()) {
                     continue;
                 }
-                let key: TestKey = (test_file.clone(), test_name.clone(), describe_path.clone());
-                by_test.entry(key).or_default().2.insert(route.clone());
+                let key: TestKey = (
+                    test_file.to_string(),
+                    test_name.as_ref().map(|n| n.to_string()),
+                    describe_path.to_vec(),
+                );
+                by_test.entry(key).or_default().2.insert(route.to_string());
             }
             Edge::Selector {
                 test_file,
@@ -40,10 +44,14 @@ pub(crate) fn build_tests_report(edges: &[Edge], files: &[PathBuf], root: &Path)
                 value,
                 ..
             } => {
-                if !filter_files.is_empty() && !filter_files.contains(test_file) {
+                if !filter_files.is_empty() && !filter_files.contains(test_file.as_str()) {
                     continue;
                 }
-                let key: TestKey = (test_file.clone(), test_name.clone(), describe_path.clone());
+                let key: TestKey = (
+                    test_file.to_string(),
+                    test_name.as_ref().map(|n| n.to_string()),
+                    describe_path.to_vec(),
+                );
                 let entry = by_test.entry(key).or_default();
                 if attribute == selectors::HTML_ID_ATTRIBUTE {
                     entry.1.insert(value.clone());
@@ -59,10 +67,14 @@ pub(crate) fn build_tests_report(edges: &[Edge], files: &[PathBuf], root: &Path)
                 path,
                 ..
             } => {
-                if !filter_files.is_empty() && !filter_files.contains(test_file) {
+                if !filter_files.is_empty() && !filter_files.contains(test_file.as_str()) {
                     continue;
                 }
-                let key: TestKey = (test_file.clone(), test_name.clone(), describe_path.clone());
+                let key: TestKey = (
+                    test_file.to_string(),
+                    test_name.as_ref().map(|n| n.to_string()),
+                    describe_path.to_vec(),
+                );
                 by_test
                     .entry(key)
                     .or_default()

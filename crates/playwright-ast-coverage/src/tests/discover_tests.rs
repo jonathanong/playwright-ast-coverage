@@ -271,18 +271,18 @@ fn related_report_matches_route_and_selector_edges() {
     let root = Path::new("/repo");
     let edges = vec![
         Edge::Route {
-            test_file: "tests/e2e/route.spec.ts".to_string(),
+            test_file: std::sync::Arc::new("tests/e2e/route.spec.ts".to_string()),
             test_name: None,
-            describe_path: vec![],
-            route_file: "web/app/page.tsx".to_string(),
-            route: "/".to_string(),
-            url: "/".to_string(),
+            describe_path: std::sync::Arc::new(vec![]),
+            route_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
+            route: std::sync::Arc::new("/".to_string()),
+            url: std::sync::Arc::new("/".to_string()),
         },
         Edge::Selector {
-            test_file: "tests/e2e/selector.spec.ts".to_string(),
+            test_file: std::sync::Arc::new("tests/e2e/selector.spec.ts".to_string()),
             test_name: None,
-            describe_path: vec![],
-            app_file: "web/app/components/save.tsx".to_string(),
+            describe_path: std::sync::Arc::new(vec![]),
+            app_file: std::sync::Arc::new("web/app/components/save.tsx".to_string()),
             attribute: "data-testid".to_string(),
             value: "save".to_string(),
             selector: "getByTestId(save)".to_string(),

@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::sync::Arc;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -83,13 +84,13 @@ pub(crate) struct CoverageReport {
 pub(crate) enum Edge {
     #[serde(rename_all = "camelCase")]
     Fetch {
-        test_file: String,
+        test_file: Arc<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        test_name: Option<String>,
-        #[serde(skip_serializing_if = "Vec::is_empty", default)]
-        describe_path: Vec<String>,
-        route_file: String,
-        route: String,
+        test_name: Option<Arc<String>>,
+        #[serde(skip_serializing_if = "is_arc_empty", default)]
+        describe_path: Arc<Vec<String>>,
+        route_file: Arc<String>,
+        route: Arc<String>,
         method: String,
         path: String,
         side: String,
@@ -97,27 +98,31 @@ pub(crate) enum Edge {
     },
     #[serde(rename_all = "camelCase")]
     Route {
-        test_file: String,
+        test_file: Arc<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        test_name: Option<String>,
-        #[serde(skip_serializing_if = "Vec::is_empty", default)]
-        describe_path: Vec<String>,
-        route_file: String,
-        route: String,
-        url: String,
+        test_name: Option<Arc<String>>,
+        #[serde(skip_serializing_if = "is_arc_empty", default)]
+        describe_path: Arc<Vec<String>>,
+        route_file: Arc<String>,
+        route: Arc<String>,
+        url: Arc<String>,
     },
     #[serde(rename_all = "camelCase")]
     Selector {
-        test_file: String,
+        test_file: Arc<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        test_name: Option<String>,
-        #[serde(skip_serializing_if = "Vec::is_empty", default)]
-        describe_path: Vec<String>,
-        app_file: String,
+        test_name: Option<Arc<String>>,
+        #[serde(skip_serializing_if = "is_arc_empty", default)]
+        describe_path: Arc<Vec<String>>,
+        app_file: Arc<String>,
         attribute: String,
         value: String,
         selector: String,
     },
+}
+
+fn is_arc_empty<T>(arc: &Arc<Vec<T>>) -> bool {
+    arc.is_empty()
 }
 
 #[derive(Serialize)]

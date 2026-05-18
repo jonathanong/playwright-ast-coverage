@@ -45,12 +45,12 @@ pub(crate) fn build_coverage(
                 let entry = by_route.entry(route.as_str()).or_insert_with(|| {
                     (Default::default(), Default::default(), Default::default())
                 });
-                entry.0.insert(test_file.clone());
-                entry.1.insert(url.clone());
+                entry.0.insert(test_file.to_string());
+                entry.1.insert(url.to_string());
                 entry.2.insert(TestRef {
-                    file: test_file.clone(),
-                    name: test_name.clone(),
-                    describe_path: describe_path.clone(),
+                    file: test_file.to_string(),
+                    name: test_name.as_ref().map(|n| n.to_string()),
+                    describe_path: describe_path.to_vec(),
                 });
             }
             Edge::Selector {
@@ -63,16 +63,16 @@ pub(crate) fn build_coverage(
                 selector,
             } => {
                 let entry = by_selector
-                    .entry((app_file.clone(), attribute.clone(), value.clone()))
+                    .entry((app_file.to_string(), attribute.clone(), value.clone()))
                     .or_insert_with(|| {
                         ((Default::default(), Default::default()), Default::default())
                     });
-                entry.0 .0.insert(test_file.clone());
+                entry.0 .0.insert(test_file.to_string());
                 entry.0 .1.insert(selector.clone());
                 entry.1.insert(TestRef {
-                    file: test_file.clone(),
-                    name: test_name.clone(),
-                    describe_path: describe_path.clone(),
+                    file: test_file.to_string(),
+                    name: test_name.as_ref().map(|n| n.to_string()),
+                    describe_path: describe_path.to_vec(),
                 });
             }
             Edge::Fetch {
@@ -88,13 +88,13 @@ pub(crate) fn build_coverage(
                 let entry = by_fetch.entry(key).or_insert_with(|| {
                     (Default::default(), Default::default(), Default::default())
                 });
-                entry.0.insert(test_file.clone());
+                entry.0.insert(test_file.to_string());
                 entry.1.insert(TestRef {
-                    file: test_file.clone(),
-                    name: test_name.clone(),
-                    describe_path: describe_path.clone(),
+                    file: test_file.to_string(),
+                    name: test_name.as_ref().map(|n| n.to_string()),
+                    describe_path: describe_path.to_vec(),
                 });
-                entry.2.insert(route_file.clone());
+                entry.2.insert(route_file.to_string());
             }
         }
     }

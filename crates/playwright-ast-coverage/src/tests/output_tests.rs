@@ -51,18 +51,18 @@ fn text_printers_cover_routes_and_selectors() {
     let edges = EdgeReport {
         edges: vec![
             Edge::Route {
-                test_file: "tests/e2e/app.spec.ts".to_string(),
+                test_file: std::sync::Arc::new("tests/e2e/app.spec.ts".to_string()),
                 test_name: None,
-                describe_path: vec![],
-                route_file: "web/app/page.tsx".to_string(),
-                route: "/".to_string(),
-                url: "/".to_string(),
+                describe_path: vec![].into(),
+                route_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
+                route: std::sync::Arc::new("/".to_string()),
+                url: std::sync::Arc::new("/".to_string()),
             },
             Edge::Selector {
-                test_file: "tests/e2e/app.spec.ts".to_string(),
+                test_file: std::sync::Arc::new("tests/e2e/app.spec.ts".to_string()),
                 test_name: None,
-                describe_path: vec![],
-                app_file: "web/app/page.tsx".to_string(),
+                describe_path: vec![].into(),
+                app_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
                 attribute: "data-testid".to_string(),
                 value: "save".to_string(),
                 selector: "getByTestId(save)".to_string(),
@@ -76,11 +76,11 @@ fn text_printers_cover_routes_and_selectors() {
 fn text_printer_covers_fetch_edges() {
     let edges = EdgeReport {
         edges: vec![Edge::Fetch {
-            test_file: "tests/e2e/app.spec.ts".to_string(),
-            test_name: Some("visits home".to_string()),
-            describe_path: vec!["Suite".to_string()],
-            route_file: "web/app/page.tsx".to_string(),
-            route: "/".to_string(),
+            test_file: std::sync::Arc::new("tests/e2e/app.spec.ts".to_string()),
+            test_name: Some(std::sync::Arc::new("visits home".to_string())),
+            describe_path: std::sync::Arc::new(vec!["Suite".to_string()]),
+            route_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
+            route: std::sync::Arc::new("/".to_string()),
             method: "GET".to_string(),
             path: "/api/health".to_string(),
             side: "server".to_string(),
@@ -125,19 +125,19 @@ fn related_report_includes_fetch_apis() {
     let root = std::path::Path::new("/repo");
     let edges = vec![
         Edge::Route {
-            test_file: "tests/e2e/app.spec.ts".to_string(),
+            test_file: std::sync::Arc::new("tests/e2e/app.spec.ts".to_string()),
             test_name: None,
-            describe_path: vec![],
-            route_file: "web/app/page.tsx".to_string(),
-            route: "/".to_string(),
-            url: "/".to_string(),
+            describe_path: vec![].into(),
+            route_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
+            route: std::sync::Arc::new("/".to_string()),
+            url: std::sync::Arc::new("/".to_string()),
         },
         Edge::Fetch {
-            test_file: "tests/e2e/app.spec.ts".to_string(),
+            test_file: std::sync::Arc::new("tests/e2e/app.spec.ts".to_string()),
             test_name: None,
-            describe_path: vec![],
-            route_file: "web/app/page.tsx".to_string(),
-            route: "/".to_string(),
+            describe_path: vec![].into(),
+            route_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
+            route: std::sync::Arc::new("/".to_string()),
             method: "GET".to_string(),
             path: "/api/health".to_string(),
             side: "server".to_string(),
@@ -155,7 +155,7 @@ fn print_tests_text_covers_html_ids() {
         tests: vec![TestEntry {
             file: "tests/e2e/app.spec.ts".to_string(),
             name: Some("visits home".to_string()),
-            describe_path: vec![],
+            describe_path: vec![].into(),
             test_ids: vec![],
             html_ids: vec!["main-nav".to_string()],
             routes: vec![],
