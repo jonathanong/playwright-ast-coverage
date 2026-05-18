@@ -118,3 +118,5 @@ pub fn infer_cached_wrapper_name(source: &str, expr: &CallExpression<'_>) -> Opt
 pub fn is_identifier_char(ch: char) -> bool {
     ch.is_alphanumeric() || ch == '_' || ch == '$'
 }
+#[cfg(test)]
+mod tests;
