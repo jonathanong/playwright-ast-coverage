@@ -1,5 +1,5 @@
 {
-  "name": "playwright-ast-coverage-monorepo",
+  "name": "no-mistakes-monorepo",
   "version": "0.2.3",
   "private": true,
   "description": "Static Playwright AST coverage for Next.js App Router routes",
