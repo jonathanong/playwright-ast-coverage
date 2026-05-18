@@ -1,6 +1,6 @@
 {
   "name": "server-ast-routes",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Static server route dependency graph for Node.js frameworks",
   "license": "MIT",
   "repository": {
@@ -24,6 +24,6 @@
     "postinstall": "node scripts/install.js"
   },
   "dependencies": {
-    "no-mistakes-core": "^0.3.0"
+    "no-mistakes-core": "^0.3.1"
   }
 }

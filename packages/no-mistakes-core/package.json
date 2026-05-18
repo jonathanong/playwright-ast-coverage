@@ -1,6 +1,6 @@
 {
   "name": "no-mistakes-core",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Shared core logic for no-mistakes static analysis tools",
   "license": "MIT",
   "repository": {
