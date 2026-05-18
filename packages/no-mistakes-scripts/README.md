@@ -53,6 +53,6 @@ Defaults are 200 lines and 12000 characters.
 
 Options:
 
-- `--root <path>`: limit the check to a repository subdirectory.
+- `--root <path>`: limit the check to a directory.
 
-Requires `git` and must run inside a git worktree.
+When run inside a Git worktree, GitHub annotations use repository-relative paths.
