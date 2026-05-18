@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "vitest";
-import { fixture, lint, messages, plugin } from "./helpers.mjs";
+import { fixture, messages, plugin } from "./helpers.mjs";
 
 describe("plugin exports", () => {
   it("exposes rules and flat configs", () => {
@@ -143,18 +143,6 @@ describe("unique", () => {
   });
 });
 
-describe("no-empty", () => {
-  it("reports empty literal test IDs", () => {
-    assert.deepEqual(
-      messages(
-        "<><button data-pw='' /><button data-pw /><button data-pw={'ok'} /></>;",
-        "no-empty",
-      ),
-      ["empty"],
-    );
-  });
-});
-
 describe("consistent-attribute", () => {
   it("requires the configured canonical attribute", () => {
     assert.deepEqual(messages("<button data-testid='save' />;", "consistent-attribute"), [
@@ -167,99 +155,6 @@ describe("consistent-attribute", () => {
         canonicalAttribute: "data-qa",
       }),
       [],
-    );
-  });
-});
-
-describe("prefer-get-by-test-id", () => {
-  it("reports exact CSS test-id selectors in Playwright selector calls", () => {
-    assert.deepEqual(messages(fixture("prefer-get-by-testid.js"), "prefer-get-by-test-id"), [
-      "prefer",
-      "prefer",
-      "prefer",
-      "prefer",
-      "prefer",
-      "prefer",
-      "prefer",
-    ]);
-  });
-});
-
-describe("naming-convention", () => {
-  it("checks literal values against a configurable pattern", () => {
-    assert.deepEqual(
-      messages(
-        "<><button data-pw='SaveButton' /><button data-pw='save-button' /></>;",
-        "naming-convention",
-      ),
-      ["naming"],
-    );
-    assert.deepEqual(
-      messages("<button data-pw='SaveButton' />;", "naming-convention", {
-        pattern: "^[A-Z][A-Za-z]+$",
-      }),
-      [],
-    );
-  });
-});
-
-describe("strict config", () => {
-  it("runs the strict rule set", () => {
-    const messages = lint("<button data-testid='Save' />;", plugin.configs.strict.rules);
-    assert.deepEqual(messages.map((message) => message.ruleId).sort(), [
-      "playwright-ast-coverage/consistent-attribute",
-      "playwright-ast-coverage/naming-convention",
-    ]);
-  });
-});
-
-describe("require-interactive-test-id", () => {
-  it("does not require a selector for non-interactive elements", () => {
-    assert.deepEqual(messages("<div />;", "require-interactive-test-id"), []);
-  });
-
-  it("treats non-interactive roles as non-interactive", () => {
-    assert.deepEqual(messages("<div role='presentation' />;", "require-interactive-test-id"), []);
-  });
-
-  it("requires selector attributes on clickables", () => {
-    assert.deepEqual(messages("<div role='button' />;", "require-interactive-test-id"), [
-      "missing",
-    ]);
-  });
-
-  it("requires selector attributes on anchors and onClick", () => {
-    assert.deepEqual(
-      messages("<><a href='/x' /><div onClick={fn} /></>", "require-interactive-test-id"),
-      ["missing", "missing"],
-    );
-  });
-
-  it("reports missing test IDs for interactive member-expression elements", () => {
-    assert.deepEqual(messages("<Foo.Bar onClick={handler} />;", "require-interactive-test-id"), [
-      "missing",
-    ]);
-  });
-
-  it("handles non-interactive attributes before click handlers", () => {
-    assert.deepEqual(messages("<div id='x' onClick={fn} />;", "require-interactive-test-id"), [
-      "missing",
-    ]);
-  });
-
-  it("supports custom selector attributes", () => {
-    assert.deepEqual(
-      messages(
-        `<>
-          <button data-qa="save" />
-          <button data-pw="save" />
-        </>`,
-        "require-interactive-test-id",
-        {
-          selectorAttributes: ["data-qa"],
-        },
-      ),
-      ["missing"],
     );
   });
 });

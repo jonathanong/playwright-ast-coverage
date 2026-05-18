@@ -59,6 +59,10 @@ tester.run("require-interactive-test-id", rule, {
       errors: [{ messageId: "missing" }],
     },
     {
+      code: "<Foo.Bar onClick={handler} />;",
+      errors: [{ messageId: "missing" }],
+    },
+    {
       code: "<><button /><input /><select /><textarea /></>;",
       errors: [
         { messageId: "missing" },
