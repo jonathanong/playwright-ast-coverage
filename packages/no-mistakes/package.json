@@ -1,6 +1,6 @@
 {
   "name": "no-mistakes",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Static codebase analysis tools for TS/JS dependencies, dependents, and symbols",
   "license": "MIT",
   "repository": {
@@ -24,6 +24,6 @@
     "postinstall": "node scripts/install.js"
   },
   "dependencies": {
-    "no-mistakes-core": "^0.3.2"
+    "no-mistakes-core": "^0.3.3"
   }
 }
