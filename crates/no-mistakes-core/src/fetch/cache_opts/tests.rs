@@ -68,6 +68,30 @@ fn test_cache_wrapper_name_other_function() {
 }
 
 #[test]
+fn test_cache_wrapper_name_iife() {
+    with_call_expression("(function() {})()", |expr| {
+        let result = cache_wrapper_name(expr);
+        assert!(result.is_none());
+    });
+}
+
+#[test]
+fn test_cache_wrapper_name_arrow_function() {
+    with_call_expression("(() => {})()", |expr| {
+        let result = cache_wrapper_name(expr);
+        assert!(result.is_none());
+    });
+}
+
+#[test]
+fn test_cache_wrapper_name_nested_call() {
+    with_call_expression("cache()()", |expr| {
+        let result = cache_wrapper_name(expr);
+        assert!(result.is_none());
+    });
+}
+
+#[test]
 fn test_cache_wrapper_name_member_expression() {
     with_call_expression("obj.cache(fn)", |expr| {
         let result = cache_wrapper_name(expr);
