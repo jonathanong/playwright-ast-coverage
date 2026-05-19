@@ -1,6 +1,16 @@
 use super::*;
 use anyhow::anyhow;
-use no_mistakes_core::codebase::rules::{RUST_MAX_LINES_PER_FILE, RUST_NO_INLINE_TESTS};
+use crate::check_parallel::DomainResults;
+use crate::check_tasks::CheckTask;
+use no_mistakes_core::codebase::rules::{
+    RuleFinding, RUST_MAX_LINES_PER_FILE, RUST_NO_INLINE_TESTS,
+};
+use no_mistakes_core::codebase::unique_exports::UniqueExportFinding;
+use no_mistakes_core::integration_tests::IntegrationFinding;
+use no_mistakes_core::queue::CheckFinding;
+use no_mistakes_core::react_traits;
+use std::path::PathBuf;
+use std::time::Duration;
 
 #[test]
 fn run_all_keeps_filesystem_files_when_fact_collection_is_needed() {

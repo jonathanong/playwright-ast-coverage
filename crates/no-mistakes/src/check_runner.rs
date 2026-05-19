@@ -1,46 +1,16 @@
-use crate::check_parallel::{run_domain_checks, DomainResults};
-use crate::check_tasks::{
-    filesystem_rules_configured, queues_configured, unique_exports_configured, CheckTask,
-};
+use crate::check_parallel::run_domain_checks;
+use crate::check_tasks::{filesystem_rules_configured, queues_configured, unique_exports_configured};
 use anyhow::Result;
 use no_mistakes_core::codebase::check_facts::{collect_check_facts, CheckFactPlan};
-use no_mistakes_core::codebase::rules::RuleFinding;
-use no_mistakes_core::codebase::unique_exports::UniqueExportFinding;
 use no_mistakes_core::config::v2::load_v2_config;
-use no_mistakes_core::integration_tests::IntegrationFinding;
-use no_mistakes_core::queue::CheckFinding;
 use no_mistakes_core::react_traits;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-pub(crate) struct CheckResults {
-    pub(crate) react: Vec<react_traits::Violation>,
-    pub(crate) queues: Vec<CheckFinding>,
-    pub(crate) rules: Vec<RuleFinding>,
-    pub(crate) integration: Vec<IntegrationFinding>,
-    pub(crate) codebase: Vec<UniqueExportFinding>,
-    pub(crate) warnings: Vec<String>,
-    pub(crate) timings: Vec<(&'static str, Duration)>,
-}
+mod results;
 
-struct CompletedDomainChecks {
-    react: CheckTask<Vec<react_traits::Violation>>,
-    queues: CheckTask<Vec<CheckFinding>>,
-    rules: CheckTask<Vec<RuleFinding>>,
-    integration: CheckTask<Vec<IntegrationFinding>>,
-    codebase: CheckTask<Vec<UniqueExportFinding>>,
-    filesystem_rules: CheckTask<Vec<RuleFinding>>,
-}
-
-impl CheckResults {
-    pub(crate) fn has_findings(&self) -> bool {
-        !self.react.is_empty()
-            || !self.queues.is_empty()
-            || !self.rules.is_empty()
-            || !self.integration.is_empty()
-            || !self.codebase.is_empty()
-    }
-}
+pub(crate) use results::CheckResults;
+use results::{complete_domain_checks, empty_results};
 
 pub(crate) fn run_all(
     root: PathBuf,
@@ -151,18 +121,6 @@ pub(crate) fn run_all(
     })
 }
 
-fn complete_domain_checks(results: DomainResults) -> Result<CompletedDomainChecks> {
-    let (react, queues, rules, integration, codebase, filesystem_rules) = results;
-    Ok(CompletedDomainChecks {
-        react: react?,
-        queues: queues?,
-        rules: rules?,
-        integration: integration?,
-        codebase: codebase?,
-        filesystem_rules: filesystem_rules?,
-    })
-}
-
 fn fact_plan(
     react: bool,
     queue: bool,
@@ -189,28 +147,6 @@ fn plan_requests_facts(plan: &CheckFactPlan) -> bool {
         || plan.integration
         || plan.dynamic_imports
         || plan.source
-}
-
-fn empty_results(warnings: [Option<String>; 1]) -> CheckResults {
-    let warnings = warnings.into_iter().flatten().collect();
-    CheckResults {
-        react: Vec::new(),
-        queues: Vec::new(),
-        rules: Vec::new(),
-        integration: Vec::new(),
-        codebase: Vec::new(),
-        warnings,
-        timings: vec![
-            ("discover", Duration::ZERO),
-            ("parse_extract", Duration::ZERO),
-            ("react", Duration::ZERO),
-            ("queues", Duration::ZERO),
-            ("rules", Duration::ZERO),
-            ("integration", Duration::ZERO),
-            ("codebase", Duration::ZERO),
-            ("filesystem_rules", Duration::ZERO),
-        ],
-    }
 }
 
 fn test_dynamic_imports_configured(
