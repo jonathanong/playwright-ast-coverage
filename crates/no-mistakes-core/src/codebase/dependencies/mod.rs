@@ -353,9 +353,14 @@ fn dependents_entries(
 ) -> Vec<graph::NodeEntry> {
     let any_symbol = entrypoints.iter().any(|e| e.symbol.is_some());
     let symbol_facts = any_symbol.then(|| {
-        crate::codebase::ts_source::facts::collect_ts_facts(
+        let mut fact_plan = ctx.build_plan.ts_fact_plan();
+        fact_plan.imports = true;
+        fact_plan.symbols = true;
+        let fact_context = graph::ts_fact_context_for_plan(ctx.root, ctx.build_plan);
+        crate::codebase::ts_source::facts::collect_ts_facts_with_context(
             ctx.graph_files.indexable(),
-            crate::codebase::ts_source::facts::TsFactPlan::imports_and_symbols(),
+            fact_plan,
+            &fact_context,
         )
     });
     let graph = build_dependents_graph(ctx, symbol_facts.as_ref());

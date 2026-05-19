@@ -1,8 +1,8 @@
 use crate::codebase::ts_source::unwrap_ts_wrappers;
 use oxc::allocator::Allocator;
 use oxc::ast::ast::{
-    Argument, ExportNamedDeclaration, Expression, ObjectPropertyKind, PropertyKey, Statement,
-    TryStatement,
+    Argument, ExportNamedDeclaration, Expression, ObjectPropertyKind, Program, PropertyKey,
+    Statement, TryStatement,
 };
 use oxc::parser::Parser;
 use oxc::span::SourceType;
@@ -40,10 +40,18 @@ pub fn extract_spawn_edges(source: &str, file_path: &Path, root: &Path) -> Vec<S
     let allocator = Allocator::default();
     let source_type = SourceType::tsx();
     let ret = Parser::new(&allocator, source, source_type).parse();
+    extract_spawn_edges_from_program(&ret.program, source, file_path, root)
+}
 
+pub fn extract_spawn_edges_from_program<'a>(
+    program: &Program<'a>,
+    source: &str,
+    file_path: &Path,
+    root: &Path,
+) -> Vec<SpawnEdge> {
     let mut results = Vec::new();
 
-    for stmt in &ret.program.body {
+    for stmt in &program.body {
         collect_from_stmt(stmt, source, file_path, root, &mut results);
     }
 

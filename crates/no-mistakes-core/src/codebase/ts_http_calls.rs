@@ -1,7 +1,7 @@
 use crate::codebase::ts_routes::refs::normalize_template;
 use crate::codebase::ts_source::{byte_offset_to_line, unwrap_ts_wrappers};
 use oxc::allocator::Allocator;
-use oxc::ast::ast::{Argument, Declaration, Expression, Statement};
+use oxc::ast::ast::{Argument, Declaration, Expression, Program, Statement};
 use oxc::parser::Parser;
 use oxc::span::SourceType;
 
@@ -27,9 +27,17 @@ pub fn extract_http_calls(source: &str, prefixes: &[&str]) -> Vec<HttpCall> {
     let allocator = Allocator::default();
     let source_type = SourceType::tsx();
     let ret = Parser::new(&allocator, source, source_type).parse();
+    extract_http_calls_from_program(&ret.program, source, prefixes)
+}
+
+pub fn extract_http_calls_from_program<'a>(
+    program: &Program<'a>,
+    source: &str,
+    prefixes: &[&str],
+) -> Vec<HttpCall> {
     let mut results = Vec::new();
 
-    for stmt in &ret.program.body {
+    for stmt in &program.body {
         collect_from_stmt(stmt, source, prefixes, &mut results);
     }
 

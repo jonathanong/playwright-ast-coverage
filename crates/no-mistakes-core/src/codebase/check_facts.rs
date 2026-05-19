@@ -61,8 +61,10 @@ impl CheckFactMap {
             ts_facts.insert(
                 path.clone(),
                 crate::codebase::ts_source::facts::TsFileFacts {
+                    source: facts.source.clone(),
                     imports: facts.imports.clone(),
                     symbols: facts.symbols.clone(),
+                    ..Default::default()
                 },
             );
         }

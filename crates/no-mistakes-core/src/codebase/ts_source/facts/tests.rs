@@ -49,6 +49,7 @@ fn collect_ts_facts_can_skip_import_collection() {
         TsFactPlan {
             imports: false,
             symbols: false,
+            ..TsFactPlan::default()
         },
     );
 

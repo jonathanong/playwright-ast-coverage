@@ -1,7 +1,7 @@
 use crate::codebase::ts_resolver;
 use crate::codebase::ts_source::byte_offset_to_line;
 use oxc::allocator::Allocator;
-use oxc::ast::ast::{Expression, ImportDeclarationSpecifier, ModuleExportName, Statement};
+use oxc::ast::ast::{Expression, ImportDeclarationSpecifier, ModuleExportName, Program, Statement};
 use oxc::parser::Parser;
 use oxc::span::SourceType;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -79,9 +79,17 @@ pub fn find_create_queue_line(
     let allocator = Allocator::default();
     let source_type = SourceType::ts();
     let ret = Parser::new(&allocator, source, source_type).parse();
+    find_create_queue_line_from_program(&ret.program, source, factory_specifier, factory_function)
+}
 
+pub fn find_create_queue_line_from_program<'a>(
+    program: &Program<'a>,
+    source: &str,
+    factory_specifier: &str,
+    factory_function: &str,
+) -> Option<u32> {
     let mut bindings: HashMap<String, (String, String)> = HashMap::new();
-    for stmt in &ret.program.body {
+    for stmt in &program.body {
         if let Statement::ImportDeclaration(import_decl) = stmt {
             let src = import_decl.source.value.as_str();
             if let Some(specifiers) = &import_decl.specifiers {
@@ -96,7 +104,7 @@ pub fn find_create_queue_line(
         }
     }
 
-    for stmt in &ret.program.body {
+    for stmt in &program.body {
         if let Some(line) = check_stmt_for_create_queue(
             stmt,
             source,
@@ -275,9 +283,16 @@ pub fn find_queue_name(
     let allocator = Allocator::default();
     let source_type = SourceType::ts();
     let ret = Parser::new(&allocator, source, source_type).parse();
+    find_queue_name_from_program(&ret.program, factory_specifier, factory_function)
+}
 
+pub fn find_queue_name_from_program<'a>(
+    program: &Program<'a>,
+    factory_specifier: &str,
+    factory_function: &str,
+) -> Option<String> {
     let mut bindings: HashMap<String, (String, String)> = HashMap::new();
-    for stmt in &ret.program.body {
+    for stmt in &program.body {
         if let Statement::ImportDeclaration(import_decl) = stmt {
             let src = import_decl.source.value.as_str();
             if let Some(specifiers) = &import_decl.specifiers {
@@ -292,9 +307,9 @@ pub fn find_queue_name(
         }
     }
 
-    let const_strings = collect_const_string_bindings(&ret.program.body);
+    let const_strings = collect_const_string_bindings(&program.body);
 
-    for stmt in &ret.program.body {
+    for stmt in &program.body {
         if let Some(name) = find_queue_name_in_stmt(
             stmt,
             &bindings,

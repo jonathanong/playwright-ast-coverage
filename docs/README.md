@@ -28,6 +28,8 @@ selectors, fetch calls, queue hops, server routes, and React component traits.
 
 - [CLI reference](cli-reference.md) lists commands, flags, output formats, and
   common examples for every binary.
+- [Architecture](architecture.md) codifies the single-pass, in-memory,
+  graph-based, parallel execution model.
 - [AST analysis behavior](ast-analysis.md) describes what static code forms are
   recognized and where heuristics intentionally stop.
 - [Agent guide](agent-guide.md) gives command-selection and pre-finish workflows

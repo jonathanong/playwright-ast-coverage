@@ -1,5 +1,20 @@
 ## Performance Guidelines
 
+### Core architecture invariants
+
+- One pass per invocation: discover the file universe once, parse each TS/JS
+  file once for the requested `TsFactPlan`, and reuse `TsFactMap` everywhere.
+- In-memory only: use invocation-scoped fact maps, resolver caches, traversal
+  caches, and forward/reverse dependency maps. Do not add disk caches, daemons,
+  databases, or state that changes later CLI runs.
+- Canonical graph: project-level relationships belong in `DepGraph` as typed
+  `EdgeKind` edges unless they are purely file-local lint rules.
+- Fully parallel: per-file extraction, edge production, and independent checks
+  should run through rayon or concurrent maps, with deterministic sorting before
+  output.
+- No hardcoded domain defaults: route roots, HTTP prefixes, queue factories, and
+  worker locations must be configured instead of inferred from repo conventions.
+
 ### Shared state in parallel loops
 
 Avoid `Mutex<HashMap<K, V>>` for caches accessed from rayon `par_iter()`. The
@@ -43,6 +58,8 @@ Common violations to watch for:
 - Calling `discover_files` (which runs `git ls-files`) per test file
 - Reading and parsing config files per test file
 - Building `GlobSet`/`Regex` per test file
+- Parsing TS/JS again inside a graph edge producer when `TsFactMap` already has
+  the required facts
 
 ### Guard expensive discovery behind an early return
 

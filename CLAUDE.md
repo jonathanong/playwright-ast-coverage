@@ -7,6 +7,17 @@ Goal: AI-powered AST-based codebase intelligence for AI Agents.
 - Local over Remote
 - Stateless across runs — no filesystem caches, databases, or services. In-memory
   per-run memoization and shared fact maps are allowed to avoid duplicate work.
+- One pass per invocation — discover files once, parse TS/JS once for the
+  requested facts, then reuse those facts across graph construction and checks.
+- Cache only in memory — parsed facts, resolver lookups, traversal results, and
+  forward/reverse dependency maps may be cached during a run, but never persisted.
+- Build one canonical graph — relationship features should produce typed edges
+  in the shared dependency graph instead of maintaining separate graph shapes.
+- Fully parallel, deterministic output — independent file analysis and domain
+  checks should use rayon/concurrent data structures, then sort/merge before
+  rendering results.
+- No hardcoded domain conventions — route roots, HTTP prefixes, queue factories,
+  workers, and similar project-specific locations must come from configuration.
 - Rules to keep the AST parsable (e.g. no indirection, no dynamism)
 - Reduce Agent token usage
 - Allow custom error messages for agents

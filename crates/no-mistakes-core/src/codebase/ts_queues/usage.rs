@@ -2,7 +2,7 @@ use crate::codebase::ts_source::byte_offset_to_line;
 use oxc::allocator::Allocator;
 use oxc::ast::ast::{
     Argument, ArrayExpressionElement, CallExpression, Expression, FunctionBody,
-    ImportDeclarationSpecifier, ObjectPropertyKind, Statement,
+    ImportDeclarationSpecifier, ObjectPropertyKind, Program, Statement,
 };
 use oxc::parser::Parser;
 use oxc::span::SourceType;
@@ -29,7 +29,7 @@ pub struct WorkerDeclaration {
 }
 
 /// All queue-related usage patterns extracted from a source file.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct QueueUsage {
     /// `(local_binding, import_specifier)` pairs for named imports.
     pub imports: Vec<(String, String)>,
@@ -47,12 +47,15 @@ pub fn extract_queue_usage(source: &str) -> QueueUsage {
     let allocator = Allocator::default();
     let source_type = SourceType::ts();
     let ret = Parser::new(&allocator, source, source_type).parse();
+    extract_queue_usage_from_program(&ret.program, source)
+}
 
+pub fn extract_queue_usage_from_program<'a>(program: &Program<'a>, source: &str) -> QueueUsage {
     let mut usage = QueueUsage::default();
 
     // Pass 1: collect named imports and namespace imports.
     let mut namespace_imports: HashMap<String, String> = HashMap::new(); // local → specifier
-    for stmt in &ret.program.body {
+    for stmt in &program.body {
         if let Statement::ImportDeclaration(import_decl) = stmt {
             let src = import_decl.source.value.as_str();
             if let Some(specifiers) = &import_decl.specifiers {
@@ -74,7 +77,7 @@ pub fn extract_queue_usage(source: &str) -> QueueUsage {
     }
 
     // Also include bindings from default imports (less common for queues, but handle for robustness).
-    for stmt in &ret.program.body {
+    for stmt in &program.body {
         if let Statement::ImportDeclaration(import_decl) = stmt {
             let src = import_decl.source.value.as_str();
             if let Some(specifiers) = &import_decl.specifiers {
@@ -89,7 +92,7 @@ pub fn extract_queue_usage(source: &str) -> QueueUsage {
     }
 
     // Pass 2: scan statements for enqueue calls and Worker constructors.
-    for stmt in &ret.program.body {
+    for stmt in &program.body {
         scan_stmt(stmt, source, &namespace_imports, &mut usage);
     }
 
