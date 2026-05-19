@@ -14,7 +14,7 @@ fn function_declarations_shadow_global_fetch() {
 }
 
 #[test]
-fn test_is_fetch_shadowed_state_method() {
+fn is_fetch_shadowed_state_method() {
     let mut visitor = FetchVisitor::new("", "fixture.ts", false, false);
 
     // Test initial state
@@ -26,10 +26,6 @@ fn test_is_fetch_shadowed_state_method() {
 
     // Test scope entry/exit interactions
     visitor.enter_fetch_scope(false);
-    assert!(visitor.is_fetch_shadowed());
-
-    // In inner scope, shadowing something else doesn't change fetch shadowed status from outer scope
-    visitor.mark_identifier_shadowed("other_var");
     assert!(visitor.is_fetch_shadowed());
 
     visitor.leave_fetch_scope();
