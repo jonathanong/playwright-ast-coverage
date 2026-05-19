@@ -1,5 +1,4 @@
 const assert = require("node:assert/strict");
-const { EventEmitter } = require("node:events");
 const { chmod, mkdir, mkdtemp, rm, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const { join } = require("node:path");
@@ -13,29 +12,22 @@ const NATIVE = join(
 );
 const { binaryPath, run } = require("../bin/server-ast-routes");
 const { main } = require("./install");
-
-function runWithChild(event, ...eventArgs) {
-  const child = new EventEmitter();
-  const exits = [];
-  const spawnCalls = [];
-  run(["routes"], {}, "linux", { exit: (code) => exits.push(code) }, (bin, argv, options) => {
-    spawnCalls.push([bin, argv, options]);
-    queueMicrotask(() => child.emit(event, ...eventArgs));
-    return child;
-  });
-  return new Promise((resolve) => {
-    setImmediate(() => resolve({ exits, spawnCalls }));
-  });
-}
+const { runWithChildWithEnv, testInstallerFailures } = require("no-mistakes-core/lib/test-helpers");
 
 test("wrapper helpers resolve binary paths and handle child outcomes", async () => {
   assert.equal(binaryPath({ SERVER_AST_ROUTES_BINARY: "/tmp/custom" }, "linux"), "/tmp/custom");
   assert.match(binaryPath({}, "win32"), /server-ast-routes\.exe$/);
 
-  assert.deepEqual((await runWithChild("exit", 7, null)).exits, [7]);
-  assert.deepEqual((await runWithChild("exit", null, "SIGTERM")).exits, [1]);
-  assert.deepEqual((await runWithChild("exit", null, null)).exits, [0]);
-  assert.deepEqual((await runWithChild("error", new Error("nope"))).exits, [1]);
+  assert.deepEqual((await runWithChildWithEnv(run, ["routes"], "exit", 7, null)).exits, [7]);
+  assert.deepEqual(
+    (await runWithChildWithEnv(run, ["routes"], "exit", null, "SIGTERM")).exits,
+    [1],
+  );
+  assert.deepEqual((await runWithChildWithEnv(run, ["routes"], "exit", null, null)).exits, [0]);
+  assert.deepEqual(
+    (await runWithChildWithEnv(run, ["routes"], "error", new Error("nope"))).exits,
+    [1],
+  );
 });
 
 test("wrapper forwards args and exit status", async () => {
@@ -97,23 +89,5 @@ test("installer succeeds when binary download is skipped", async () => {
 });
 
 test("installer reports failures", async () => {
-  const exits = [];
-  const errors = [];
-  await main(
-    async () => {
-      throw new Error("install failed");
-    },
-    { exit: (code) => exits.push(code) },
-    { log() {}, error: (message) => errors.push(message) },
-  );
-  assert.deepEqual(exits, [1]);
-  assert.deepEqual(errors, ["install failed"]);
-  await main(
-    async () => {
-      throw "string failed";
-    },
-    { exit: (code) => exits.push(code) },
-    { log() {}, error: (message) => errors.push(message) },
-  );
-  assert.deepEqual(errors.slice(-1), ["string failed"]);
+  await testInstallerFailures(main, assert);
 });
