@@ -100,14 +100,14 @@ pub(super) fn extract_named_export(
 fn extract_named_declaration(decl: &Declaration<'_>, components: &mut Vec<ComponentDef>) {
     match decl {
         Declaration::FunctionDeclaration(f) => {
-            if let Some(id) =
-                f.id.as_ref()
-                    .filter(|id| is_component_name(id.name.as_ref()))
-            {
-                components.push(ComponentDef {
-                    name: id.name.as_ref().to_string(),
-                    span: f.span,
-                });
+            if let Some(id) = &f.id {
+                let name = id.name.as_ref();
+                if is_component_name(name) {
+                    components.push(ComponentDef {
+                        name: name.to_string(),
+                        span: f.span,
+                    });
+                }
             }
         }
         Declaration::VariableDeclaration(v) => {
@@ -119,14 +119,14 @@ fn extract_named_declaration(decl: &Declaration<'_>, components: &mut Vec<Compon
             });
         }
         Declaration::ClassDeclaration(c) => {
-            if let Some(id) =
-                c.id.as_ref()
-                    .filter(|id| is_component_name(id.name.as_ref()) && is_class_component(c))
-            {
-                components.push(ComponentDef {
-                    name: id.name.as_ref().to_string(),
-                    span: c.span,
-                });
+            if let Some(id) = &c.id {
+                let name = id.name.as_ref();
+                if is_component_name(name) && is_class_component(c) {
+                    components.push(ComponentDef {
+                        name: name.to_string(),
+                        span: c.span,
+                    });
+                }
             }
         }
         _ => {}

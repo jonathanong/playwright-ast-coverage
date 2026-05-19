@@ -85,6 +85,48 @@ fn external_subcommand_reports_missing_executable() {
     assert!(stderr.contains("no-mistakes-missing-proxy"));
 }
 
+#[test]
+fn external_subcommand_rejects_empty_name() {
+    let output = Command::new(bin())
+        .env("PATH", proxy_path())
+        .arg("")
+        .output()
+        .expect("no-mistakes should run");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("invalid command name ``"));
+    assert!(stderr.contains("only ASCII letters, digits, hyphens, and underscores are allowed"));
+}
+
+#[test]
+fn external_subcommand_rejects_path_traversal_name() {
+    let output = Command::new(bin())
+        .env("PATH", proxy_path())
+        .arg("../../../bin/sh")
+        .output()
+        .expect("no-mistakes should run");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("invalid command name `../../../bin/sh`"));
+    assert!(stderr.contains("only ASCII letters, digits, hyphens, and underscores are allowed"));
+}
+
+#[test]
+fn external_subcommand_rejects_absolute_path_name() {
+    let output = Command::new(bin())
+        .env("PATH", proxy_path())
+        .arg("/usr/bin/python")
+        .output()
+        .expect("no-mistakes should run");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("invalid command name `/usr/bin/python`"));
+    assert!(stderr.contains("only ASCII letters, digits, hyphens, and underscores are allowed"));
+}
+
 #[cfg(unix)]
 #[test]
 fn external_subcommand_skips_non_executable_path_match() {

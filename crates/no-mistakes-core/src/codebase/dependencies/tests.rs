@@ -288,6 +288,139 @@ fn parse_path_multiple_hashes_splits_on_first() {
     assert_eq!(ep.symbol.as_deref(), Some("sym#extra"));
 }
 
+#[test]
+fn resolve_root_uses_absolute_path() {
+    let root = fixture_root("simple");
+    let args = {
+        let args = vec![
+            "deps".to_string(),
+            "--root".to_string(),
+            root.to_string_lossy().into_owned(),
+            "a.mts".to_string(),
+        ];
+        TraverseArgs::parse_from(args)
+    };
+    let cwd = fixture_root("filter");
+    let resolved_root = resolve_root(&args, &cwd);
+    assert_eq!(resolved_root, root);
+}
+
+#[test]
+fn resolve_root_joins_relative_with_cwd() {
+    let args = parse(&["deps", "--root", "sub/dir", "a.mts"]);
+    let cwd = fixture_root("filter");
+    let root = resolve_root(&args, &cwd);
+    assert_eq!(root, cwd.join("sub/dir"));
+}
+
+#[test]
+fn resolve_entrypoints_prefers_root_before_cwd_fallback() {
+    let root = fixture_root("simple");
+    let args = parse(&[
+        "deps",
+        "a.mts",
+        "does-not-exist.mts",
+        "../../other.mts#exportName",
+    ]);
+    let cwd = fixture_root("simple").join("src");
+    let entrypoints = resolve_entrypoints(&args.files, &root, &cwd);
+
+    assert_eq!(entrypoints[0].file, root.join("a.mts"));
+    assert_eq!(entrypoints[0].symbol, None);
+    assert_eq!(entrypoints[1].file, cwd.join("does-not-exist.mts"));
+    assert_eq!(entrypoints[1].symbol, None);
+    assert_eq!(entrypoints[2].file, cwd.join("../../other.mts"));
+    assert_eq!(entrypoints[2].symbol.as_deref(), Some("exportName"));
+}
+
+#[test]
+fn validate_direction_allows_symbol_with_dependents() {
+    let args = parse(&["deps", "a.mts#alpha", "b.mts"]);
+    let root = fixture_root("simple");
+    let entrypoints = resolve_entrypoints(&args.files, &root, &root);
+    validate_direction(&Direction::Dependents, &entrypoints).unwrap();
+}
+
+#[test]
+fn validate_direction_rejects_symbol_with_deps() {
+    let args = parse(&["deps", "a.mts#alpha"]);
+    let root = fixture_root("simple");
+    let entrypoints = resolve_entrypoints(&args.files, &root, &root);
+    let err = validate_direction(&Direction::Deps, &entrypoints).unwrap_err();
+    assert!(format!("{err}").contains("#symbol"));
+}
+
+#[test]
+fn get_entries_supports_import_only_dependencies() {
+    let root = fixture_root("simple");
+    let raw_entrypoints = vec![PathBuf::from("a.mts")];
+    let entrypoints = resolve_entrypoints(&raw_entrypoints, &root, &root);
+    let roots = entrypoints
+        .iter()
+        .map(|ep| NodeId::File(ep.file.clone()))
+        .collect::<Vec<_>>();
+    let tsconfig = crate::codebase::ts_resolver::TsConfig {
+        dir: root.clone(),
+        paths: vec![],
+        paths_dir: root.clone(),
+        base_url: None,
+    };
+    let graph_files = graph::GraphFiles::discover(&root);
+    let ctx = TraversalCtx {
+        root: &root,
+        tsconfig: &tsconfig,
+        graph_files: &graph_files,
+        build_plan: graph::GraphBuildPlan::all(),
+        allowed: None,
+    };
+
+    let entries = get_entries(Direction::Deps, &roots, &entrypoints, None, true, &ctx);
+    assert!(!entries.is_empty());
+}
+
+#[test]
+fn get_entries_supports_symbol_dependents() {
+    let root = fixture_root("symbol-export");
+    let entrypoints = vec![
+        Entrypoint {
+            file: root.join("source.mts"),
+            symbol: Some("alpha".into()),
+        },
+        Entrypoint {
+            file: root.join("source.mts"),
+            symbol: None,
+        },
+    ];
+    let roots = entrypoints
+        .iter()
+        .map(|ep| NodeId::File(ep.file.clone()))
+        .collect::<Vec<_>>();
+    let tsconfig = crate::codebase::ts_resolver::TsConfig {
+        dir: root.clone(),
+        paths: vec![],
+        paths_dir: root.clone(),
+        base_url: None,
+    };
+    let graph_files = graph::GraphFiles::discover(&root);
+    let ctx = TraversalCtx {
+        root: &root,
+        tsconfig: &tsconfig,
+        graph_files: &graph_files,
+        build_plan: graph::GraphBuildPlan::all(),
+        allowed: None,
+    };
+
+    let entries = get_entries(
+        Direction::Dependents,
+        &roots,
+        &entrypoints,
+        None,
+        false,
+        &ctx,
+    );
+    assert!(!entries.is_empty());
+}
+
 // ── Integration: build graph from fixture ──────────────────────────────
 
 #[test]
