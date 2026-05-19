@@ -10,6 +10,8 @@ rules:
       - crates/no-mistakes-core/src/codebase/dependencies/graph.rs
       - crates/no-mistakes-core/src/codebase/dependencies/graph/playwright.rs
       - crates/no-mistakes-core/src/codebase/dependencies/graph/mod.rs
+      - crates/no-mistakes-core/src/codebase/dependencies/graph/tests.rs
+      - crates/no-mistakes-core/src/codebase/dependencies/tests.rs
       - crates/no-mistakes-core/src/codebase/dependencies/output.rs
       - crates/no-mistakes-core/src/codebase/dependencies/mod.rs
       - crates/no-mistakes-core/src/codebase/ts_resolver.rs
