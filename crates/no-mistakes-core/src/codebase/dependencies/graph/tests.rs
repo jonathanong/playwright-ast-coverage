@@ -1,5 +1,6 @@
 use super::*;
 
+mod config_edges;
 mod extra;
 
 fn p(s: &str) -> PathBuf {
