@@ -36,8 +36,9 @@ fn traverse(
     while let Some(node) = queue.pop_front() {
         for edge in neighbors(&node, direction, forward, reverse) {
             if !seen.contains(&edge.to) {
-                seen.insert(edge.to.clone());
-                queue.push_back(edge.to.clone());
+                let to = edge.to.clone();
+                seen.insert(to.clone());
+                queue.push_back(to);
             }
             out.push(edge);
         }

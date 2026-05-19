@@ -170,18 +170,62 @@ fn parse_entrypoint(s: &str) -> Entrypoint {
 pub fn run(args: TraverseArgs, direction: Direction) -> Result<()> {
     let mut timings = crate::codebase::timing::PhaseTimings::start();
     let cwd_early = std::env::current_dir().context("reading current directory")?;
-    let root = resolve_root(&args, &cwd_early);
+    let root = match &args.root {
+        Some(p) => {
+            if p.is_absolute() {
+                p.clone()
+            } else {
+                cwd_early.join(p)
+            }
+        }
+        None => cwd_early.clone(),
+    };
     let root = crate::codebase::ts_resolver::normalize_path(&root);
 
     let tsconfig = resolve_tsconfig(&args, &root)?;
-    let entrypoints = resolve_entrypoints(&args.files, &root, &cwd_early);
+
+    let cwd = cwd_early;
+
+    // Parse entrypoints, resolving to absolute paths.
+    // Relative paths are tried against --root first, then cwd as fallback.
+    let entrypoints: Vec<Entrypoint> = args
+        .files
+        .iter()
+        .map(|raw| {
+            let raw_str = raw.to_string_lossy();
+            let ep = parse_entrypoint(&raw_str);
+            let file = if ep.file.is_absolute() {
+                ep.file
+            } else {
+                let from_root = root.join(&ep.file);
+                if from_root.exists() {
+                    from_root
+                } else {
+                    cwd.join(ep.file)
+                }
+            };
+            Entrypoint {
+                file,
+                symbol: ep.symbol,
+            }
+        })
+        .collect();
 
     let root_strs: Vec<String> = args.files.iter().map(|f| f.display().to_string()).collect();
 
     timings.mark("search");
 
     // Check for #symbol used in Deps direction (unsupported).
-    validate_direction(&direction, &entrypoints)?;
+    if matches!(direction, Direction::Deps) {
+        for ep in &entrypoints {
+            if ep.symbol.is_some() {
+                bail!(
+                    "#symbol targeting (e.g. `file.mts#exportName`) is only supported \
+                     in the `dependents` direction. For `dependencies`, use a plain file path."
+                );
+            }
+        }
+    }
 
     let allowed = relationship_filter(&args.relationships);
     let build_plan = graph::GraphBuildPlan::from_allowed(allowed.as_ref());
@@ -193,22 +237,64 @@ pub fn run(args: TraverseArgs, direction: Direction) -> Result<()> {
         build_plan,
         allowed: allowed.as_ref(),
     };
-    let roots: Vec<NodeId> = entrypoints
-        .iter()
-        .map(|e| NodeId::File(e.file.clone()))
-        .collect();
-    let import_only = relationships_are_import_only(&args.relationships);
 
     timings.mark("ingest");
 
-    let entries = get_entries(
-        direction,
-        &roots,
-        &entrypoints,
-        args.depth,
-        import_only,
-        &ctx,
-    );
+    let entries = match direction {
+        Direction::Deps => {
+            let roots: Vec<NodeId> = entrypoints
+                .iter()
+                .map(|e| NodeId::File(e.file.clone()))
+                .collect();
+            deps_entries(&args, &roots, &ctx)
+        }
+        Direction::Dependents => {
+            let any_symbol = entrypoints.iter().any(|e| e.symbol.is_some());
+            let symbol_facts = any_symbol.then(|| {
+                crate::codebase::ts_source::facts::collect_ts_facts(
+                    graph_files.indexable(),
+                    crate::codebase::ts_source::facts::TsFactPlan::imports_and_symbols(),
+                )
+            });
+            let graph = build_dependents_graph(&ctx, symbol_facts.as_ref());
+            if any_symbol {
+                let mut all_entries: HashMap<NodeId, graph::NodeEntry> = HashMap::new();
+                let facts = symbol_facts
+                    .as_ref()
+                    .expect("symbol facts are collected for symbol queries");
+                let symbol_index =
+                    graph::SymbolIndex::build_from_facts(&tsconfig, &graph_files, facts);
+                for ep in &entrypoints {
+                    if let Some(sym) = &ep.symbol {
+                        let entries = graph.dependents_of_symbol(
+                            &ep.file,
+                            sym,
+                            args.depth,
+                            allowed.as_ref(),
+                            &symbol_index,
+                        );
+                        merge_node_entries(&mut all_entries, entries);
+                    } else {
+                        let entries = graph.dependents_of(
+                            std::slice::from_ref(&NodeId::File(ep.file.clone())),
+                            args.depth,
+                            allowed.as_ref(),
+                        );
+                        merge_node_entries(&mut all_entries, entries);
+                    }
+                }
+                let mut entries: Vec<_> = all_entries.into_values().collect();
+                sort_node_entries(&mut entries, &root);
+                entries
+            } else {
+                let roots: Vec<NodeId> = entrypoints
+                    .iter()
+                    .map(|e| NodeId::File(e.file.clone()))
+                    .collect();
+                graph.dependents_of(&roots, args.depth, allowed.as_ref())
+            }
+        }
+    };
 
     timings.mark("parse");
 
@@ -261,65 +347,19 @@ fn resolve_tsconfig(args: &TraverseArgs, root: &Path) -> Result<TsConfig> {
     }
 }
 
-fn resolve_root(args: &TraverseArgs, cwd: &Path) -> PathBuf {
-    match &args.root {
-        Some(p) => {
-            if p.is_absolute() {
-                p.clone()
-            } else {
-                cwd.join(p)
-            }
-        }
-        None => cwd.to_path_buf(),
-    }
-}
-
-fn resolve_entrypoints(raw_entrypoints: &[PathBuf], root: &Path, cwd: &Path) -> Vec<Entrypoint> {
-    raw_entrypoints
-        .iter()
-        .map(|raw| {
-            let raw_str = raw.to_string_lossy();
-            let ep = parse_entrypoint(&raw_str);
-            let file = if ep.file.is_absolute() {
-                ep.file
-            } else {
-                let from_root = root.join(&ep.file);
-                if from_root.exists() {
-                    from_root
-                } else {
-                    cwd.join(ep.file)
-                }
-            };
-            Entrypoint {
-                file,
-                symbol: ep.symbol,
-            }
-        })
-        .collect()
-}
-
-fn validate_direction(direction: &Direction, entrypoints: &[Entrypoint]) -> Result<()> {
-    if matches!(direction, Direction::Deps) {
-        for ep in entrypoints {
-            if ep.symbol.is_some() {
-                bail!(
-                    "#symbol targeting (e.g. `file.mts#exportName`) is only supported \
-                     in the `dependents` direction. For `dependencies`, use a plain file path."
-                );
-            }
-        }
-    }
-    Ok(())
-}
-
 fn deps_entries(
-    depth: Option<usize>,
-    import_only: bool,
+    args: &TraverseArgs,
     roots: &[NodeId],
     ctx: &TraversalCtx<'_>,
 ) -> Vec<graph::NodeEntry> {
-    if import_only {
-        graph::lazy_import_deps_of_with_files(roots, ctx.root, ctx.tsconfig, depth, ctx.graph_files)
+    if relationships_are_import_only(&args.relationships) {
+        graph::lazy_import_deps_of_with_files(
+            roots,
+            ctx.root,
+            ctx.tsconfig,
+            args.depth,
+            ctx.graph_files,
+        )
     } else {
         graph::DepGraph::build_with_plan_and_files(
             ctx.root,
@@ -327,84 +367,8 @@ fn deps_entries(
             ctx.build_plan,
             ctx.graph_files,
         )
-        .deps_of(roots, depth, ctx.allowed)
+        .deps_of(roots, args.depth, ctx.allowed)
     }
-}
-
-fn get_entries(
-    direction: Direction,
-    roots: &[NodeId],
-    entrypoints: &[Entrypoint],
-    depth: Option<usize>,
-    import_only: bool,
-    ctx: &TraversalCtx<'_>,
-) -> Vec<graph::NodeEntry> {
-    match direction {
-        Direction::Deps => deps_entries(depth, import_only, roots, ctx),
-        Direction::Dependents => dependents_entries(entrypoints, roots, depth, ctx),
-    }
-}
-
-fn dependents_entries(
-    entrypoints: &[Entrypoint],
-    roots: &[NodeId],
-    depth: Option<usize>,
-    ctx: &TraversalCtx<'_>,
-) -> Vec<graph::NodeEntry> {
-    let any_symbol = entrypoints.iter().any(|e| e.symbol.is_some());
-    let symbol_facts = any_symbol.then(|| {
-        crate::codebase::ts_source::facts::collect_ts_facts(
-            ctx.graph_files.indexable(),
-            crate::codebase::ts_source::facts::TsFactPlan::imports_and_symbols(),
-        )
-    });
-    let graph = build_dependents_graph(ctx, symbol_facts.as_ref());
-    if any_symbol {
-        let facts = symbol_facts
-            .as_ref()
-            .expect("symbol facts are collected for symbol queries");
-        let symbol_index =
-            graph::SymbolIndex::build_from_facts(ctx.tsconfig, ctx.graph_files, facts);
-        resolve_symbol_dependents(
-            ctx.root,
-            entrypoints,
-            depth,
-            ctx.allowed,
-            &graph,
-            &symbol_index,
-        )
-    } else {
-        graph.dependents_of(roots, depth, ctx.allowed)
-    }
-}
-
-fn resolve_symbol_dependents(
-    root: &Path,
-    entrypoints: &[Entrypoint],
-    depth: Option<usize>,
-    allowed: Option<&std::collections::HashSet<EdgeKind>>,
-    graph: &graph::DepGraph,
-    symbol_index: &graph::SymbolIndex,
-) -> Vec<graph::NodeEntry> {
-    let mut all_entries: HashMap<NodeId, graph::NodeEntry> = HashMap::new();
-    let plain_roots: Vec<_> = entrypoints
-        .iter()
-        .filter(|ep| ep.symbol.is_none())
-        .map(|ep| NodeId::File(ep.file.clone()))
-        .collect();
-    if !plain_roots.is_empty() {
-        let entries = graph.dependents_of(&plain_roots, depth, allowed);
-        merge_node_entries(&mut all_entries, entries);
-    }
-    for ep in entrypoints {
-        if let Some(sym) = &ep.symbol {
-            let entries = graph.dependents_of_symbol(&ep.file, sym, depth, allowed, symbol_index);
-            merge_node_entries(&mut all_entries, entries);
-        }
-    }
-    let mut entries: Vec<_> = all_entries.into_values().collect();
-    sort_node_entries(&mut entries, root);
-    entries
 }
 
 fn build_dependents_graph(
