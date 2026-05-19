@@ -289,6 +289,16 @@ fn discovery_skips_dependency_and_build_directories() {
 }
 
 #[test]
+fn missing_root_with_shared_facts_returns_empty_report() {
+    let root = fixture("does-not-exist");
+    let facts = crate::codebase::check_facts::CheckFactMap::default();
+    let report = analyze_project_with_facts(&root, None, &[], &facts).unwrap();
+    assert!(report.edges.is_empty());
+    assert!(report.producers.is_empty());
+    assert!(report.workers.is_empty());
+}
+
+#[test]
 fn shared_facts_filter_excludes_non_matching_files() {
     let root = fixture("basic");
     let files = crate::codebase::ts_source::discover_files(&root, &[]);
