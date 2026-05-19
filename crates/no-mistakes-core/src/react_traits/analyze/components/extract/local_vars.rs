@@ -15,19 +15,19 @@ pub(in super::super) fn collect_local_vars<'a>(program: &'a Program<'a>) -> Hash
                 });
             }
             Statement::FunctionDeclaration(f) => {
-                if let Some(id) = &f.id {
-                    let name = id.name.as_ref();
-                    if is_component_name(name) {
-                        local_vars.insert(name, f.span);
-                    }
+                if let Some(id) =
+                    f.id.as_ref()
+                        .filter(|id| is_component_name(id.name.as_ref()))
+                {
+                    local_vars.insert(id.name.as_ref(), f.span);
                 }
             }
             Statement::ClassDeclaration(c) => {
-                if let Some(id) = &c.id {
-                    let name = id.name.as_ref();
-                    if is_component_name(name) && is_class_component(c) {
-                        local_vars.insert(name, c.span);
-                    }
+                if let Some(id) =
+                    c.id.as_ref()
+                        .filter(|id| is_component_name(id.name.as_ref()) && is_class_component(c))
+                {
+                    local_vars.insert(id.name.as_ref(), c.span);
                 }
             }
             Statement::ExportNamedDeclaration(export) => {
@@ -48,11 +48,11 @@ fn collect_local_export_declaration<'a>(
     };
     match decl {
         Declaration::FunctionDeclaration(f) => {
-            if let Some(id) = &f.id {
-                let name = id.name.as_ref();
-                if is_component_name(name) {
-                    local_vars.insert(name, f.span);
-                }
+            if let Some(id) =
+                f.id.as_ref()
+                    .filter(|id| is_component_name(id.name.as_ref()))
+            {
+                local_vars.insert(id.name.as_ref(), f.span);
             }
         }
         Declaration::VariableDeclaration(v) => {
@@ -61,11 +61,11 @@ fn collect_local_export_declaration<'a>(
             });
         }
         Declaration::ClassDeclaration(c) => {
-            if let Some(id) = &c.id {
-                let name = id.name.as_ref();
-                if is_component_name(name) && is_class_component(c) {
-                    local_vars.insert(name, c.span);
-                }
+            if let Some(id) =
+                c.id.as_ref()
+                    .filter(|id| is_component_name(id.name.as_ref()) && is_class_component(c))
+            {
+                local_vars.insert(id.name.as_ref(), c.span);
             }
         }
         _ => {}
