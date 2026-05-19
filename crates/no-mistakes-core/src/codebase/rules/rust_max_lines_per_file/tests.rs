@@ -53,6 +53,33 @@ fn count_code_lines_doc_comment() {
 }
 
 #[test]
+fn count_code_lines_string_with_block_comment_marker() {
+    // "/*" inside a string must not open a block comment
+    let src = "let s = \"/*\";\nfn foo() {}\n";
+    assert_eq!(count_code_lines(src), 2);
+}
+
+#[test]
+fn count_code_lines_string_with_line_comment_marker() {
+    // "//" inside a string must not break the line
+    let src = "let s = \"//\";\n";
+    assert_eq!(count_code_lines(src), 1);
+}
+
+#[test]
+fn count_code_lines_escaped_quote_in_string() {
+    // Escaped quote must not close the string early
+    let src = "let s = \"\\\"/*\\\"\";\nfn foo() {}\n";
+    assert_eq!(count_code_lines(src), 2);
+}
+
+#[test]
+fn count_code_lines_char_with_slash() {
+    let src = "let c = '/';\n";
+    assert_eq!(count_code_lines(src), 1);
+}
+
+#[test]
 fn is_test_file_tests_dir() {
     let root = Path::new("/project");
     let path = Path::new("/project/crates/foo/tests/integration.rs");
