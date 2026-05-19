@@ -125,6 +125,15 @@ fn check_respects_excludes() {
 }
 
 #[test]
+fn check_file_skips_unreadable_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("missing.rs");
+    // Path does not exist → read_to_string fails → returns None
+    let finding = check_file(&path, tmp.path(), 5);
+    assert!(finding.is_none());
+}
+
+#[test]
 fn check_respects_disable_file_comment() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("big.rs");

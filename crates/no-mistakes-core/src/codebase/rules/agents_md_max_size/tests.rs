@@ -126,6 +126,15 @@ fn check_returns_empty_when_no_files() {
 }
 
 #[test]
+fn check_file_skips_unreadable_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("AGENTS.md");
+    // Path does not exist → read_to_string fails → returns empty
+    let findings = check_file(&path, tmp.path(), 2, 100);
+    assert!(findings.is_empty());
+}
+
+#[test]
 fn check_sorts_findings_deterministically() {
     let tmp = tempfile::tempdir().unwrap();
     std::fs::write(tmp.path().join("AGENTS.md"), "a\nb\nc\n").unwrap();

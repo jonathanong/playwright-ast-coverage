@@ -317,3 +317,66 @@ fn run_filesystem_rules_returns_empty_when_not_configured() {
     let findings = run_filesystem_rules(root, None).unwrap();
     assert!(findings.is_empty());
 }
+
+#[test]
+fn run_filesystem_rules_executes_enabled_agents_md_rule() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let big: String = "line\n".repeat(300);
+    std::fs::write(root.join("AGENTS.md"), big).unwrap();
+    let config_file = tempfile::Builder::new()
+        .suffix(".yml")
+        .tempfile_in(root)
+        .unwrap();
+    std::fs::write(
+        config_file.path(),
+        "rules:\n  agents-md-max-size:\n    enabled: true\n    maxLines: 5\n",
+    )
+    .unwrap();
+    let findings = run_filesystem_rules(root, Some(config_file.path())).unwrap();
+    assert!(!findings.is_empty());
+    assert!(findings.iter().any(|f| f.rule == AGENTS_MD_MAX_SIZE));
+}
+
+#[test]
+fn run_filesystem_rules_executes_enabled_rust_max_lines_rule() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let big: String = (0..10).map(|i| format!("fn f{i}() {{}}\n")).collect();
+    std::fs::write(root.join("big.rs"), big).unwrap();
+    let config_file = tempfile::Builder::new()
+        .suffix(".yml")
+        .tempfile_in(root)
+        .unwrap();
+    std::fs::write(
+        config_file.path(),
+        "rules:\n  rust-max-lines-per-file:\n    enabled: true\n    srcMax: 3\n",
+    )
+    .unwrap();
+    let findings = run_filesystem_rules(root, Some(config_file.path())).unwrap();
+    assert!(!findings.is_empty());
+    assert!(findings.iter().any(|f| f.rule == RUST_MAX_LINES_PER_FILE));
+}
+
+#[test]
+fn run_filesystem_rules_executes_enabled_rust_no_inline_tests_rule() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("lib.rs"),
+        "pub fn ok() {}\n#[cfg(test)]\nmod tests {\n}\n",
+    )
+    .unwrap();
+    let config_file = tempfile::Builder::new()
+        .suffix(".yml")
+        .tempfile_in(root)
+        .unwrap();
+    std::fs::write(
+        config_file.path(),
+        "rules:\n  rust-no-inline-tests:\n    enabled: true\n",
+    )
+    .unwrap();
+    let findings = run_filesystem_rules(root, Some(config_file.path())).unwrap();
+    assert!(!findings.is_empty());
+    assert!(findings.iter().any(|f| f.rule == RUST_NO_INLINE_TESTS));
+}
