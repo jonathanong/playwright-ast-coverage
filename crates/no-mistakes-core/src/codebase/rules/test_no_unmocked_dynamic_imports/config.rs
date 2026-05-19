@@ -95,8 +95,7 @@ pub fn precompute_setup_data(
     for config_file in config_files(root, config) {
         let source = std::fs::read_to_string(&config_file.path)?;
         let base = config_file.path.parent().unwrap_or(root);
-        let includes =
-            normalize_matcher_patterns(root, base, config_file.includes(&source));
+        let includes = normalize_matcher_patterns(root, base, config_file.includes(&source));
         let excludes = normalize_matcher_patterns(
             root,
             base,
@@ -108,7 +107,10 @@ pub fn precompute_setup_data(
             exclude: build_globset(&excludes)?,
         };
         let setup_files = setup_files_from_configs(root, vec![config_file.path])?;
-        result.push(ConfigSetupData { filter, setup_files });
+        result.push(ConfigSetupData {
+            filter,
+            setup_files,
+        });
     }
     Ok(result)
 }

@@ -63,7 +63,11 @@ pub fn check_with_facts(
             };
             let mut mocks = manual_mocks.clone();
             mocks.extend(setup_mocks_with_facts(
-                root, &setup_data, &file, &resolver, shared,
+                root,
+                &setup_data,
+                &file,
+                &resolver,
+                shared,
             )?);
             mocks.extend(resolve_mock_specifiers(
                 &facts.mock_specifiers,
