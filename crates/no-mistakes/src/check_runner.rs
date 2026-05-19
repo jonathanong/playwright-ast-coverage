@@ -1,5 +1,7 @@
 use crate::check_parallel::run_domain_checks;
-use crate::check_tasks::{filesystem_rules_configured, queues_configured, unique_exports_configured};
+use crate::check_tasks::{
+    filesystem_rules_configured, queues_configured, unique_exports_configured,
+};
 use anyhow::Result;
 use no_mistakes_core::codebase::check_facts::{collect_check_facts, CheckFactPlan};
 use no_mistakes_core::config::v2::load_v2_config;

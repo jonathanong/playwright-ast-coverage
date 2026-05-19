@@ -1,7 +1,7 @@
 use super::*;
-use anyhow::anyhow;
 use crate::check_parallel::DomainResults;
 use crate::check_tasks::CheckTask;
+use anyhow::anyhow;
 use no_mistakes_core::codebase::rules::{
     RuleFinding, RUST_MAX_LINES_PER_FILE, RUST_NO_INLINE_TESTS,
 };
