@@ -99,6 +99,7 @@ pub fn check_with_facts(
                     resolver: &resolver,
                     graph: &graph,
                     shared: Some(shared),
+                    file_cache: None,
                 },
                 &file,
                 &mocks,

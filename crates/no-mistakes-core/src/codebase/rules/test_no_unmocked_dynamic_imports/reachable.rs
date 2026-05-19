@@ -12,6 +12,11 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+pub(super) struct CachedFileFacts {
+    pub(super) source: String,
+    pub(super) dynamic_imports: Vec<ast::DynamicImport>,
+}
+
 pub(super) fn check(
     ctx: ReachableContext<'_>,
     test_file: &Path,
@@ -59,12 +64,10 @@ pub(super) fn check(
                 }
             }
         }
-        let source = std::fs::read_to_string(file)
-            .context(format!("failed to read dependency file {}", file.display()))?;
-        if has_disable_file_comment(&source, RULE_ID) {
+        let cached = get_or_cache_file(file, ctx.file_cache)?;
+        if has_disable_file_comment(&cached.source, RULE_ID) {
             continue;
         }
-        let facts = ast::extract(file, &source)?;
         let mut check_context = DynamicCheckContext {
             root: ctx.root,
             file,
@@ -74,11 +77,11 @@ pub(super) fn check(
             dependency_cache,
             findings,
         };
-        for import in facts.dynamic_imports {
-            if has_disable_comment(&source, import.line as u32, RULE_ID) {
+        for import in &cached.dynamic_imports {
+            if has_disable_comment(&cached.source, import.line as u32, RULE_ID) {
                 continue;
             }
-            check_dynamic_import(&mut check_context, import);
+            check_dynamic_import(&mut check_context, import.clone());
         }
     }
     Ok(())
@@ -90,6 +93,34 @@ pub(super) struct ReachableContext<'a> {
     pub(super) resolver: &'a ImportResolver<'a>,
     pub(super) graph: &'a DepGraph,
     pub(super) shared: Option<&'a CheckFactMap>,
+    pub(super) file_cache: Option<&'a DashMap<PathBuf, Arc<CachedFileFacts>>>,
+}
+
+fn get_or_cache_file(
+    file: &PathBuf,
+    cache: Option<&DashMap<PathBuf, Arc<CachedFileFacts>>>,
+) -> Result<Arc<CachedFileFacts>> {
+    if let Some(cache) = cache {
+        if let Some(cached) = cache.get(file) {
+            return Ok(cached.clone());
+        }
+        let source = std::fs::read_to_string(file)
+            .context(format!("failed to read dependency file {}", file.display()))?;
+        let facts = ast::extract(file, &source)?;
+        let arc = Arc::new(CachedFileFacts {
+            source,
+            dynamic_imports: facts.dynamic_imports,
+        });
+        cache.insert(file.clone(), arc.clone());
+        return Ok(arc);
+    }
+    let source = std::fs::read_to_string(file)
+        .context(format!("failed to read dependency file {}", file.display()))?;
+    let facts = ast::extract(file, &source)?;
+    Ok(Arc::new(CachedFileFacts {
+        source,
+        dynamic_imports: facts.dynamic_imports,
+    }))
 }
 
 fn is_under_skipped_dir(root: &Path, config: &NoMistakesConfig, file: &Path) -> bool {

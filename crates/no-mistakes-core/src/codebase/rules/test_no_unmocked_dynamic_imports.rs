@@ -17,7 +17,7 @@ use crate::config::v2::NoMistakesConfig;
 use anyhow::{Context, Result};
 use dashmap::DashMap;
 use runtime::runtime_deps;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 pub use with_facts::check_with_facts;
@@ -47,10 +47,13 @@ pub(super) fn check_inner(
 ) -> Result<Vec<RuleFinding>> {
     let resolver = ImportResolver::new(tsconfig);
     let dependency_cache: DashMap<PathBuf, Arc<Vec<PathBuf>>> = DashMap::new();
+    let file_cache: DashMap<PathBuf, Arc<reachable::CachedFileFacts>> = DashMap::new();
     let mut findings = Vec::new();
     let setup_data = config::precompute_setup_data(root, config)?;
+    let test_files = matching_test_files(root, files, config)?;
+    let setup_mock_map = precompute_setup_mock_map(root, &test_files, &setup_data, &resolver)?;
 
-    for file in matching_test_files(root, files, config)? {
+    for file in test_files {
         let source = std::fs::read_to_string(&file)
             .context(format!("failed to read test file {}", file.display()))?;
         if has_disable_file_comment(&source, RULE_ID) {
@@ -58,7 +61,7 @@ pub(super) fn check_inner(
         }
         let facts = ast::extract(&file, &source)?;
         let mut mocks = manual_mocks.clone();
-        mocks.extend(setup_mocks(root, &setup_data, &file, &resolver)?);
+        mocks.extend(setup_mocks(root, &setup_data, &file, &setup_mock_map));
         mocks.extend(resolve_mock_specifiers(
             &facts.mock_specifiers,
             &file,
@@ -86,6 +89,7 @@ pub(super) fn check_inner(
                 resolver: &resolver,
                 graph,
                 shared: None,
+                file_cache: Some(&file_cache),
             },
             &file,
             &mocks,
@@ -128,25 +132,47 @@ fn resolve_mock_specifiers(
         .collect()
 }
 
+fn precompute_setup_mock_map(
+    root: &Path,
+    test_files: &[PathBuf],
+    setup_data: &[config::ConfigSetupData],
+    resolver: &ImportResolver<'_>,
+) -> Result<HashMap<PathBuf, HashSet<PathBuf>>> {
+    let unique_setups: HashSet<PathBuf> = test_files
+        .iter()
+        .flat_map(|f| {
+            let rel = crate::codebase::ts_source::relative_slash_path(root, f);
+            config::setup_files_for_test_precomputed(&rel, setup_data)
+        })
+        .collect();
+    unique_setups
+        .into_iter()
+        .map(|setup| {
+            let source = std::fs::read_to_string(&setup)
+                .context(format!("failed to read setup file {}", setup.display()))?;
+            let facts = ast::extract(&setup, &source)?;
+            Ok((
+                setup.clone(),
+                resolve_mock_specifiers(&facts.mock_specifiers, &setup, resolver),
+            ))
+        })
+        .collect()
+}
+
 fn setup_mocks(
     root: &Path,
     setup_data: &[config::ConfigSetupData],
     test_file: &Path,
-    resolver: &ImportResolver<'_>,
-) -> Result<HashSet<PathBuf>> {
-    let mut mocks = HashSet::new();
+    mock_map: &HashMap<PathBuf, HashSet<PathBuf>>,
+) -> HashSet<PathBuf> {
     let rel_path = crate::codebase::ts_source::relative_slash_path(root, test_file);
+    let mut mocks = HashSet::new();
     for setup in config::setup_files_for_test_precomputed(&rel_path, setup_data) {
-        let source = std::fs::read_to_string(&setup)
-            .context(format!("failed to read setup file {}", setup.display()))?;
-        let facts = ast::extract(&setup, &source)?;
-        mocks.extend(resolve_mock_specifiers(
-            &facts.mock_specifiers,
-            &setup,
-            resolver,
-        ));
+        if let Some(m) = mock_map.get(&setup) {
+            mocks.extend(m.iter().cloned());
+        }
     }
-    Ok(mocks)
+    mocks
 }
 
 fn matching_test_files(
