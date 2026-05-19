@@ -62,6 +62,7 @@ impl Default for TsFactContext {
     }
 }
 
+#[derive(Default)]
 pub(crate) struct DomainFacts {
     pub route_refs: Vec<RouteRef>,
     pub backend_routes: Vec<(String, u32)>,

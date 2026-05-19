@@ -59,8 +59,7 @@ impl TsFactPlan {
     }
 
     pub fn has_domain_facts(self) -> bool {
-        self.source
-            || self.route_refs
+        self.route_refs
             || self.backend_routes
             || self.queue_usage
             || self.queue_factory
@@ -86,6 +85,10 @@ pub struct TsFileFacts {
 pub type TsFactMap = HashMap<PathBuf, TsFileFacts>;
 
 pub fn collect_ts_facts(files: &[PathBuf], plan: TsFactPlan) -> TsFactMap {
+    assert!(
+        !plan.has_domain_facts(),
+        "domain fact plans require collect_ts_facts_with_context"
+    );
     collect_ts_facts_with_context(files, plan, &TsFactContext::default())
 }
 
@@ -126,7 +129,11 @@ fn collect_file_facts(
     let symbols = plan
         .symbols
         .then(|| extract_symbols_from_program(&parsed.program, &source));
-    let domain = domain::collect_domain_facts(&parsed.program, path, &source, plan, context);
+    let domain = if plan.has_domain_facts() {
+        domain::collect_domain_facts(&parsed.program, path, &source, plan, context)
+    } else {
+        domain::DomainFacts::default()
+    };
     Some(TsFileFacts {
         source: plan.source.then_some(source),
         imports,

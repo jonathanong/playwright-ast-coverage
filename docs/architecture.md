@@ -4,8 +4,7 @@
 architecture is optimized for AI agents that need reliable project facts while
 spending as few tokens and CPU cycles as possible.
 
-This document codifies the performance architecture behind issues #126, #130,
-#132, and #133.
+This document codifies the performance architecture behind issues `#126`, `#130`, `#132`, and `#133`.
 
 ## Core Decisions
 

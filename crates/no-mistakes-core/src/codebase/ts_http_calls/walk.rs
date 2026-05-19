@@ -1,7 +1,7 @@
 use super::HttpCall;
 use crate::codebase::ts_routes::refs::normalize_template;
 use crate::codebase::ts_source::{byte_offset_to_line, unwrap_ts_wrappers};
-use oxc::ast::ast::{Argument, Declaration, Expression, Program, Statement};
+use oxc::ast::ast::{Argument, Declaration, Expression, ForStatementInit, Program, Statement};
 
 const HTTP_VERBS: &[&str] = &["get", "post", "put", "patch", "delete", "head", "options"];
 
@@ -56,6 +56,7 @@ fn collect_from_stmt(stmt: &Statement, source: &str, prefixes: &[&str], out: &mu
             collect_from_expr_kind(&e.declaration, source, prefixes, out);
         }
         Statement::IfStatement(i) => {
+            collect_from_expr(&i.test, source, prefixes, out);
             collect_from_stmt(&i.consequent, source, prefixes, out);
             if let Some(alt) = &i.alternate {
                 collect_from_stmt(alt, source, prefixes, out);
@@ -70,21 +71,53 @@ fn collect_from_stmt(stmt: &Statement, source: &str, prefixes: &[&str], out: &mu
                     collect_from_stmt(s, source, prefixes, out);
                 }
             }
+            if let Some(finalizer) = &t.finalizer {
+                for s in &finalizer.body {
+                    collect_from_stmt(s, source, prefixes, out);
+                }
+            }
         }
         Statement::ForStatement(f) => {
-            if let Some(oxc::ast::ast::ForStatementInit::VariableDeclaration(v)) = &f.init {
-                for decl in &v.declarations {
-                    if let Some(init) = &decl.init {
-                        collect_from_expr(init, source, prefixes, out);
+            if let Some(init) = &f.init {
+                match init {
+                    ForStatementInit::VariableDeclaration(v) => {
+                        for decl in &v.declarations {
+                            if let Some(init) = &decl.init {
+                                collect_from_expr(init, source, prefixes, out);
+                            }
+                        }
+                    }
+                    other => {
+                        if let Some(expr) = other.as_expression() {
+                            collect_from_expr(expr, source, prefixes, out);
+                        }
                     }
                 }
             }
+            if let Some(test) = &f.test {
+                collect_from_expr(test, source, prefixes, out);
+            }
+            if let Some(update) = &f.update {
+                collect_from_expr(update, source, prefixes, out);
+            }
             collect_from_stmt(&f.body, source, prefixes, out);
         }
-        Statement::ForInStatement(f) => collect_from_stmt(&f.body, source, prefixes, out),
-        Statement::ForOfStatement(f) => collect_from_stmt(&f.body, source, prefixes, out),
-        Statement::WhileStatement(w) => collect_from_stmt(&w.body, source, prefixes, out),
-        Statement::DoWhileStatement(d) => collect_from_stmt(&d.body, source, prefixes, out),
+        Statement::ForInStatement(f) => {
+            collect_from_expr(&f.right, source, prefixes, out);
+            collect_from_stmt(&f.body, source, prefixes, out);
+        }
+        Statement::ForOfStatement(f) => {
+            collect_from_expr(&f.right, source, prefixes, out);
+            collect_from_stmt(&f.body, source, prefixes, out);
+        }
+        Statement::WhileStatement(w) => {
+            collect_from_expr(&w.test, source, prefixes, out);
+            collect_from_stmt(&w.body, source, prefixes, out);
+        }
+        Statement::DoWhileStatement(d) => {
+            collect_from_stmt(&d.body, source, prefixes, out);
+            collect_from_expr(&d.test, source, prefixes, out);
+        }
         _ => {}
     }
 }
@@ -168,6 +201,7 @@ fn collect_from_expr(expr: &Expression, source: &str, prefixes: &[&str], out: &m
             }
         }
         Expression::ConditionalExpression(cond) => {
+            collect_from_expr(&cond.test, source, prefixes, out);
             collect_from_expr(&cond.consequent, source, prefixes, out);
             collect_from_expr(&cond.alternate, source, prefixes, out);
         }

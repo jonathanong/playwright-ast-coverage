@@ -26,12 +26,13 @@ fn plan_domain_fact_detection_tracks_domain_flags() {
         ..TsFactPlan::default()
     }
     .has_domain_facts());
+    assert!(!TsFactPlan {
+        source: true,
+        ..TsFactPlan::default()
+    }
+    .has_domain_facts());
 
     for plan in [
-        TsFactPlan {
-            source: true,
-            ..TsFactPlan::default()
-        },
         TsFactPlan {
             route_refs: true,
             ..TsFactPlan::default()
@@ -59,6 +60,33 @@ fn plan_domain_fact_detection_tracks_domain_flags() {
     ] {
         assert!(plan.has_domain_facts());
     }
+}
+
+#[test]
+#[should_panic(expected = "domain fact plans require collect_ts_facts_with_context")]
+fn collect_ts_facts_rejects_context_required_domain_plans() {
+    let ts = fixture("imports.ts");
+    let _facts = collect_ts_facts(
+        std::slice::from_ref(&ts),
+        TsFactPlan {
+            http_calls: true,
+            ..TsFactPlan::default()
+        },
+    );
+}
+
+#[test]
+fn collect_ts_facts_can_include_source_without_domain_context() {
+    let ts = fixture("imports.ts");
+    let facts = collect_ts_facts(
+        std::slice::from_ref(&ts),
+        TsFactPlan {
+            source: true,
+            ..TsFactPlan::default()
+        },
+    );
+
+    assert!(facts[&ts].source.as_deref().unwrap_or("").contains("import"));
 }
 
 #[test]
