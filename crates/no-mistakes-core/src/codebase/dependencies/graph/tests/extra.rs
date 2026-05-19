@@ -462,13 +462,15 @@ fn queue_edges_cover_disk_fallback_without_precomputed_facts() {
     assert!(forward
         .get(&NodeId::File(send_email))
         .map(|edges| {
-            edges.iter().any(|(node, kind)| matches!(
-                (node, kind),
-                (
-                    NodeId::QueueJob { queue_file, job },
-                    EdgeKind::QueueEnqueue
-                ) if queue_file == &emails && job == "sendWelcomeEmail"
-            ))
+            edges.iter().any(|(node, kind)| {
+                matches!(
+                    (node, kind),
+                    (
+                        NodeId::QueueJob { queue_file, job },
+                        EdgeKind::QueueEnqueue
+                    ) if queue_file == &emails && job == "sendWelcomeEmail"
+                )
+            })
         })
         .unwrap_or(false));
     let queue_job = NodeId::QueueJob {
