@@ -89,7 +89,7 @@ jobs:
         run: |
           mkdir -p target/llvm-cov
           cargo llvm-cov --workspace --all-features \
-            --fail-under-lines 99 --fail-under-functions 99 --show-missing-lines --lcov --output-path target/llvm-cov/lcov.info
+            --fail-under-lines 100 --fail-under-functions 100 --show-missing-lines --lcov --output-path target/llvm-cov/lcov.info
 
       - name: Install cargo-crap
         uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2.77.6

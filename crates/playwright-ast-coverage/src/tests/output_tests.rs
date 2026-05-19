@@ -1,5 +1,5 @@
 use crate::analysis::output::{build_related_report, print_coverage_text, print_edges_text};
-use crate::analysis::tests_report::print_tests_text;
+use crate::analysis::tests_report::{build_tests_report, print_tests_text};
 use crate::analysis::types::{
     CoverageFetch, CoverageReport, CoverageRoute, CoverageSelector, DuplicateSelector, Edge,
     EdgeReport, Summary, TestEntry, TestsReport,
@@ -166,6 +166,33 @@ fn print_tests_text_covers_html_ids() {
 }
 
 #[test]
+fn print_tests_text_with_describe_path_and_unnamed_entry() {
+    let report = TestsReport {
+        tests: vec![
+            TestEntry {
+                file: "tests/e2e/app.spec.ts".to_string(),
+                name: Some("my test".to_string()),
+                describe_path: vec!["Suite".to_string(), "Nested".to_string()],
+                test_ids: vec![],
+                html_ids: vec![],
+                routes: vec!["/".to_string()],
+                fetch_apis: vec!["GET /api/data".to_string()],
+            },
+            TestEntry {
+                file: "tests/e2e/app.spec.ts".to_string(),
+                name: None,
+                describe_path: vec![],
+                test_ids: vec![],
+                html_ids: vec![],
+                routes: vec![],
+                fetch_apis: vec![],
+            },
+        ],
+    };
+    print_tests_text(&report);
+}
+
+#[test]
 fn edge_report_json_schema_is_stable_with_arc_fields() {
     let report = EdgeReport {
         edges: vec![
@@ -230,4 +257,85 @@ fn edge_report_json_schema_is_stable_with_arc_fields() {
     assert_eq!(fetch["path"], "/api/health");
     assert_eq!(fetch["side"], "server");
     assert!(fetch["cached"].as_bool().is_some_and(|cached| !cached));
+}
+
+#[test]
+fn build_tests_report_produces_entries_with_routes_and_fetch_apis() {
+    let root = std::path::Path::new("/repo");
+    let edges = vec![
+        Edge::Route {
+            test_file: std::sync::Arc::new("tests/e2e/app.spec.ts".to_string()),
+            test_name: Some(std::sync::Arc::new("visits home".to_string())),
+            describe_path: std::sync::Arc::new(vec!["Suite".to_string()]),
+            route_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
+            route: std::sync::Arc::new("/".to_string()),
+            url: std::sync::Arc::new("/".to_string()),
+        },
+        Edge::Fetch {
+            test_file: std::sync::Arc::new("tests/e2e/app.spec.ts".to_string()),
+            test_name: Some(std::sync::Arc::new("visits home".to_string())),
+            describe_path: std::sync::Arc::new(vec!["Suite".to_string()]),
+            route_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
+            route: std::sync::Arc::new("/".to_string()),
+            method: "GET".to_string(),
+            path: "/api/health".to_string(),
+            side: "server".to_string(),
+            cached: false,
+        },
+    ];
+    let report = build_tests_report(&edges, &[], root);
+    assert_eq!(report.tests.len(), 1);
+    assert_eq!(report.tests[0].name.as_deref(), Some("visits home"));
+    assert_eq!(report.tests[0].describe_path, vec!["Suite".to_string()]);
+    assert!(report.tests[0].routes.contains(&"/".to_string()));
+    assert!(report.tests[0]
+        .fetch_apis
+        .contains(&"GET /api/health".to_string()));
+}
+
+#[test]
+fn build_tests_report_groups_selector_edges_by_attribute() {
+    let root = std::path::Path::new("/repo");
+    let edges = vec![
+        Edge::Selector {
+            test_file: std::sync::Arc::new("tests/e2e/app.spec.ts".to_string()),
+            test_name: Some(std::sync::Arc::new("visits home".to_string())),
+            describe_path: std::sync::Arc::new(vec![]),
+            app_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
+            attribute: "id".to_string(),
+            value: "main-nav".to_string(),
+            selector: "#main-nav".to_string(),
+        },
+        Edge::Selector {
+            test_file: std::sync::Arc::new("tests/e2e/app.spec.ts".to_string()),
+            test_name: Some(std::sync::Arc::new("visits home".to_string())),
+            describe_path: std::sync::Arc::new(vec![]),
+            app_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
+            attribute: "data-testid".to_string(),
+            value: "save".to_string(),
+            selector: "getByTestId(save)".to_string(),
+        },
+    ];
+    let report = build_tests_report(&edges, &[], root);
+    assert_eq!(report.tests.len(), 1);
+    assert!(report.tests[0].html_ids.contains(&"main-nav".to_string()));
+    assert!(report.tests[0].test_ids.contains(&"save".to_string()));
+}
+
+#[test]
+fn build_tests_report_with_absolute_file_path_filter() {
+    let root = std::path::Path::new("/repo");
+    let edges = vec![Edge::Route {
+        test_file: std::sync::Arc::new("tests/e2e/app.spec.ts".to_string()),
+        test_name: Some(std::sync::Arc::new("visits home".to_string())),
+        describe_path: std::sync::Arc::new(vec![]),
+        route_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
+        route: std::sync::Arc::new("/".to_string()),
+        url: std::sync::Arc::new("/".to_string()),
+    }];
+    // Pass an absolute path as the file filter — exercises the absolute branch in input_file()
+    let abs_filter = std::path::PathBuf::from("/repo/tests/e2e/app.spec.ts");
+    let report = build_tests_report(&edges, &[abs_filter], root);
+    assert_eq!(report.tests.len(), 1);
+    assert_eq!(report.tests[0].name.as_deref(), Some("visits home"));
 }

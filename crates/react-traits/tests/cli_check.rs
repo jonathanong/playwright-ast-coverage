@@ -106,3 +106,18 @@ fn check_format_yaml_outputs_violation_files() {
     let out = String::from_utf8(output).unwrap();
     assert!(out.contains("file: app/components/Fetcher.tsx"));
 }
+
+#[test]
+fn check_with_nonexistent_config_path_returns_error() {
+    // Triggers the `?` error branch in run_check for this binary instantiation.
+    let root = common::fixture("react-traits-config", "assert-no-fetch");
+    cmd()
+        .arg("--config")
+        .arg("/nonexistent/config.yaml")
+        .arg("check")
+        .arg("app/components/Fetcher.tsx")
+        .arg("--root")
+        .arg(&root)
+        .assert()
+        .failure();
+}

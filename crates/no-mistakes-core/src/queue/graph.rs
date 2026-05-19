@@ -20,7 +20,7 @@ pub fn analyze_project(
     tsconfig_path: Option<&Path>,
     filters: &[String],
 ) -> anyhow::Result<ProjectReport> {
-    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let root = root.canonicalize().unwrap_or(root.to_path_buf());
     let tsconfig = load_tsconfig(&root, tsconfig_path)?;
     let filter = build_filter(filters)?;
     let files = discover_source_files(&root)
@@ -52,7 +52,7 @@ pub fn analyze_project_with_facts(
     filters: &[String],
     shared: &crate::codebase::check_facts::CheckFactMap,
 ) -> anyhow::Result<ProjectReport> {
-    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let root = root.canonicalize().unwrap_or(root.to_path_buf());
     let root = root.as_path();
     let tsconfig = load_tsconfig(root, tsconfig_path)?;
     let filter = build_filter(filters)?;

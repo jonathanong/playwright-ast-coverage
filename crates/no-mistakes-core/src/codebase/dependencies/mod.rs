@@ -465,15 +465,14 @@ fn merge_node_entries(
     entries: Vec<graph::NodeEntry>,
 ) {
     for entry in entries {
-        merged
-            .entry(entry.node.clone())
-            .and_modify(|existing| {
-                existing.depth = existing.depth.min(entry.depth);
-                existing.via.extend(entry.via.iter().copied());
-                existing.via.sort_by_key(|kind| *kind as u8);
-                existing.via.dedup();
-            })
-            .or_insert(entry);
+        if let Some(existing) = merged.get_mut(&entry.node) {
+            existing.depth = existing.depth.min(entry.depth);
+            existing.via.extend(entry.via.iter().copied());
+            existing.via.sort_by_key(|kind| *kind as u8);
+            existing.via.dedup();
+        } else {
+            merged.insert(entry.node.clone(), entry);
+        }
     }
 }
 
