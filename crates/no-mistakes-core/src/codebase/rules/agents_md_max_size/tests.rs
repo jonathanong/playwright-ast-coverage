@@ -3,10 +3,9 @@ use crate::config::v2::NoMistakesConfig;
 
 fn config_with_rule(yaml: &str) -> NoMistakesConfig {
     let mut config = NoMistakesConfig::default();
-    config.rules.insert(
-        RULE_ID.to_string(),
-        serde_yaml::from_str(yaml).unwrap(),
-    );
+    config
+        .rules
+        .insert(RULE_ID.to_string(), serde_yaml::from_str(yaml).unwrap());
     config
 }
 

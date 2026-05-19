@@ -63,20 +63,21 @@ pub fn run_filesystem_rules_with_files(
         findings.extend(agents_md_max_size::check_with_files(root, &config, files)?);
     }
     if rule_enabled(&config, RUST_MAX_LINES_PER_FILE) {
-        findings.extend(rust_max_lines_per_file::check_with_files(root, &config, files)?);
+        findings.extend(rust_max_lines_per_file::check_with_files(
+            root, &config, files,
+        )?);
     }
     if rule_enabled(&config, RUST_NO_INLINE_TESTS) {
-        findings.extend(rust_no_inline_tests::check_with_files(root, &config, files)?);
+        findings.extend(rust_no_inline_tests::check_with_files(
+            root, &config, files,
+        )?);
     }
     Ok(findings)
 }
 
 /// Standalone entry point (used by tests / direct invocations without a
 /// pre-discovered file list). Each rule does its own discovery.
-pub fn run_filesystem_rules(
-    root: &Path,
-    config_path: Option<&Path>,
-) -> Result<Vec<RuleFinding>> {
+pub fn run_filesystem_rules(root: &Path, config_path: Option<&Path>) -> Result<Vec<RuleFinding>> {
     let config = crate::config::v2::load_v2_config(root, config_path)?;
     let mut findings = Vec::new();
     if rule_enabled(&config, AGENTS_MD_MAX_SIZE) {

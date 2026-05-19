@@ -3,10 +3,9 @@ use crate::config::v2::NoMistakesConfig;
 
 fn config_with_rule(yaml: &str) -> NoMistakesConfig {
     let mut config = NoMistakesConfig::default();
-    config.rules.insert(
-        RULE_ID.to_string(),
-        serde_yaml::from_str(yaml).unwrap(),
-    );
+    config
+        .rules
+        .insert(RULE_ID.to_string(), serde_yaml::from_str(yaml).unwrap());
     config
 }
 
@@ -113,11 +112,7 @@ fn check_sorts_by_file_then_line() {
         "#[cfg(test)]\nmod a_tests {}\n#[cfg(test)]\nmod b_tests {}\n",
     )
     .unwrap();
-    std::fs::write(
-        tmp.path().join("b.rs"),
-        "#[cfg(test)]\nmod tests {}\n",
-    )
-    .unwrap();
+    std::fs::write(tmp.path().join("b.rs"), "#[cfg(test)]\nmod tests {}\n").unwrap();
     let config = config_with_rule("{}");
     let findings = check(tmp.path(), &config).unwrap();
     assert_eq!(findings.len(), 3);

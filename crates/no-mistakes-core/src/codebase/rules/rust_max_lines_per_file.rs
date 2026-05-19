@@ -102,9 +102,7 @@ fn check_file(path: &Path, root: &Path, limit: usize) -> Option<RuleFinding> {
         rule: RULE_ID.to_string(),
         file: relative_slash_path(root, path),
         line: 1,
-        message: format!(
-            "{code_lines} code lines (max {limit}) - split into smaller modules"
-        ),
+        message: format!("{code_lines} code lines (max {limit}) - split into smaller modules"),
         import: None,
         target: None,
     })

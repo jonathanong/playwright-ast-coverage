@@ -95,5 +95,12 @@ pub(crate) fn run_domain_checks(
             )
         },
     );
-    (react, queues, rules, integration, codebase, filesystem_rules)
+    (
+        react,
+        queues,
+        rules,
+        integration,
+        codebase,
+        filesystem_rules,
+    )
 }

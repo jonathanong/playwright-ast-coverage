@@ -35,15 +35,25 @@ fn stdout(o: &Output) -> String {
 #[test]
 fn agents_md_max_size_passes_under_limits() {
     let root = fixture("agents-md-max-size", "pass");
-    let out = check(&root, "rules:\n  agents-md-max-size:\n    enabled: true\n    maxLines: 5\n    maxChars: 1000\n");
+    let out = check(
+        &root,
+        "rules:\n  agents-md-max-size:\n    enabled: true\n    maxLines: 5\n    maxChars: 1000\n",
+    );
     assert!(out.status.success(), "exit non-zero: {}", stdout(&out));
-    assert!(stdout(&out).is_empty() || !stdout(&out).contains("lines"), "{}", stdout(&out));
+    assert!(
+        stdout(&out).is_empty() || !stdout(&out).contains("lines"),
+        "{}",
+        stdout(&out)
+    );
 }
 
 #[test]
 fn agents_md_max_size_fails_over_line_limit() {
     let root = fixture("agents-md-max-size", "fail");
-    let out = check(&root, "rules:\n  agents-md-max-size:\n    enabled: true\n    maxLines: 2\n");
+    let out = check(
+        &root,
+        "rules:\n  agents-md-max-size:\n    enabled: true\n    maxLines: 2\n",
+    );
     assert!(!out.status.success(), "expected exit 1 for over-limit file");
     assert!(stdout(&out).contains("3 lines"), "{}", stdout(&out));
     assert!(stdout(&out).contains("CLAUDE.md"), "{}", stdout(&out));
@@ -54,7 +64,11 @@ fn agents_md_max_size_json_output_includes_rule_id() {
     let root = fixture("agents-md-max-size", "fail");
     // Re-run with --format json
     let config = tempfile::Builder::new().suffix(".yml").tempfile().unwrap();
-    std::fs::write(config.path(), "rules:\n  agents-md-max-size:\n    enabled: true\n    maxLines: 2\n").unwrap();
+    std::fs::write(
+        config.path(),
+        "rules:\n  agents-md-max-size:\n    enabled: true\n    maxLines: 2\n",
+    )
+    .unwrap();
     let out_json = Command::new(bin())
         .args(["check", "--root"])
         .arg(&root)
@@ -64,15 +78,25 @@ fn agents_md_max_size_json_output_includes_rule_id() {
         .output()
         .unwrap();
     let body = stdout(&out_json);
-    assert!(body.contains("agents-md-max-size"), "rule id missing: {body}");
+    assert!(
+        body.contains("agents-md-max-size"),
+        "rule id missing: {body}"
+    );
     assert!(!out_json.status.success());
 }
 
 #[test]
 fn agents_md_max_size_disabled_skips_check() {
     let root = fixture("agents-md-max-size", "fail");
-    let out = check(&root, "rules:\n  agents-md-max-size:\n    enabled: false\n    maxLines: 2\n");
-    assert!(out.status.success(), "disabled rule should not fail: {}", stdout(&out));
+    let out = check(
+        &root,
+        "rules:\n  agents-md-max-size:\n    enabled: false\n    maxLines: 2\n",
+    );
+    assert!(
+        out.status.success(),
+        "disabled rule should not fail: {}",
+        stdout(&out)
+    );
 }
 
 // ── rust-max-lines-per-file ───────────────────────────────────────────────────
@@ -80,14 +104,20 @@ fn agents_md_max_size_disabled_skips_check() {
 #[test]
 fn rust_max_lines_per_file_passes_under_limit() {
     let root = fixture("rust-max-lines-per-file", "pass");
-    let out = check(&root, "rules:\n  rust-max-lines-per-file:\n    enabled: true\n    srcMax: 20\n");
+    let out = check(
+        &root,
+        "rules:\n  rust-max-lines-per-file:\n    enabled: true\n    srcMax: 20\n",
+    );
     assert!(out.status.success(), "exit non-zero: {}", stdout(&out));
 }
 
 #[test]
 fn rust_max_lines_per_file_fails_over_limit() {
     let root = fixture("rust-max-lines-per-file", "fail");
-    let out = check(&root, "rules:\n  rust-max-lines-per-file:\n    enabled: true\n    srcMax: 3\n");
+    let out = check(
+        &root,
+        "rules:\n  rust-max-lines-per-file:\n    enabled: true\n    srcMax: 3\n",
+    );
     assert!(!out.status.success(), "expected exit 1");
     assert!(stdout(&out).contains("code lines"), "{}", stdout(&out));
     assert!(stdout(&out).contains("big.rs"), "{}", stdout(&out));
@@ -96,15 +126,26 @@ fn rust_max_lines_per_file_fails_over_limit() {
 #[test]
 fn rust_max_lines_per_file_disabled_skips() {
     let root = fixture("rust-max-lines-per-file", "fail");
-    let out = check(&root, "rules:\n  rust-max-lines-per-file:\n    enabled: false\n    srcMax: 3\n");
-    assert!(out.status.success(), "disabled rule must not fail: {}", stdout(&out));
+    let out = check(
+        &root,
+        "rules:\n  rust-max-lines-per-file:\n    enabled: false\n    srcMax: 3\n",
+    );
+    assert!(
+        out.status.success(),
+        "disabled rule must not fail: {}",
+        stdout(&out)
+    );
 }
 
 #[test]
 fn rust_max_lines_per_file_json_has_rule_id() {
     let root = fixture("rust-max-lines-per-file", "fail");
     let config = tempfile::Builder::new().suffix(".yml").tempfile().unwrap();
-    std::fs::write(config.path(), "rules:\n  rust-max-lines-per-file:\n    enabled: true\n    srcMax: 3\n").unwrap();
+    std::fs::write(
+        config.path(),
+        "rules:\n  rust-max-lines-per-file:\n    enabled: true\n    srcMax: 3\n",
+    )
+    .unwrap();
     let out = Command::new(bin())
         .args(["check", "--root"])
         .arg(&root)
@@ -113,7 +154,11 @@ fn rust_max_lines_per_file_json_has_rule_id() {
         .args(["--format", "json"])
         .output()
         .unwrap();
-    assert!(stdout(&out).contains("rust-max-lines-per-file"), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("rust-max-lines-per-file"),
+        "{}",
+        stdout(&out)
+    );
 }
 
 // ── rust-no-inline-tests ──────────────────────────────────────────────────────
@@ -121,14 +166,20 @@ fn rust_max_lines_per_file_json_has_rule_id() {
 #[test]
 fn rust_no_inline_tests_passes_out_of_line() {
     let root = fixture("rust-no-inline-tests", "pass");
-    let out = check(&root, "rules:\n  rust-no-inline-tests:\n    enabled: true\n");
+    let out = check(
+        &root,
+        "rules:\n  rust-no-inline-tests:\n    enabled: true\n",
+    );
     assert!(out.status.success(), "exit non-zero: {}", stdout(&out));
 }
 
 #[test]
 fn rust_no_inline_tests_fails_inline_block() {
     let root = fixture("rust-no-inline-tests", "fail");
-    let out = check(&root, "rules:\n  rust-no-inline-tests:\n    enabled: true\n");
+    let out = check(
+        &root,
+        "rules:\n  rust-no-inline-tests:\n    enabled: true\n",
+    );
     assert!(!out.status.success(), "expected exit 1");
     assert!(stdout(&out).contains("inline"), "{}", stdout(&out));
     assert!(stdout(&out).contains("lib.rs"), "{}", stdout(&out));
@@ -137,15 +188,26 @@ fn rust_no_inline_tests_fails_inline_block() {
 #[test]
 fn rust_no_inline_tests_disabled_skips() {
     let root = fixture("rust-no-inline-tests", "fail");
-    let out = check(&root, "rules:\n  rust-no-inline-tests:\n    enabled: false\n");
-    assert!(out.status.success(), "disabled rule must not fail: {}", stdout(&out));
+    let out = check(
+        &root,
+        "rules:\n  rust-no-inline-tests:\n    enabled: false\n",
+    );
+    assert!(
+        out.status.success(),
+        "disabled rule must not fail: {}",
+        stdout(&out)
+    );
 }
 
 #[test]
 fn rust_no_inline_tests_json_has_rule_id() {
     let root = fixture("rust-no-inline-tests", "fail");
     let config = tempfile::Builder::new().suffix(".yml").tempfile().unwrap();
-    std::fs::write(config.path(), "rules:\n  rust-no-inline-tests:\n    enabled: true\n").unwrap();
+    std::fs::write(
+        config.path(),
+        "rules:\n  rust-no-inline-tests:\n    enabled: true\n",
+    )
+    .unwrap();
     let out = Command::new(bin())
         .args(["check", "--root"])
         .arg(&root)
@@ -154,7 +216,11 @@ fn rust_no_inline_tests_json_has_rule_id() {
         .args(["--format", "json"])
         .output()
         .unwrap();
-    assert!(stdout(&out).contains("rust-no-inline-tests"), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("rust-no-inline-tests"),
+        "{}",
+        stdout(&out)
+    );
     assert!(!out.status.success());
 }
 
@@ -177,14 +243,38 @@ fn agents_md_max_size_skips_gitignored_files() {
     std::fs::write(root.join(".gitignore"), "ignored/\n").unwrap();
 
     // Initialise a git repo and commit so git ls-files is the source of truth
-    assert!(Command::new("git").args(["-C", root.to_str().unwrap(), "init", "-q"]).status().unwrap().success());
-    assert!(Command::new("git").args(["-C", root.to_str().unwrap(), "add", "."]).status().unwrap().success());
     assert!(Command::new("git")
-        .args(["-C", root.to_str().unwrap(), "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"])
-        .status().unwrap().success());
+        .args(["-C", root.to_str().unwrap(), "init", "-q"])
+        .status()
+        .unwrap()
+        .success());
+    assert!(Command::new("git")
+        .args(["-C", root.to_str().unwrap(), "add", "."])
+        .status()
+        .unwrap()
+        .success());
+    assert!(Command::new("git")
+        .args([
+            "-C",
+            root.to_str().unwrap(),
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-qm",
+            "init"
+        ])
+        .status()
+        .unwrap()
+        .success());
 
     let config = tempfile::Builder::new().suffix(".yml").tempfile().unwrap();
-    std::fs::write(config.path(), "rules:\n  agents-md-max-size:\n    enabled: true\n    maxLines: 5\n").unwrap();
+    std::fs::write(
+        config.path(),
+        "rules:\n  agents-md-max-size:\n    enabled: true\n    maxLines: 5\n",
+    )
+    .unwrap();
     let out = Command::new(bin())
         .args(["check", "--root"])
         .arg(root)
@@ -192,7 +282,11 @@ fn agents_md_max_size_skips_gitignored_files() {
         .arg(config.path())
         .output()
         .unwrap();
-    assert!(out.status.success(), "gitignored files must not be flagged: {}", stdout(&out));
+    assert!(
+        out.status.success(),
+        "gitignored files must not be flagged: {}",
+        stdout(&out)
+    );
 }
 
 #[test]
@@ -204,18 +298,43 @@ fn rust_no_inline_tests_skips_gitignored_files() {
     std::fs::write(
         root.join("generated/lib.rs"),
         "#[cfg(test)]\nmod tests {\n}\n",
-    ).unwrap();
+    )
+    .unwrap();
     std::fs::write(root.join("clean.rs"), "pub fn ok() {}\n").unwrap();
     std::fs::write(root.join(".gitignore"), "generated/\n").unwrap();
 
-    assert!(Command::new("git").args(["-C", root.to_str().unwrap(), "init", "-q"]).status().unwrap().success());
-    assert!(Command::new("git").args(["-C", root.to_str().unwrap(), "add", "."]).status().unwrap().success());
     assert!(Command::new("git")
-        .args(["-C", root.to_str().unwrap(), "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"])
-        .status().unwrap().success());
+        .args(["-C", root.to_str().unwrap(), "init", "-q"])
+        .status()
+        .unwrap()
+        .success());
+    assert!(Command::new("git")
+        .args(["-C", root.to_str().unwrap(), "add", "."])
+        .status()
+        .unwrap()
+        .success());
+    assert!(Command::new("git")
+        .args([
+            "-C",
+            root.to_str().unwrap(),
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-qm",
+            "init"
+        ])
+        .status()
+        .unwrap()
+        .success());
 
     let config = tempfile::Builder::new().suffix(".yml").tempfile().unwrap();
-    std::fs::write(config.path(), "rules:\n  rust-no-inline-tests:\n    enabled: true\n").unwrap();
+    std::fs::write(
+        config.path(),
+        "rules:\n  rust-no-inline-tests:\n    enabled: true\n",
+    )
+    .unwrap();
     let out = Command::new(bin())
         .args(["check", "--root"])
         .arg(root)
@@ -223,5 +342,9 @@ fn rust_no_inline_tests_skips_gitignored_files() {
         .arg(config.path())
         .output()
         .unwrap();
-    assert!(out.status.success(), "gitignored files must not be flagged: {}", stdout(&out));
+    assert!(
+        out.status.success(),
+        "gitignored files must not be flagged: {}",
+        stdout(&out)
+    );
 }
