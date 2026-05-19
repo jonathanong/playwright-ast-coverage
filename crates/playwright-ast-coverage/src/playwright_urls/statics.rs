@@ -87,20 +87,16 @@ pub fn source_offset_is_code(source: &str, offset: usize) -> bool {
             escaped = false;
             continue;
         }
-        if (in_single || in_double || in_template) && ch == '\\' {
-            escaped = true;
-            continue;
-        }
-        if in_single {
-            in_single = ch != '\'';
-            continue;
-        }
-        if in_double {
-            in_double = ch != '"';
-            continue;
-        }
-        if in_template {
-            in_template = ch != '`';
+        if in_single || in_double || in_template {
+            if ch == '\\' {
+                escaped = true;
+            } else if in_single {
+                in_single = ch != '\'';
+            } else if in_double {
+                in_double = ch != '"';
+            } else {
+                in_template = ch != '`';
+            }
             continue;
         }
 

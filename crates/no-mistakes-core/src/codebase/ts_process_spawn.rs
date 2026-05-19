@@ -1,6 +1,9 @@
 use crate::codebase::ts_source::unwrap_ts_wrappers;
 use oxc::allocator::Allocator;
-use oxc::ast::ast::{Argument, Expression, ObjectPropertyKind, PropertyKey, Statement};
+use oxc::ast::ast::{
+    Argument, ExportNamedDeclaration, Expression, ObjectPropertyKind, PropertyKey, Statement,
+    TryStatement,
+};
 use oxc::parser::Parser;
 use oxc::span::SourceType;
 use std::path::{Path, PathBuf};
@@ -79,29 +82,7 @@ fn collect_from_stmt(
             }
         }
         Statement::ExportNamedDeclaration(e) => {
-            if let Some(decl) = &e.declaration {
-                match decl {
-                    oxc::ast::ast::Declaration::VariableDeclaration(v) => {
-                        for d in &v.declarations {
-                            collect_from_optional_expr(
-                                d.init.as_ref(),
-                                source,
-                                file_path,
-                                root,
-                                out,
-                            );
-                        }
-                    }
-                    oxc::ast::ast::Declaration::FunctionDeclaration(f) => {
-                        if let Some(body) = &f.body {
-                            for s in &body.statements {
-                                collect_from_stmt(s, source, file_path, root, out);
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
+            collect_from_export_named(e, source, file_path, root, out);
         }
         Statement::ExportDefaultDeclaration(e) => {
             collect_from_export_default(&e.declaration, source, file_path, root, out);
@@ -113,19 +94,7 @@ fn collect_from_stmt(
             }
         }
         Statement::TryStatement(t) => {
-            for s in &t.block.body {
-                collect_from_stmt(s, source, file_path, root, out);
-            }
-            if let Some(handler) = &t.handler {
-                for s in &handler.body.body {
-                    collect_from_stmt(s, source, file_path, root, out);
-                }
-            }
-            if let Some(finalizer) = &t.finalizer {
-                for s in &finalizer.body {
-                    collect_from_stmt(s, source, file_path, root, out);
-                }
-            }
+            collect_from_try_stmt(t, source, file_path, root, out);
         }
         Statement::WhileStatement(w) => {
             collect_from_stmt(&w.body, source, file_path, root, out);
@@ -336,6 +305,53 @@ fn extract_web_server_entry(
                     entry,
                 });
             }
+        }
+    }
+}
+
+fn collect_from_export_named(
+    e: &ExportNamedDeclaration,
+    source: &str,
+    file_path: &Path,
+    root: &Path,
+    out: &mut Vec<SpawnEdge>,
+) {
+    let Some(decl) = &e.declaration else { return };
+    match decl {
+        oxc::ast::ast::Declaration::VariableDeclaration(v) => {
+            for d in &v.declarations {
+                collect_from_optional_expr(d.init.as_ref(), source, file_path, root, out);
+            }
+        }
+        oxc::ast::ast::Declaration::FunctionDeclaration(f) => {
+            if let Some(body) = &f.body {
+                for s in &body.statements {
+                    collect_from_stmt(s, source, file_path, root, out);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_from_try_stmt(
+    t: &TryStatement,
+    source: &str,
+    file_path: &Path,
+    root: &Path,
+    out: &mut Vec<SpawnEdge>,
+) {
+    for s in &t.block.body {
+        collect_from_stmt(s, source, file_path, root, out);
+    }
+    if let Some(handler) = &t.handler {
+        for s in &handler.body.body {
+            collect_from_stmt(s, source, file_path, root, out);
+        }
+    }
+    if let Some(finalizer) = &t.finalizer {
+        for s in &finalizer.body {
+            collect_from_stmt(s, source, file_path, root, out);
         }
     }
 }

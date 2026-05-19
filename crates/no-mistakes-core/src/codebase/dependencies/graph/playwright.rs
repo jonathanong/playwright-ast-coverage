@@ -1,6 +1,8 @@
 use crate::codebase::ts_routes::refs::normalize_template;
 use oxc::allocator::Allocator;
-use oxc::ast::ast::{Argument, Expression, ForStatementInit, FunctionBody, Statement};
+use oxc::ast::ast::{
+    Argument, Expression, ForStatement, ForStatementInit, FunctionBody, Statement,
+};
 use oxc::parser::Parser;
 use oxc::span::SourceType;
 
@@ -75,31 +77,7 @@ fn collect_urls_from_stmt(stmt: &Statement, urls: &mut Vec<String>) {
             collect_urls_from_stmt(&d.body, urls);
             collect_urls_from_expr(&d.test, urls);
         }
-        Statement::ForStatement(f) => {
-            if let Some(init) = &f.init {
-                match init {
-                    ForStatementInit::VariableDeclaration(v) => {
-                        for decl in &v.declarations {
-                            if let Some(init) = &decl.init {
-                                collect_urls_from_expr(init, urls);
-                            }
-                        }
-                    }
-                    other => {
-                        if let Some(expr) = other.as_expression() {
-                            collect_urls_from_expr(expr, urls);
-                        }
-                    }
-                }
-            }
-            if let Some(test) = &f.test {
-                collect_urls_from_expr(test, urls);
-            }
-            if let Some(update) = &f.update {
-                collect_urls_from_expr(update, urls);
-            }
-            collect_urls_from_stmt(&f.body, urls);
-        }
+        Statement::ForStatement(f) => collect_urls_from_for_stmt(f, urls),
         Statement::ForInStatement(f) => {
             collect_urls_from_expr(&f.right, urls);
             collect_urls_from_stmt(&f.body, urls);
@@ -196,6 +174,32 @@ fn collect_urls_from_expr(expr: &Expression, urls: &mut Vec<String>) {
         }
         _ => {}
     }
+}
+
+fn collect_urls_from_for_stmt(f: &ForStatement, urls: &mut Vec<String>) {
+    if let Some(init) = &f.init {
+        match init {
+            ForStatementInit::VariableDeclaration(v) => {
+                for decl in &v.declarations {
+                    if let Some(init) = &decl.init {
+                        collect_urls_from_expr(init, urls);
+                    }
+                }
+            }
+            other => {
+                if let Some(expr) = other.as_expression() {
+                    collect_urls_from_expr(expr, urls);
+                }
+            }
+        }
+    }
+    if let Some(test) = &f.test {
+        collect_urls_from_expr(test, urls);
+    }
+    if let Some(update) = &f.update {
+        collect_urls_from_expr(update, urls);
+    }
+    collect_urls_from_stmt(&f.body, urls);
 }
 
 fn collect_urls_from_body(body: Option<&FunctionBody>, urls: &mut Vec<String>) {

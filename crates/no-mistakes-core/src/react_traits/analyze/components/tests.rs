@@ -273,6 +273,12 @@ fn export_class_extends_pure_component() {
 }
 
 #[test]
+fn local_class_non_component_ignored() {
+    let names = check_names("local-class-non-component");
+    assert_eq!(names, vec!["Foo"]);
+}
+
+#[test]
 fn local_class_component_resolves_via_export_list() {
     let names = check_names("local-class-component-export-list");
     assert_eq!(names, vec!["Foo"]);
