@@ -57,6 +57,9 @@ jobs:
       - name: Run no-mistakes check
         run: cargo run -p no-mistakes --quiet -- check
 
+      - name: Run graph benchmarks
+        run: cargo bench -p no-mistakes-core --bench graph_related -- --noplot
+
       - name: Run CSpell
         run: npm run lint:spell
 
@@ -116,4 +119,3 @@ jobs:
           files: coverage/lcov.info
           flags: javascript
           fail_ci_if_error: true
-
