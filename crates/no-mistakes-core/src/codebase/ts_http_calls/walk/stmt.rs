@@ -101,6 +101,9 @@ fn collect_from_for_stmt(
                     }
                 }
             }
+            ForStatementInit::AssignmentExpression(assign) => {
+                collect_from_expr(&assign.right, source, prefixes, out);
+            }
             other => {
                 if let Some(expr) = other.as_expression() {
                     collect_from_expr(expr, source, prefixes, out);
