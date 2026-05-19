@@ -336,11 +336,14 @@ fn reachable_check_falls_back_to_disk_when_dep_facts_incomplete() {
     let graph = DepGraph::from_raw_maps(root.clone(), forward, Default::default());
     let mut shared_ts = HashMap::new();
     // dep is in shared.ts but with source=None (incomplete facts)
-    shared_ts.insert(dep.clone(), crate::codebase::check_facts::CheckFileFacts {
-        source: None,
-        dynamic_imports: None,
-        ..Default::default()
-    });
+    shared_ts.insert(
+        dep.clone(),
+        crate::codebase::check_facts::CheckFileFacts {
+            source: None,
+            dynamic_imports: None,
+            ..Default::default()
+        },
+    );
     let shared = crate::codebase::check_facts::CheckFactMap {
         files: vec![dep],
         ts: shared_ts,
