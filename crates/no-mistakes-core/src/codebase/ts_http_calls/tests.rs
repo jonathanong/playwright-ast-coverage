@@ -150,6 +150,8 @@ fn fixture_walks_statement_and_expression_shapes() {
         "/api/try",
         "/api/catch",
         "/api/finally",
+        "/api/try-no-finally",
+        "/api/catch-no-finally",
         "/api/for-init",
         "/api/for-test",
         "/api/for-update",

@@ -63,14 +63,12 @@ pub fn run_filesystem_rules_with_files(
         findings.extend(agents_md_max_size::check_with_files(root, &config, files)?);
     }
     if rule_enabled(&config, RUST_MAX_LINES_PER_FILE) {
-        findings.extend(rust_max_lines_per_file::check_with_files(
-            root, &config, files,
-        )?);
+        let rule_findings = rust_max_lines_per_file::check_with_files(root, &config, files)?;
+        findings.extend(rule_findings);
     }
     if rule_enabled(&config, RUST_NO_INLINE_TESTS) {
-        findings.extend(rust_no_inline_tests::check_with_files(
-            root, &config, files,
-        )?);
+        let rule_findings = rust_no_inline_tests::check_with_files(root, &config, files)?;
+        findings.extend(rule_findings);
     }
     Ok(findings)
 }

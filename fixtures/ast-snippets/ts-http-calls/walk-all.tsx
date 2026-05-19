@@ -29,6 +29,12 @@ try {
   fetch("/api/finally");
 }
 
+try {
+  fetch("/api/try-no-finally");
+} catch (error) {
+  fetch("/api/catch-no-finally");
+}
+
 for (let item = fetch("/api/for-init"); fetch("/api/for-test"); fetch("/api/for-update")) {
   fetch("/api/for-body");
 }
