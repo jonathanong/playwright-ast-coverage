@@ -1,6 +1,6 @@
 {
   "name": "playwright-ast-coverage",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "description": "Static Playwright AST coverage for Next.js App Router routes",
   "homepage": "https://github.com/jonathanong/playwright-ast-coverage#readme",
   "bugs": {
@@ -30,6 +30,6 @@
     "pack:check": "npm pack --dry-run"
   },
   "dependencies": {
-    "no-mistakes-core": "^0.3.3"
+    "no-mistakes-core": "^0.4.0"
   }
 }
