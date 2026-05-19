@@ -178,6 +178,25 @@ impl GraphBuildPlan {
     }
 }
 
+fn effective_ts_fact_plan(
+    plan: GraphBuildPlan,
+    options: Option<&GraphConfigOptions>,
+) -> TsFactPlan {
+    let mut fact_plan = plan.ts_fact_plan();
+    let route_refs_configured = options.is_some_and(route_ref_facts_configured);
+    let route_backend_configured = options.is_some_and(route_backend_facts_configured);
+    let http_configured = options.is_some_and(http_facts_configured);
+    let queue_configured = options.is_some_and(queue_facts_configured);
+
+    fact_plan.route_refs &= route_refs_configured;
+    fact_plan.backend_routes &= route_backend_configured || http_configured;
+    fact_plan.http_calls &= http_configured;
+    fact_plan.symbols &= queue_configured;
+    fact_plan.queue_usage &= queue_configured;
+    fact_plan.queue_factory &= queue_configured;
+    fact_plan
+}
+
 #[derive(Clone)]
 pub(crate) struct GraphFiles {
     all: Vec<PathBuf>,
@@ -270,6 +289,31 @@ fn ts_fact_context_from_options(
         context.queue_factory_glob = compile_graph_glob(&options.queue.queue_pattern);
     }
     context
+}
+
+fn route_ref_facts_configured(options: &GraphConfigOptions) -> bool {
+    route_backend_facts_configured(options) || !options.route.frontend_root.is_empty()
+}
+
+fn route_backend_facts_configured(options: &GraphConfigOptions) -> bool {
+    let pattern = route_backend_pattern(options);
+    let has_register_object = route_backend_register_object(options).is_some();
+    let has_valid_glob = pattern.as_deref().and_then(compile_graph_glob).is_some();
+    has_register_object && has_valid_glob
+}
+
+fn http_facts_configured(options: &GraphConfigOptions) -> bool {
+    let pattern = resolved_backend_pattern(options);
+    let has_register_object = resolved_backend_register_object(options).is_some();
+    let has_prefixes = !resolved_backend_prefixes(options).is_empty();
+    let has_valid_glob = pattern.as_deref().and_then(compile_graph_glob).is_some();
+    has_register_object && has_prefixes && has_valid_glob
+}
+
+fn queue_facts_configured(options: &GraphConfigOptions) -> bool {
+    !options.queue.factory_specifier.is_empty()
+        && !options.queue.factory_function.is_empty()
+        && compile_graph_glob(&options.queue.queue_pattern).is_some()
 }
 
 fn add_backend_route_extractor(
@@ -408,9 +452,9 @@ impl DepGraph {
         graph_files: &GraphFiles,
         facts: Option<&TsFactMap>,
     ) -> Self {
-        let resolver = ImportResolver::new(tsconfig).with_visible(graph_files.visible());
-        let fact_plan = plan.ts_fact_plan();
         let config_options = graph_config_options(root);
+        let resolver = ImportResolver::new(tsconfig).with_visible(graph_files.visible());
+        let fact_plan = effective_ts_fact_plan(plan, config_options.as_ref());
         let fact_context = ts_fact_context_from_options(root, plan, config_options.as_ref());
         let owned_facts = if !fact_plan.is_empty() && facts.is_none() {
             Some(collect_ts_facts_with_context(
