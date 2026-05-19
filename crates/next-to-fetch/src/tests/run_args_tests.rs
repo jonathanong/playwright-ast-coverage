@@ -61,8 +61,6 @@ fn test_with_run_args_restores_existing_value() {
 #[test]
 fn test_with_run_args_restores_unset_value() {
     const ENV_VAR: &str = "NEXT_TO_FETCH_TEST_ARGS";
-    std::env::remove_var(ENV_VAR);
-
     {
         let run_args = with_run_args_env(None, None);
         std::env::set_var(ENV_VAR, "next-to-fetch\x1f--root\x1f.");
