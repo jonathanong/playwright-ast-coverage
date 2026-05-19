@@ -67,10 +67,18 @@ pub(crate) fn run_all(
     );
     let discover_duration = discover_start.elapsed();
     let facts_start = Instant::now();
-    // Clone the path list (cheap) so filesystem rules can filter it in
-    // parallel while the facts path parses TS/JS ASTs from the same list.
-    let fs_files = discovered.clone();
-    let facts = collect_check_facts(&root, discovered, plan);
+    // When only filesystem rules are enabled, no TS/JS parsing is needed.
+    let (fs_files, facts) = if plan_requests_facts(&plan) {
+        let fs = if filesystem_rules_enabled {
+            discovered.clone()
+        } else {
+            Vec::new()
+        };
+        let f = collect_check_facts(&root, discovered, plan);
+        (fs, f)
+    } else {
+        (discovered, Default::default())
+    };
     let facts_duration = facts_start.elapsed();
 
     let (react, queues, rules, integration, codebase, filesystem_rules) = run_domain_checks(

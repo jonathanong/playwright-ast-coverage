@@ -73,7 +73,18 @@ fn filenames_from_opts(opts: &Options) -> Vec<&str> {
 
 fn roots_from_opts(opts: &Options, root: &Path) -> Vec<PathBuf> {
     opts.roots
-        .clone()
+        .as_deref()
+        .map(|rs| {
+            rs.iter()
+                .map(|r| {
+                    if r.is_absolute() {
+                        r.clone()
+                    } else {
+                        root.join(r)
+                    }
+                })
+                .collect()
+        })
         .unwrap_or_else(|| vec![root.to_path_buf()])
 }
 

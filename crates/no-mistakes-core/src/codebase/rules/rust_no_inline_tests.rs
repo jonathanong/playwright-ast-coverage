@@ -33,10 +33,7 @@ pub(crate) struct Options {
 pub fn check(root: &Path, config: &NoMistakesConfig) -> Result<Vec<RuleFinding>> {
     let opts = parse_opts(config);
     let skip = &config.filesystem.skip_directories;
-    let roots = opts
-        .roots
-        .clone()
-        .unwrap_or_else(|| vec![root.to_path_buf()]);
+    let roots = normalize_roots(&opts, root);
     let files: Vec<PathBuf> = roots
         .iter()
         .flat_map(|r| discover_with_extensions(r, skip, &["rs"]))
@@ -55,10 +52,7 @@ pub(crate) fn check_with_files(
     all_files: &[PathBuf],
 ) -> Result<Vec<RuleFinding>> {
     let opts = parse_opts(config);
-    let roots = opts
-        .roots
-        .clone()
-        .unwrap_or_else(|| vec![root.to_path_buf()]);
+    let roots = normalize_roots(&opts, root);
     let files: Vec<PathBuf> = all_files
         .iter()
         .filter(|p| {
@@ -79,6 +73,23 @@ fn parse_opts(config: &NoMistakesConfig) -> Options {
         .rules
         .get(RULE_ID)
         .map_or_else(Default::default, |r| r.rule_options())
+}
+
+fn normalize_roots(opts: &Options, root: &Path) -> Vec<PathBuf> {
+    opts.roots
+        .as_deref()
+        .map(|rs| {
+            rs.iter()
+                .map(|r| {
+                    if r.is_absolute() {
+                        r.clone()
+                    } else {
+                        root.join(r)
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_else(|| vec![root.to_path_buf()])
 }
 
 fn is_excluded(root: &Path, path: &Path, excludes: &[String]) -> bool {

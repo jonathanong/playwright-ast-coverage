@@ -128,6 +128,24 @@ fn check_with_files_respects_roots() {
 }
 
 #[test]
+fn check_with_files_normalizes_relative_roots() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let sub = root.join("sub");
+    std::fs::create_dir_all(&sub).unwrap();
+    let inline_src = "#[cfg(test)]\nmod tests {\n}\n";
+    let outside = root.join("a.rs");
+    let inside = sub.join("b.rs");
+    std::fs::write(&outside, inline_src).unwrap();
+    std::fs::write(&inside, inline_src).unwrap();
+    let config = config_with_rule("{roots: [\"sub\"]}");
+    let all_files = vec![outside, inside];
+    let findings = check_with_files(root, &config, &all_files).unwrap();
+    assert_eq!(findings.len(), 1, "relative root resolves relative to root");
+    assert!(findings[0].file.contains("sub"));
+}
+
+#[test]
 fn check_sorts_by_file_then_line() {
     let tmp = tempfile::tempdir().unwrap();
     std::fs::write(
