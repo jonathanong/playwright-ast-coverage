@@ -212,6 +212,30 @@ test('bad', async () => {\n\
 }
 
 #[test]
+fn run_check_with_facts_propagates_reachable_dep_disk_error() {
+    // Coverage for with_facts.rs: reachable::check error branch.
+    // unreadable.mts is a directory; putting it in shared.files but not shared.ts
+    // causes reachable::check to fall back to disk and fail.
+    let root = dynamic_import_fixture();
+    let test = root.join("tests/bad.test.mts");
+    let setup = root.join("tests/setup-vitest.mts");
+    let unreadable = root.join("src/unreadable.mts");
+    let source = "import '@lib/unreadable.mts'\n\
+test('bad', async () => {\n\
+  await import('@lib/setup-target.mts')\n\
+})\n";
+    let setup_source = std::fs::read_to_string(&setup).unwrap();
+    let mut shared = crate::codebase::check_facts::CheckFactMap {
+        files: vec![test.clone(), setup.clone(), unreadable],
+        ..Default::default()
+    };
+    shared.ts.insert(test.clone(), dynamic_import_test_facts(&test, source));
+    shared.ts.insert(setup.clone(), dynamic_import_test_facts(&setup, &setup_source));
+    let error = run_check_with_facts(&root, None, None, &shared).unwrap_err();
+    assert!(error.to_string().contains("failed to read dependency file"));
+}
+
+#[test]
 fn run_check_with_facts_reports_missing_setup_fact_shapes() {
     let root = dynamic_import_fixture();
     let test = root.join("tests/setup-good.test.mts");

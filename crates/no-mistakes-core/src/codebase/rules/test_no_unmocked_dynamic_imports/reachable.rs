@@ -29,30 +29,29 @@ pub(super) fn check(
                 if file_facts.parse_error.is_some() {
                     continue;
                 }
-                let (Some(source), Some(facts)) = (
+                if let (Some(source), Some(facts)) = (
                     file_facts.source.as_deref(),
                     file_facts.dynamic_imports.as_ref(),
-                ) else {
-                    continue;
-                };
-                if has_disable_file_comment(source, RULE_ID) {
-                    continue;
-                }
-                let mut check_context = DynamicCheckContext {
-                    root: ctx.root,
-                    file: &file,
-                    resolver: ctx.resolver,
-                    graph: ctx.graph,
-                    mocks,
-                    dependency_cache,
-                    findings,
-                };
-                for import in &facts.dynamic_imports {
-                    if !has_disable_comment(source, import.line as u32, RULE_ID) {
-                        check_dynamic_import(&mut check_context, import.clone());
+                ) {
+                    if has_disable_file_comment(source, RULE_ID) {
+                        continue;
                     }
+                    let mut check_context = DynamicCheckContext {
+                        root: ctx.root,
+                        file: &file,
+                        resolver: ctx.resolver,
+                        graph: ctx.graph,
+                        mocks,
+                        dependency_cache,
+                        findings,
+                    };
+                    for import in &facts.dynamic_imports {
+                        if !has_disable_comment(source, import.line as u32, RULE_ID) {
+                            check_dynamic_import(&mut check_context, import.clone());
+                        }
+                    }
+                    continue;
                 }
-                continue;
             }
         }
         let source = std::fs::read_to_string(&file)

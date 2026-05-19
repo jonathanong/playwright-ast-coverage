@@ -30,14 +30,25 @@ pub fn check(
 ) -> Result<Vec<RuleFinding>> {
     let files = discover_files(root, &config.filesystem.skip_directories);
     let tsconfig = resolve_tsconfig(root, tsconfig_path)?;
-    let resolver = ImportResolver::new(&tsconfig);
     let graph =
         DepGraph::build_with_plan(root, &tsconfig, GraphBuildPlan::imports_and_workspace())?;
     let manual_mocks = manual_mocks::discover(root, &config.filesystem.skip_directories);
+    check_inner(root, config, &files, &tsconfig, &graph, &manual_mocks)
+}
+
+pub(super) fn check_inner(
+    root: &Path,
+    config: &NoMistakesConfig,
+    files: &[PathBuf],
+    tsconfig: &TsConfig,
+    graph: &DepGraph,
+    manual_mocks: &HashSet<PathBuf>,
+) -> Result<Vec<RuleFinding>> {
+    let resolver = ImportResolver::new(tsconfig);
     let dependency_cache: Mutex<HashMap<PathBuf, Arc<Vec<PathBuf>>>> = Mutex::new(HashMap::new());
     let mut findings = Vec::new();
 
-    for file in matching_test_files(root, &files, config)? {
+    for file in matching_test_files(root, files, config)? {
         let source = std::fs::read_to_string(&file)
             .context(format!("failed to read test file {}", file.display()))?;
         if has_disable_file_comment(&source, RULE_ID) {
@@ -55,7 +66,7 @@ pub fn check(
             root,
             file: &file,
             resolver: &resolver,
-            graph: &graph,
+            graph,
             mocks: &mocks,
             dependency_cache: &dependency_cache,
             findings: &mut findings,
@@ -71,7 +82,7 @@ pub fn check(
                 root,
                 config,
                 resolver: &resolver,
-                graph: &graph,
+                graph,
                 shared: None,
             },
             &file,
