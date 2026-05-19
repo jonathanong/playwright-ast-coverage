@@ -78,8 +78,14 @@ async function fetchText(url) {
     return readFile(fileURLToPath(url), "utf8");
   }
   const chunks = [];
+  let totalLength = 0;
+  const MAX_LENGTH = 1024 * 1024; // 1MB limit to prevent DoS memory exhaustion
   await request(url, async (response) => {
     for await (const chunk of response) {
+      totalLength += chunk.length;
+      if (totalLength > MAX_LENGTH) {
+        throw new Error(`Response exceeded maximum size of ${MAX_LENGTH} bytes`);
+      }
       chunks.push(chunk);
     }
   });
