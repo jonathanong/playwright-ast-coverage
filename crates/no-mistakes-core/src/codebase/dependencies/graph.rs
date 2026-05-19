@@ -130,6 +130,22 @@ impl GraphBuildPlan {
         }
     }
 
+    /// Minimal plan for import-only traversal (no routes, queues, http, etc.).
+    pub fn imports_and_workspace() -> Self {
+        Self {
+            imports: true,
+            workspace: true,
+            tests: false,
+            markdown: false,
+            ci: false,
+            routes: false,
+            queues: false,
+            playwright_routes: false,
+            http: false,
+            process: false,
+        }
+    }
+
     pub fn from_allowed(allowed: Option<&HashSet<EdgeKind>>) -> Self {
         let Some(allowed) = allowed else {
             return Self::all();

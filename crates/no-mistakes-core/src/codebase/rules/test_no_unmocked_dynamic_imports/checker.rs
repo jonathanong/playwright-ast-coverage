@@ -4,6 +4,7 @@ use crate::codebase::rules::RuleFinding;
 use crate::codebase::ts_resolver::ImportResolver;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 pub(super) struct DynamicCheckContext<'a> {
     pub(super) root: &'a Path,
@@ -11,7 +12,7 @@ pub(super) struct DynamicCheckContext<'a> {
     pub(super) resolver: &'a ImportResolver<'a>,
     pub(super) graph: &'a DepGraph,
     pub(super) mocks: &'a HashSet<PathBuf>,
-    pub(super) dependency_cache: &'a mut HashMap<PathBuf, Vec<PathBuf>>,
+    pub(super) dependency_cache: &'a Mutex<HashMap<PathBuf, Arc<Vec<PathBuf>>>>,
     pub(super) findings: &'a mut Vec<RuleFinding>,
 }
 
@@ -36,16 +37,19 @@ pub(super) fn check_dynamic_import(ctx: &mut DynamicCheckContext<'_>, import: as
     if ctx.mocks.contains(&target) {
         return;
     }
-    let mut required = vec![target.clone()];
-    let dependencies = if let Some(dependencies) = ctx.dependency_cache.get(&target) {
-        dependencies.clone()
-    } else {
-        let dependencies = runtime_deps(ctx.graph, target.clone());
-        ctx.dependency_cache.insert(target, dependencies.clone());
-        dependencies
+    let cache_hit = ctx.dependency_cache.lock().unwrap().get(&target).map(Arc::clone);
+    let deps = match cache_hit {
+        Some(d) => d,
+        None => {
+            let new_deps = Arc::new(runtime_deps(ctx.graph, target.clone()));
+            ctx.dependency_cache
+                .lock()
+                .unwrap()
+                .insert(target.clone(), Arc::clone(&new_deps));
+            new_deps
+        }
     };
-    required.extend(dependencies);
-    for dependency in required {
+    for dependency in std::iter::once(target).chain(deps.iter().cloned()) {
         if !ctx.mocks.contains(&dependency) {
             push_finding(
                 ctx.root,

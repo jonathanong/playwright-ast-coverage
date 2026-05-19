@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::Mutex;
 
 fn fixture() -> PathBuf {
     crate::codebase::ts_resolver::normalize_path(
@@ -51,7 +52,7 @@ fn next_line_disable_and_unresolved_import_branches_are_reported() {
     let resolver = ImportResolver::new(&tsconfig);
     let graph = DepGraph::from_raw_maps(root.clone(), Default::default(), Default::default());
     let mocks = HashSet::new();
-    let mut dependency_cache = HashMap::new();
+    let dependency_cache = Mutex::new(HashMap::new());
     let mut findings = Vec::new();
     let mut context = DynamicCheckContext {
         root: &root,
@@ -59,7 +60,7 @@ fn next_line_disable_and_unresolved_import_branches_are_reported() {
         resolver: &resolver,
         graph: &graph,
         mocks: &mocks,
-        dependency_cache: &mut dependency_cache,
+        dependency_cache: &dependency_cache,
         findings: &mut findings,
     };
     check_dynamic_import(
@@ -86,7 +87,7 @@ fn mocked_dynamic_import_target_skips_transitive_dependency_checks() {
     let target = root.join("src").join("lazy.mts");
     let mut mocks = HashSet::new();
     mocks.insert(target);
-    let mut dependency_cache = HashMap::new();
+    let dependency_cache = Mutex::new(HashMap::new());
     let mut findings = Vec::new();
     let mut context = DynamicCheckContext {
         root: &root,
@@ -94,7 +95,7 @@ fn mocked_dynamic_import_target_skips_transitive_dependency_checks() {
         resolver: &resolver,
         graph: &graph,
         mocks: &mocks,
-        dependency_cache: &mut dependency_cache,
+        dependency_cache: &dependency_cache,
         findings: &mut findings,
     };
     check_dynamic_import(
@@ -138,7 +139,7 @@ fn reachable_dependencies_respect_skips_and_disable_comments() {
         let graph = DepGraph::from_raw_maps(root.clone(), forward, Default::default());
         let mut config = NoMistakesConfig::default();
         config.filesystem.skip_directories = skip_directories;
-        let mut dependency_cache = HashMap::new();
+        let dependency_cache = Mutex::new(HashMap::new());
         let mut findings = Vec::new();
 
         reachable::check(
@@ -147,10 +148,11 @@ fn reachable_dependencies_respect_skips_and_disable_comments() {
                 config: &config,
                 resolver: &resolver,
                 graph: &graph,
+                shared: None,
             },
             &test_file,
             &mocks,
-            &mut dependency_cache,
+            &dependency_cache,
             &mut findings,
         )
         .unwrap();
@@ -167,7 +169,7 @@ fn repeated_dynamic_import_target_uses_dependency_cache() {
     let graph = DepGraph::build_with_plan(&root, &tsconfig, GraphBuildPlan::all()).unwrap();
     let test_file = root.join("tests").join("bad.test.mts");
     let mocks = HashSet::new();
-    let mut dependency_cache = HashMap::new();
+    let dependency_cache = Mutex::new(HashMap::new());
     let mut findings = Vec::new();
     let mut context = DynamicCheckContext {
         root: &root,
@@ -175,7 +177,7 @@ fn repeated_dynamic_import_target_uses_dependency_cache() {
         resolver: &resolver,
         graph: &graph,
         mocks: &mocks,
-        dependency_cache: &mut dependency_cache,
+        dependency_cache: &dependency_cache,
         findings: &mut findings,
     };
     check_dynamic_import(
@@ -185,7 +187,7 @@ fn repeated_dynamic_import_target_uses_dependency_cache() {
             line: 1,
         },
     );
-    let cache_len = context.dependency_cache.len();
+    let cache_len = dependency_cache.lock().unwrap().len();
     check_dynamic_import(
         &mut context,
         ast::DynamicImport {
@@ -193,7 +195,7 @@ fn repeated_dynamic_import_target_uses_dependency_cache() {
             line: 1,
         },
     );
-    assert_eq!(context.dependency_cache.len(), cache_len);
+    assert_eq!(dependency_cache.lock().unwrap().len(), cache_len);
     assert!(!context.findings.is_empty());
 }
 

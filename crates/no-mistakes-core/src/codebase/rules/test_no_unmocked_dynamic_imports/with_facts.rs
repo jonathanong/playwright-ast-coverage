@@ -7,8 +7,10 @@ use crate::codebase::ts_resolver::ImportResolver;
 use crate::codebase::ts_source::{has_disable_comment, has_disable_file_comment};
 use crate::config::v2::NoMistakesConfig;
 use anyhow::Result;
+use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 pub fn check_with_facts(
     root: &Path,
@@ -23,67 +25,70 @@ pub fn check_with_facts(
     let graph = DepGraph::build_with_plan_file_list_and_facts(
         root,
         &tsconfig,
-        GraphBuildPlan::all(),
+        GraphBuildPlan::imports_and_workspace(),
         files.clone(),
         &ts_facts,
     );
     let manual_mocks = manual_mocks::discover(root, &config.filesystem.skip_directories);
-    let mut dependency_cache = HashMap::new();
-    let mut findings = Vec::new();
+    let dependency_cache: Mutex<HashMap<PathBuf, Arc<Vec<PathBuf>>>> =
+        Mutex::new(HashMap::new());
 
-    for file in matching_test_files(root, &files, config)? {
-        let Some(file_facts) = shared.ts.get(&file) else {
-            anyhow::bail!("missing shared facts for {}", file.display());
-        };
-        let Some(source) = file_facts.source.as_deref() else {
-            anyhow::bail!("missing source facts for {}", file.display());
-        };
-        if has_disable_file_comment(source, RULE_ID) {
-            continue;
-        }
-        if let Some(error) = &file_facts.parse_error {
-            anyhow::bail!("failed to parse {}: {error}", file.display());
-        }
-        let Some(facts) = file_facts.dynamic_imports.as_ref() else {
-            anyhow::bail!("missing dynamic import facts for {}", file.display());
-        };
-        let mut mocks = manual_mocks.clone();
-        mocks.extend(setup_mocks_with_facts(
-            root, config, &file, &resolver, shared,
-        )?);
-        mocks.extend(resolve_mock_specifiers(
-            &facts.mock_specifiers,
-            &file,
-            &resolver,
-        ));
-        let mut check_context = DynamicCheckContext {
-            root,
-            file: &file,
-            resolver: &resolver,
-            graph: &graph,
-            mocks: &mocks,
-            dependency_cache: &mut dependency_cache,
-            findings: &mut findings,
-        };
-        for import in &facts.dynamic_imports {
-            if !has_disable_comment(source, import.line as u32, RULE_ID) {
-                check_dynamic_import(&mut check_context, import.clone());
+    let per_test: Vec<Vec<RuleFinding>> = matching_test_files(root, &files, config)?
+        .into_par_iter()
+        .map(|file| {
+            let Some(file_facts) = shared.ts.get(&file) else {
+                anyhow::bail!("missing shared facts for {}", file.display());
+            };
+            let Some(source) = file_facts.source.as_deref() else {
+                anyhow::bail!("missing source facts for {}", file.display());
+            };
+            if has_disable_file_comment(source, RULE_ID) {
+                return Ok(Vec::new());
             }
-        }
-        reachable::check(
-            reachable::ReachableContext {
-                root,
-                config,
-                resolver: &resolver,
-                graph: &graph,
-            },
-            &file,
-            &mocks,
-            &mut dependency_cache,
-            &mut findings,
-        )?;
-    }
+            if let Some(error) = &file_facts.parse_error {
+                anyhow::bail!("failed to parse {}: {error}", file.display());
+            }
+            let Some(facts) = file_facts.dynamic_imports.as_ref() else {
+                anyhow::bail!("missing dynamic import facts for {}", file.display());
+            };
+            let mut mocks = manual_mocks.clone();
+            mocks.extend(setup_mocks_with_facts(root, config, &file, &resolver, shared)?);
+            mocks.extend(resolve_mock_specifiers(&facts.mock_specifiers, &file, &resolver));
+            let mut local_findings = Vec::new();
+            {
+                let mut check_context = DynamicCheckContext {
+                    root,
+                    file: &file,
+                    resolver: &resolver,
+                    graph: &graph,
+                    mocks: &mocks,
+                    dependency_cache: &dependency_cache,
+                    findings: &mut local_findings,
+                };
+                for import in &facts.dynamic_imports {
+                    if !has_disable_comment(source, import.line as u32, RULE_ID) {
+                        check_dynamic_import(&mut check_context, import.clone());
+                    }
+                }
+            }
+            reachable::check(
+                reachable::ReachableContext {
+                    root,
+                    config,
+                    resolver: &resolver,
+                    graph: &graph,
+                    shared: Some(shared),
+                },
+                &file,
+                &mocks,
+                &dependency_cache,
+                &mut local_findings,
+            )?;
+            Ok(local_findings)
+        })
+        .collect::<Result<Vec<_>>>()?;
 
+    let mut findings: Vec<RuleFinding> = per_test.into_iter().flatten().collect();
     findings.sort_by_key(|f| (f.file.clone(), f.line, f.target.clone()));
     Ok(findings)
 }
