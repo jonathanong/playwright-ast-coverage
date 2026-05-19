@@ -106,6 +106,9 @@ fn normalize_configs(configs: Vec<ConfigFile>) -> Vec<ConfigFile> {
 }
 
 fn expand_config_patterns(root: &Path, patterns: Vec<String>, runner: Runner) -> Vec<ConfigFile> {
+    if patterns.is_empty() {
+        return Vec::new();
+    }
     let files = crate::codebase::ts_source::discover_files(root, &[]);
     let mut configs = Vec::new();
     for pattern in patterns {

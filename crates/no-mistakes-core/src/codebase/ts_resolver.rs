@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
-use std::collections::{HashMap, HashSet};
+use dashmap::DashMap;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 
 /// Parsed content of a `tsconfig.json` relevant to import resolution.
 #[derive(Debug, Clone, Default)]
@@ -249,7 +249,7 @@ pub struct ImportResolver<'a> {
     visible: Option<&'a HashSet<PathBuf>>,
     alias_order: Vec<usize>,
     cache_enabled: bool,
-    cache: Mutex<HashMap<ResolveKey, Option<PathBuf>>>,
+    cache: DashMap<ResolveKey, Option<PathBuf>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -272,7 +272,7 @@ impl<'a> ImportResolver<'a> {
             visible: None,
             alias_order,
             cache_enabled: true,
-            cache: Mutex::new(HashMap::new()),
+            cache: DashMap::new(),
         }
     }
 
@@ -298,15 +298,11 @@ impl<'a> ImportResolver<'a> {
             specifier: specifier.to_string(),
         };
 
-        if let Ok(cache) = self.cache.lock() {
-            if let Some(cached) = cache.get(&key).cloned() {
-                return cached;
-            }
+        if let Some(cached) = self.cache.get(&key) {
+            return cached.clone();
         }
         let resolved = self.resolve_uncached(specifier, importing_file);
-        if let Ok(mut cache) = self.cache.lock() {
-            cache.insert(key, resolved.clone());
-        }
+        self.cache.entry(key).or_insert(resolved.clone());
         resolved
     }
 

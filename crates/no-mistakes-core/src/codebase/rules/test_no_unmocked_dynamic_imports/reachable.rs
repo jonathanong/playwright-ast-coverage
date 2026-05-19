@@ -7,25 +7,35 @@ use crate::codebase::ts_resolver::ImportResolver;
 use crate::codebase::ts_source::{has_disable_comment, has_disable_file_comment};
 use crate::config::v2::NoMistakesConfig;
 use anyhow::{Context, Result};
-use std::collections::{HashMap, HashSet};
+use dashmap::DashMap;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 pub(super) fn check(
     ctx: ReachableContext<'_>,
     test_file: &Path,
     mocks: &HashSet<PathBuf>,
-    dependency_cache: &Mutex<HashMap<PathBuf, Arc<Vec<PathBuf>>>>,
+    dependency_cache: &DashMap<PathBuf, Arc<Vec<PathBuf>>>,
     findings: &mut Vec<RuleFinding>,
 ) -> Result<()> {
-    for file in runtime_deps(ctx.graph, test_file.to_path_buf()) {
-        if !crate::codebase::dependencies::extract::is_indexable(&file)
-            || is_under_skipped_dir(ctx.root, ctx.config, &file)
+    let test_reachable = if let Some(hit) = dependency_cache.get(test_file) {
+        hit.clone()
+    } else {
+        let computed = Arc::new(runtime_deps(ctx.graph, test_file.to_path_buf()));
+        let entry = dependency_cache
+            .entry(test_file.to_path_buf())
+            .or_insert(computed);
+        entry.clone()
+    };
+    for file in test_reachable.iter() {
+        if !crate::codebase::dependencies::extract::is_indexable(file)
+            || is_under_skipped_dir(ctx.root, ctx.config, file)
         {
             continue;
         }
         if let Some(shared) = ctx.shared {
-            if let Some(file_facts) = shared.ts.get(&file) {
+            if let Some(file_facts) = shared.ts.get(file) {
                 if file_facts.parse_error.is_some() {
                     continue;
                 }
@@ -38,7 +48,7 @@ pub(super) fn check(
                     }
                     let mut check_context = DynamicCheckContext {
                         root: ctx.root,
-                        file: &file,
+                        file,
                         resolver: ctx.resolver,
                         graph: ctx.graph,
                         mocks,
@@ -54,15 +64,15 @@ pub(super) fn check(
                 }
             }
         }
-        let source = std::fs::read_to_string(&file)
+        let source = std::fs::read_to_string(file)
             .context(format!("failed to read dependency file {}", file.display()))?;
         if has_disable_file_comment(&source, RULE_ID) {
             continue;
         }
-        let facts = ast::extract(&file, &source)?;
+        let facts = ast::extract(file, &source)?;
         let mut check_context = DynamicCheckContext {
             root: ctx.root,
-            file: &file,
+            file,
             resolver: ctx.resolver,
             graph: ctx.graph,
             mocks,

@@ -15,10 +15,11 @@ use crate::codebase::ts_resolver::{load_tsconfig, normalize_path, ImportResolver
 use crate::codebase::ts_source::{discover_files, has_disable_comment, has_disable_file_comment};
 use crate::config::v2::NoMistakesConfig;
 use anyhow::{Context, Result};
+use dashmap::DashMap;
 use runtime::runtime_deps;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 pub use with_facts::check_with_facts;
 
 pub const RULE_ID: &str = "test-no-unmocked-dynamic-imports";
@@ -45,8 +46,9 @@ pub(super) fn check_inner(
     manual_mocks: &HashSet<PathBuf>,
 ) -> Result<Vec<RuleFinding>> {
     let resolver = ImportResolver::new(tsconfig);
-    let dependency_cache: Mutex<HashMap<PathBuf, Arc<Vec<PathBuf>>>> = Mutex::new(HashMap::new());
+    let dependency_cache: DashMap<PathBuf, Arc<Vec<PathBuf>>> = DashMap::new();
     let mut findings = Vec::new();
+    let setup_data = config::precompute_setup_data(root, config)?;
 
     for file in matching_test_files(root, files, config)? {
         let source = std::fs::read_to_string(&file)
@@ -56,7 +58,7 @@ pub(super) fn check_inner(
         }
         let facts = ast::extract(&file, &source)?;
         let mut mocks = manual_mocks.clone();
-        mocks.extend(setup_mocks(root, config, &file, &resolver)?);
+        mocks.extend(setup_mocks(root, &setup_data, &file, &resolver)?);
         mocks.extend(resolve_mock_specifiers(
             &facts.mock_specifiers,
             &file,
@@ -128,13 +130,13 @@ fn resolve_mock_specifiers(
 
 fn setup_mocks(
     root: &Path,
-    config: &NoMistakesConfig,
+    setup_data: &[config::ConfigSetupData],
     test_file: &Path,
     resolver: &ImportResolver<'_>,
 ) -> Result<HashSet<PathBuf>> {
     let mut mocks = HashSet::new();
     let rel_path = crate::codebase::ts_source::relative_slash_path(root, test_file);
-    for setup in config::setup_files_for_test(root, config, rel_path)? {
+    for setup in config::setup_files_for_test_precomputed(&rel_path, setup_data) {
         let source = std::fs::read_to_string(&setup)
             .context(format!("failed to read setup file {}", setup.display()))?;
         let facts = ast::extract(&setup, &source)?;

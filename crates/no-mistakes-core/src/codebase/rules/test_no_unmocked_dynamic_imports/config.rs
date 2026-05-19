@@ -16,6 +16,17 @@ pub struct TestFilter {
     exclude: GlobSet,
 }
 
+pub struct ConfigSetupData {
+    filter: TestFilter,
+    pub setup_files: Vec<PathBuf>,
+}
+
+impl ConfigSetupData {
+    pub fn filter_matches(&self, rel_path: &str) -> bool {
+        self.filter.is_match(rel_path.to_string())
+    }
+}
+
 impl TestFilter {
     pub fn is_match(&self, rel_path: String) -> bool {
         let mut included = self.include.is_match(&rel_path);
@@ -74,6 +85,49 @@ pub fn test_filter(root: &Path, config: &NoMistakesConfig) -> Result<TestFilter>
     })
 }
 
+/// Pre-compute per-config filter and setup files once, so the per-test loop can skip
+/// re-reading and re-parsing config files on every iteration.
+pub fn precompute_setup_data(
+    root: &Path,
+    config: &NoMistakesConfig,
+) -> Result<Vec<ConfigSetupData>> {
+    let mut result = Vec::new();
+    for config_file in config_files(root, config) {
+        let source = std::fs::read_to_string(&config_file.path)?;
+        let base = config_file.path.parent().unwrap_or(root);
+        let includes =
+            normalize_matcher_patterns(root, base, config_file.includes(&source));
+        let excludes = normalize_matcher_patterns(
+            root,
+            base,
+            extract_test_property_strings(&source, "exclude"),
+        );
+        let filter = TestFilter {
+            include: build_globset(&includes)?,
+            include_regex: build_regexes(&extract_test_regexes(&source))?,
+            exclude: build_globset(&excludes)?,
+        };
+        let setup_files = setup_files_from_configs(root, vec![config_file.path])?;
+        result.push(ConfigSetupData { filter, setup_files });
+    }
+    Ok(result)
+}
+
+pub fn setup_files_for_test_precomputed(
+    rel_path: &str,
+    config_data: &[ConfigSetupData],
+) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for data in config_data {
+        if data.filter_matches(rel_path) {
+            files.extend(data.setup_files.iter().cloned());
+        }
+    }
+    files.sort();
+    files.dedup();
+    files
+}
+
 fn project_rule_includes(config: &NoMistakesConfig) -> Vec<String> {
     let mut includes = Vec::new();
     for project in config.projects.values() {
@@ -94,44 +148,6 @@ fn project_rule_includes(config: &NoMistakesConfig) -> Vec<String> {
         }
     }
     includes
-}
-
-#[cfg(test)]
-pub fn setup_files(root: &Path, config: &NoMistakesConfig) -> Result<Vec<PathBuf>> {
-    let config_files = config_files(root, config)
-        .into_iter()
-        .map(|config| config.path)
-        .collect::<Vec<_>>();
-    setup_files_from_configs(root, config_files)
-}
-
-pub fn setup_files_for_test(
-    root: &Path,
-    config: &NoMistakesConfig,
-    rel_path: String,
-) -> Result<Vec<PathBuf>> {
-    let mut files = Vec::new();
-    for config_file in config_files(root, config) {
-        let source = std::fs::read_to_string(&config_file.path)?;
-        let base = config_file.path.parent().unwrap_or(root);
-        let includes = normalize_matcher_patterns(root, base, config_file.includes(&source));
-        let excludes = normalize_matcher_patterns(
-            root,
-            base,
-            extract_test_property_strings(&source, "exclude"),
-        );
-        let filter = TestFilter {
-            include: build_globset(&includes)?,
-            include_regex: build_regexes(&extract_test_regexes(&source))?,
-            exclude: build_globset(&excludes)?,
-        };
-        if filter.is_match(rel_path.clone()) {
-            files.extend(setup_files_from_configs(root, vec![config_file.path])?);
-        }
-    }
-    files.sort();
-    files.dedup();
-    Ok(files)
 }
 
 fn normalize_matcher_patterns(root: &Path, base: &Path, patterns: Vec<String>) -> Vec<String> {
