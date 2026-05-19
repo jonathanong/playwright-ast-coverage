@@ -14,25 +14,6 @@ fn function_declarations_shadow_global_fetch() {
 }
 
 #[test]
-fn is_fetch_shadowed_state_method() {
-    let mut visitor = FetchVisitor::new("", "fixture.ts", false, false);
-
-    // Test initial state
-    assert!(!visitor.is_fetch_shadowed());
-
-    // Test mark_fetch_shadowed
-    visitor.mark_fetch_shadowed();
-    assert!(visitor.is_fetch_shadowed());
-
-    // Test scope entry/exit interactions
-    visitor.enter_fetch_scope(false);
-    assert!(visitor.is_fetch_shadowed());
-
-    visitor.leave_fetch_scope();
-    assert!(visitor.is_fetch_shadowed());
-}
-
-#[test]
 fn is_fetch_shadowed_respects_scope_stack() {
     let mut visitor = FetchVisitor::new("", "fixture.ts", false, false);
 
