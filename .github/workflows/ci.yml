@@ -40,7 +40,7 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Install tokei and ripgrep
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.77.6
         with:
           tool: tokei,ripgrep
 
@@ -106,7 +106,7 @@ jobs:
             --fail-under-lines 99 --fail-under-functions 99 --show-missing-lines --lcov --output-path target/llvm-cov/lcov.info
 
       - name: Install cargo-crap
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.77.6
         with:
           tool: cargo-crap
 
@@ -165,7 +165,7 @@ jobs:
 
       - name: Install Linux Rust script tools
         if: runner.os == 'Linux'
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.77.6
         with:
           tool: tokei,ripgrep
 
