@@ -318,6 +318,56 @@ fn reachable_check_uses_shared_facts_without_disk_read() {
 }
 
 #[test]
+fn reachable_check_falls_back_to_disk_when_dep_facts_incomplete() {
+    // reachable.rs:54 — closing `}` of `if let (Some(source), Some(facts))`.
+    // When a dep is in shared.ts but source/dynamic_imports is None, fall through to disk.
+    let root = fixture();
+    let tsconfig = TsConfig {
+        dir: root.clone(),
+        paths: vec![],
+        paths_dir: root.clone(),
+        base_url: None,
+    };
+    let resolver = ImportResolver::new(&tsconfig);
+    let test_file = root.join("tests").join("good.test.mts");
+    let dep = root.join("src").join("child.mts");
+    let mut forward = HashMap::new();
+    forward.insert(test_file.clone(), vec![dep.clone()]);
+    let graph = DepGraph::from_raw_maps(root.clone(), forward, Default::default());
+    let mut shared_ts = HashMap::new();
+    // dep is in shared.ts but with source=None (incomplete facts)
+    shared_ts.insert(dep.clone(), crate::codebase::check_facts::CheckFileFacts {
+        source: None,
+        dynamic_imports: None,
+        ..Default::default()
+    });
+    let shared = crate::codebase::check_facts::CheckFactMap {
+        files: vec![dep],
+        ts: shared_ts,
+        ..Default::default()
+    };
+    let mocks = HashSet::new();
+    let dependency_cache = Mutex::new(HashMap::new());
+    let mut findings = Vec::new();
+    let config = crate::config::v2::NoMistakesConfig::default();
+    reachable::check(
+        reachable::ReachableContext {
+            root: &root,
+            config: &config,
+            resolver: &resolver,
+            graph: &graph,
+            shared: Some(&shared),
+        },
+        &test_file,
+        &mocks,
+        &dependency_cache,
+        &mut findings,
+    )
+    .unwrap();
+    assert!(findings.is_empty());
+}
+
+#[test]
 fn check_inner_propagates_reachable_dep_disk_error() {
     let root = fixture();
     let config = crate::config::v2::load_v2_config(&root, None).unwrap();

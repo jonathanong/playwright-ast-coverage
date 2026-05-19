@@ -282,3 +282,24 @@ fn run_check_with_facts_reports_missing_setup_fact_shapes() {
         .to_string()
         .contains("missing dynamic import facts"));
 }
+
+#[test]
+fn run_check_with_facts_reports_test_file_parse_error() {
+    // with_facts.rs:48 — parse_error bail for the test file itself (without disable comment)
+    let root = dynamic_import_fixture();
+    let test = root.join("tests/bad.test.mts");
+    let mut shared = crate::codebase::check_facts::CheckFactMap {
+        files: vec![test.clone()],
+        ..Default::default()
+    };
+    shared.ts.insert(
+        test,
+        crate::codebase::check_facts::CheckFileFacts {
+            source: Some("test('broken', () => {})".to_string()),
+            parse_error: Some("syntax error".to_string()),
+            ..Default::default()
+        },
+    );
+    let error = run_check_with_facts(&root, None, None, &shared).unwrap_err();
+    assert!(format!("{error:#}").contains("syntax error"));
+}
