@@ -1,7 +1,7 @@
 use super::*;
 
 fn nonexistent_config() -> std::path::PathBuf {
-    std::path::PathBuf::from("/nonexistent/config.yaml")
+    std::path::PathBuf::from("nonexistent-config.yaml")
 }
 
 fn assert_no_fetch_root() -> std::path::PathBuf {
