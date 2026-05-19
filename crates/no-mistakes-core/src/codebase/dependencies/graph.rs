@@ -7,7 +7,7 @@ use crate::codebase::ts_source::facts::{
 };
 use crate::codebase::ts_symbols::ExportKind;
 use anyhow::Result;
-use globset::{Glob, GlobSet, GlobSetBuilder};
+use globset::{Glob, GlobBuilder, GlobSet, GlobSetBuilder};
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -248,6 +248,9 @@ fn ts_fact_context_from_options(
     };
     if plan.routes || plan.http {
         context.backend_register_object = resolved_backend_register_object(options);
+        context.backend_route_glob = resolved_backend_pattern(options)
+            .as_deref()
+            .and_then(compile_graph_glob);
         context.http_prefixes = resolved_backend_prefixes(options);
     }
     if plan.queues
@@ -256,8 +259,22 @@ fn ts_fact_context_from_options(
     {
         context.queue_factory_specifier = Some(options.queue.factory_specifier.clone());
         context.queue_factory_function = Some(options.queue.factory_function.clone());
+        context.queue_factory_glob = compile_graph_glob(&options.queue.queue_pattern);
     }
     context
+}
+
+fn compile_graph_glob(pattern: &str) -> Option<GlobSet> {
+    if pattern.is_empty() {
+        return None;
+    }
+    let glob = GlobBuilder::new(pattern)
+        .literal_separator(false)
+        .build()
+        .ok()?;
+    let mut builder = GlobSetBuilder::new();
+    builder.add(glob);
+    builder.build().ok()
 }
 
 fn resolved_backend_pattern(options: &GraphConfigOptions) -> Option<String> {
@@ -1484,7 +1501,7 @@ fn collect_backend_routes_from_graph_inputs(
 ) -> Vec<(PathBuf, String)> {
     if let Some(facts) = facts {
         return all_files
-            .iter()
+            .par_iter()
             .filter(|path| {
                 path.strip_prefix(root)
                     .map(|rel| pattern_globset.is_match(rel))
@@ -1802,35 +1819,6 @@ fn collect_playwright_route_edges(root: &Path, all_files: &[PathBuf]) -> Vec<Edg
 
 // ── HTTP call edges ───────────────────────────────────────────────────────────
 
-enum HttpCallSource {
-    Facts(Vec<crate::codebase::ts_http_calls::HttpCall>),
-    Source(String),
-}
-
-fn http_call_sources(
-    facts: Option<&TsFactMap>,
-    files: &[(PathBuf, String)],
-    graph_files: &[PathBuf],
-) -> Vec<(PathBuf, HttpCallSource)> {
-    if let Some(facts) = facts {
-        return graph_files
-            .iter()
-            .filter_map(|path| {
-                let file_facts = facts.get(path)?;
-                Some((
-                    path.clone(),
-                    HttpCallSource::Facts(file_facts.http_calls.clone()),
-                ))
-            })
-            .collect();
-    }
-
-    files
-        .iter()
-        .map(|(path, source)| (path.clone(), HttpCallSource::Source(source.clone())))
-        .collect()
-}
-
 /// Collect `HttpCall` edges: files that make literal HTTP calls to paths that
 /// match a backend route definition.
 ///
@@ -1852,8 +1840,6 @@ fn collect_http_call_edges(
     config_options: Option<&GraphConfigOptions>,
 ) -> Vec<Edge> {
     use crate::codebase::ts_http_calls::extract_http_calls;
-    use crate::codebase::ts_routes::matcher;
-    use globset::{GlobBuilder, GlobSetBuilder};
 
     let Some(config_options) = config_options else {
         return vec![];
@@ -1869,18 +1855,9 @@ fn collect_http_call_edges(
         return vec![];
     }
 
-    let glob = match GlobBuilder::new(&backend_pattern)
-        .literal_separator(false)
-        .build()
-    {
-        Ok(g) => g,
-        Err(_) => return vec![],
+    let Some(gs) = compile_graph_glob(&backend_pattern) else {
+        return vec![];
     };
-    let mut gb = GlobSetBuilder::new();
-    gb.add(glob);
-    let gs = gb
-        .build()
-        .expect("globset with one validated HTTP route glob should build");
 
     // Collect backend route definitions: (file, pattern)
     let route_defs =
@@ -1893,33 +1870,48 @@ fn collect_http_call_edges(
 
     let _ = tsconfig; // reserved for future alias-aware call resolution
 
-    // For each source file, find HTTP calls and match against route defs.
-    http_call_sources(facts, files, graph_files)
-        .into_par_iter()
-        .flat_map_iter(|(caller, calls_or_source)| {
-            let calls = match calls_or_source {
-                HttpCallSource::Facts(calls) => calls,
-                HttpCallSource::Source(source) => extract_http_calls(&source, &prefix_strs),
-            };
-            if calls.is_empty() {
-                return vec![];
-            }
+    if let Some(facts) = facts {
+        return graph_files
+            .par_iter()
+            .filter_map(|caller| {
+                facts
+                    .get(caller)
+                    .map(|file_facts| (caller.as_path(), file_facts.http_calls.as_slice()))
+            })
+            .flat_map_iter(|(caller, calls)| http_edges_for_calls(caller, calls, &route_defs))
+            .collect();
+    }
 
-            let mut edges = Vec::new();
-            for call in &calls {
-                for (def_file, def_pattern) in &route_defs {
-                    if *def_file != caller && matcher::matches(&call.path, def_pattern) {
-                        edges.push((
-                            NodeId::File(caller.clone()),
-                            NodeId::File(def_file.clone()),
-                            EdgeKind::HttpCall,
-                        ));
-                    }
-                }
-            }
-            edges
+    // For each source file, find HTTP calls and match against route defs.
+    files
+        .par_iter()
+        .flat_map_iter(|(caller, source)| {
+            let calls = extract_http_calls(source, &prefix_strs);
+            http_edges_for_calls(caller, &calls, &route_defs)
         })
         .collect()
+}
+
+fn http_edges_for_calls(
+    caller: &Path,
+    calls: &[crate::codebase::ts_http_calls::HttpCall],
+    route_defs: &[(PathBuf, String)],
+) -> Vec<Edge> {
+    use crate::codebase::ts_routes::matcher;
+
+    let mut edges = Vec::new();
+    for call in calls {
+        for (def_file, def_pattern) in route_defs {
+            if def_file != caller && matcher::matches(&call.path, def_pattern) {
+                edges.push((
+                    NodeId::File(caller.to_path_buf()),
+                    NodeId::File(def_file.clone()),
+                    EdgeKind::HttpCall,
+                ));
+            }
+        }
+    }
+    edges
 }
 
 // ── Process spawn edges ───────────────────────────────────────────────────────
@@ -1939,9 +1931,9 @@ fn collect_process_spawn_edges(
 
     if let Some(facts) = facts {
         return graph_files
-            .iter()
+            .par_iter()
             .filter_map(|path| facts.get(path))
-            .flat_map(|file_facts| {
+            .flat_map_iter(|file_facts| {
                 file_facts.process_spawns.iter().map(|e| {
                     (
                         NodeId::File(e.spawner.clone()),

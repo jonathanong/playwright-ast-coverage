@@ -95,6 +95,7 @@ fn route_collectors_cover_configured_prefixes_and_scan_globs() {
     let all_files = GraphFiles::discover(&root).all;
     let client = root.join("src/client.ts");
     let route = root.join("backend/api/users.mts");
+    let fake_route = root.join("src/fake-backend.mts");
     let config_options = graph_config_options(&root);
 
     let route_edges =
@@ -116,6 +117,34 @@ fn route_collectors_cover_configured_prefixes_and_scan_globs() {
         config_options.as_ref(),
     );
     assert!(http_edges.iter().any(|(from, to, kind)| {
+        *kind == EdgeKind::HttpCall
+            && from.as_file() == Some(client.as_path())
+            && to.as_file() == Some(route.as_path())
+    }));
+
+    let fact_plan = GraphBuildPlan {
+        routes: true,
+        http: true,
+        ..GraphBuildPlan::default()
+    };
+    let fact_context = ts_fact_context_for_plan(&root, fact_plan);
+    let facts = collect_ts_facts_with_context(&all_files, fact_plan.ts_fact_plan(), &fact_context);
+    assert!(facts
+        .get(&fake_route)
+        .expect("fake route source should be parsed")
+        .backend_routes
+        .is_empty());
+
+    let http_edges_with_facts = collect_http_call_edges(
+        &root,
+        &tsconfig,
+        Some(&facts),
+        &[],
+        &all_files,
+        &all_files,
+        config_options.as_ref(),
+    );
+    assert!(http_edges_with_facts.iter().any(|(from, to, kind)| {
         *kind == EdgeKind::HttpCall
             && from.as_file() == Some(client.as_path())
             && to.as_file() == Some(route.as_path())
