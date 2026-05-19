@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "vitest";
-import { fixture, messages, plugin } from "./helpers.mjs";
+import { fixture, lint, messages, plugin } from "./helpers.mjs";
 
 describe("plugin exports", () => {
   it("exposes rules and flat configs", () => {
@@ -156,5 +156,57 @@ describe("consistent-attribute", () => {
       }),
       [],
     );
+  });
+});
+
+describe("require-interactive-test-id", () => {
+  it("reports interactive elements without a test ID", () => {
+    assert.equal(messages(fixture("interactive.jsx"), "require-interactive-test-id").length, 15);
+  });
+});
+
+describe("prefer-get-by-test-id", () => {
+  it("reports exact CSS test-id selectors in Playwright selector calls", () => {
+    assert.deepEqual(messages(fixture("prefer-get-by-testid.js"), "prefer-get-by-test-id"), [
+      "prefer",
+      "prefer",
+      "prefer",
+      "prefer",
+      "prefer",
+      "prefer",
+      "prefer",
+    ]);
+  });
+});
+
+describe("naming-convention", () => {
+  it("checks literal values against a configurable pattern", () => {
+    assert.deepEqual(
+      messages(
+        "<><button data-pw='SaveButton' /><button data-pw='save-button' /></>;",
+        "naming-convention",
+        { pattern: "^[A-Z][A-Za-z]+$" },
+      ),
+      ["naming"],
+    );
+  });
+
+  it("checks literal values against default pattern", () => {
+    assert.deepEqual(
+      messages("<button data-pw='SaveButton' />;", "naming-convention", {
+        pattern: "^[A-Z][A-Za-z]+$",
+      }),
+      [],
+    );
+  });
+});
+
+describe("strict config", () => {
+  it("runs the strict rule set", () => {
+    const messages = lint("<button data-testid='Save' />;", plugin.configs.strict.rules);
+    assert.deepEqual(messages.map((message) => message.ruleId).sort(), [
+      "playwright-ast-coverage/consistent-attribute",
+      "playwright-ast-coverage/naming-convention",
+    ]);
   });
 });
