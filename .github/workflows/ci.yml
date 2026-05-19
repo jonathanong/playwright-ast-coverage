@@ -105,6 +105,14 @@ jobs:
           cargo llvm-cov --workspace --all-features \
             --fail-under-lines 99 --fail-under-functions 99 --show-missing-lines --lcov --output-path target/llvm-cov/lcov.info
 
+      - name: Install cargo-crap
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-crap
+
+      - name: Enforce CRAP threshold
+        run: cargo crap --lcov target/llvm-cov/lcov.info --fail-above --threshold 30
+
       - name: Upload Rust coverage to Codecov
         if: ${{ env.CODECOV_TOKEN != '' }}
         uses: codecov/codecov-action@v6
