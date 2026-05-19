@@ -109,25 +109,23 @@ pub(crate) fn collect_domain_facts<'a>(
     } else {
         Vec::new()
     };
-    let backend_routes = if plan.backend_routes {
-        context
-            .backend_route_extractors
-            .iter()
-            .filter(|extractor| context.matches_glob(path, &extractor.glob))
-            .flat_map(|extractor| {
+    let mut backend_routes = Vec::new();
+    if plan.backend_routes {
+        for extractor in &context.backend_route_extractors {
+            if !context.matches_glob(path, &extractor.glob) {
+                continue;
+            }
+            for (route, line) in
                 extract_backend_routes_from_program(program, source, &extractor.register_object)
-                    .into_iter()
-                    .map(|(route, line)| BackendRouteFact {
-                        register_object: extractor.register_object.clone(),
-                        route,
-                        line,
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect()
-    } else {
-        Vec::new()
-    };
+            {
+                backend_routes.push(BackendRouteFact {
+                    register_object: extractor.register_object.clone(),
+                    route,
+                    line,
+                });
+            }
+        }
+    }
     let queue_usage = plan
         .queue_usage
         .then(|| extract_queue_usage_from_program(program, source));

@@ -1492,32 +1492,35 @@ fn collect_route_edges(
                 .expect("route scan files are rooted under the graph root")
                 .to_path_buf();
             let rel_str = rel.to_string_lossy().into_owned();
-            let route_refs = facts
-                .and_then(|facts| facts.get(&path))
-                .map(|file_facts| file_facts.route_refs.clone())
-                .unwrap_or_else(|| {
-                    let source = std::fs::read_to_string(&path).unwrap_or_default();
-                    refs::extract_route_refs(&source, &rel_str)
-                });
             let mut edges = Vec::new();
-            for route_ref in route_refs {
-                let is_backend = backend_prefixes
-                    .iter()
-                    .any(|p| route_ref.pattern.starts_with(p.as_str()));
-                let is_backend = is_backend || backend_exact.contains(&route_ref.pattern);
-                if !is_backend && opts.frontend_root.is_empty() {
-                    continue;
-                }
-                for pattern in &all_patterns {
-                    if matcher::matches(&route_ref.pattern, pattern) {
-                        for def_file in pattern_to_files[pattern]
+            let mut push_edges_for_refs =
+                |route_refs: &[crate::codebase::ts_routes::refs::RouteRef]| {
+                    for route_ref in route_refs {
+                        let is_backend = backend_prefixes
                             .iter()
-                            .filter(|def_file| *def_file != &path)
-                        {
-                            push_route_ref_edge(&mut edges, &path, def_file);
+                            .any(|p| route_ref.pattern.starts_with(p.as_str()));
+                        let is_backend = is_backend || backend_exact.contains(&route_ref.pattern);
+                        if !is_backend && opts.frontend_root.is_empty() {
+                            continue;
+                        }
+                        for pattern in &all_patterns {
+                            if matcher::matches(&route_ref.pattern, pattern) {
+                                for def_file in pattern_to_files[pattern]
+                                    .iter()
+                                    .filter(|def_file| *def_file != &path)
+                                {
+                                    push_route_ref_edge(&mut edges, &path, def_file);
+                                }
+                            }
                         }
                     }
-                }
+                };
+            if let Some(file_facts) = facts.and_then(|facts| facts.get(&path)) {
+                push_edges_for_refs(&file_facts.route_refs);
+            } else {
+                let source = std::fs::read_to_string(&path).unwrap_or_default();
+                let route_refs = refs::extract_route_refs(&source, &rel_str);
+                push_edges_for_refs(&route_refs);
             }
             edges
         })
@@ -1655,13 +1658,18 @@ fn add_queue_edges(
     let queue_def_paths: HashSet<PathBuf> = def_to_queue_name.keys().cloned().collect();
 
     for path in files {
-        let usage = facts
+        let fallback_usage;
+        let usage = match facts
             .and_then(|facts| facts.get(path))
-            .and_then(|file_facts| file_facts.queue_usage.clone())
-            .unwrap_or_else(|| {
+            .and_then(|file_facts| file_facts.queue_usage.as_ref())
+        {
+            Some(usage) => usage,
+            None => {
                 let source = std::fs::read_to_string(path).unwrap_or_default();
-                extract_queue_usage(&source)
-            });
+                fallback_usage = extract_queue_usage(&source);
+                &fallback_usage
+            }
+        };
 
         // Resolve which imports come from queue-def files.
         // Build: local_binding → queue_def_file
