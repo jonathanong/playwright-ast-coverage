@@ -1,4 +1,4 @@
-use super::TsFactPlan;
+use super::{BackendRouteFact, TsFactPlan};
 use crate::codebase::ts_http_calls::{extract_http_calls_from_program, HttpCall};
 use crate::codebase::ts_process_spawn::{extract_spawn_edges_from_program, SpawnEdge};
 use crate::codebase::ts_queues::factory::{
@@ -14,12 +14,18 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]
 pub struct TsFactContext {
     pub root: PathBuf,
-    pub backend_register_object: Option<String>,
-    pub backend_route_glob: Option<GlobSet>,
+    pub backend_route_extractors: Vec<BackendRouteExtractor>,
     pub queue_factory_specifier: Option<String>,
     pub queue_factory_function: Option<String>,
     pub queue_factory_glob: Option<GlobSet>,
     pub http_prefixes: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct BackendRouteExtractor {
+    pub register_object: String,
+    pub pattern: String,
+    pub glob: GlobSet,
 }
 
 impl TsFactContext {
@@ -30,18 +36,40 @@ impl TsFactContext {
         }
     }
 
-    fn matches_backend_route(&self, path: &Path) -> bool {
-        self.matches_glob(path, &self.backend_route_glob)
+    pub fn add_backend_route_extractor(
+        &mut self,
+        register_object: String,
+        pattern: String,
+        glob: GlobSet,
+    ) {
+        if self
+            .backend_route_extractors
+            .iter()
+            .any(|extractor| {
+                extractor.register_object == register_object && extractor.pattern == pattern
+            })
+        {
+            return;
+        }
+        self.backend_route_extractors.push(BackendRouteExtractor {
+            register_object,
+            pattern,
+            glob,
+        });
     }
 
     fn matches_queue_factory(&self, path: &Path) -> bool {
-        self.matches_glob(path, &self.queue_factory_glob)
+        self.matches_optional_glob(path, &self.queue_factory_glob)
     }
 
-    fn matches_glob(&self, path: &Path, glob: &Option<GlobSet>) -> bool {
+    fn matches_optional_glob(&self, path: &Path, glob: &Option<GlobSet>) -> bool {
         let Some(glob) = glob else {
             return false;
         };
+        self.matches_glob(path, glob)
+    }
+
+    fn matches_glob(&self, path: &Path, glob: &GlobSet) -> bool {
         path.strip_prefix(&self.root)
             .map(|rel| glob.is_match(rel))
             .unwrap_or(false)
@@ -52,8 +80,7 @@ impl Default for TsFactContext {
     fn default() -> Self {
         Self {
             root: PathBuf::new(),
-            backend_register_object: None,
-            backend_route_glob: None,
+            backend_route_extractors: Vec::new(),
             queue_factory_specifier: None,
             queue_factory_function: None,
             queue_factory_glob: None,
@@ -65,7 +92,7 @@ impl Default for TsFactContext {
 #[derive(Default)]
 pub(crate) struct DomainFacts {
     pub route_refs: Vec<RouteRef>,
-    pub backend_routes: Vec<(String, u32)>,
+    pub backend_routes: Vec<BackendRouteFact>,
     pub queue_usage: Option<QueueUsage>,
     pub queue_create_line: Option<u32>,
     pub queue_name: Option<String>,
@@ -86,14 +113,22 @@ pub(crate) fn collect_domain_facts<'a>(
     } else {
         Vec::new()
     };
-    let backend_routes = if plan.backend_routes && context.matches_backend_route(path) {
+    let backend_routes = if plan.backend_routes {
         context
-            .backend_register_object
-            .as_ref()
-            .map(|register_object| {
-                extract_backend_routes_from_program(program, source, register_object)
+            .backend_route_extractors
+            .iter()
+            .filter(|extractor| context.matches_glob(path, &extractor.glob))
+            .flat_map(|extractor| {
+                extract_backend_routes_from_program(program, source, &extractor.register_object)
+                    .into_iter()
+                    .map(|(route, line)| BackendRouteFact {
+                        register_object: extractor.register_object.clone(),
+                        route,
+                        line,
+                    })
+                    .collect::<Vec<_>>()
             })
-            .unwrap_or_default()
+            .collect()
     } else {
         Vec::new()
     };

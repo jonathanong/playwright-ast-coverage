@@ -246,11 +246,19 @@ fn ts_fact_context_from_options(
     let Some(options) = options else {
         return context;
     };
-    if plan.routes || plan.http {
-        context.backend_register_object = resolved_backend_register_object(options);
-        context.backend_route_glob = resolved_backend_pattern(options)
-            .as_deref()
-            .and_then(compile_graph_glob);
+    if plan.routes {
+        add_backend_route_extractor(
+            &mut context,
+            route_backend_register_object(options),
+            route_backend_pattern(options),
+        );
+    }
+    if plan.http {
+        add_backend_route_extractor(
+            &mut context,
+            resolved_backend_register_object(options),
+            resolved_backend_pattern(options),
+        );
         context.http_prefixes = resolved_backend_prefixes(options);
     }
     if plan.queues
@@ -262,6 +270,20 @@ fn ts_fact_context_from_options(
         context.queue_factory_glob = compile_graph_glob(&options.queue.queue_pattern);
     }
     context
+}
+
+fn add_backend_route_extractor(
+    context: &mut TsFactContext,
+    register_object: Option<String>,
+    pattern: Option<String>,
+) {
+    let (Some(register_object), Some(pattern)) = (register_object, pattern) else {
+        return;
+    };
+    let Some(glob) = compile_graph_glob(&pattern) else {
+        return;
+    };
+    context.add_backend_route_extractor(register_object, pattern, glob);
 }
 
 fn compile_graph_glob(pattern: &str) -> Option<GlobSet> {
@@ -280,20 +302,16 @@ fn compile_graph_glob(pattern: &str) -> Option<GlobSet> {
 fn resolved_backend_pattern(options: &GraphConfigOptions) -> Option<String> {
     if !options.http_route.backend_pattern.is_empty() {
         Some(options.http_route.backend_pattern.clone())
-    } else if !options.route.backend_pattern.is_empty() {
-        Some(options.route.backend_pattern.clone())
     } else {
-        None
+        route_backend_pattern(options)
     }
 }
 
 fn resolved_backend_register_object(options: &GraphConfigOptions) -> Option<String> {
     if !options.http_route.register_object.is_empty() {
         Some(options.http_route.register_object.clone())
-    } else if !options.route.backend_register_object.is_empty() {
-        Some(options.route.backend_register_object.clone())
     } else {
-        None
+        route_backend_register_object(options)
     }
 }
 
@@ -307,6 +325,15 @@ fn resolved_backend_prefixes(options: &GraphConfigOptions) -> Vec<String> {
 
 fn route_backend_prefixes(options: &GraphConfigOptions) -> Vec<String> {
     options.route.backend_prefixes.clone()
+}
+
+fn route_backend_pattern(options: &GraphConfigOptions) -> Option<String> {
+    (!options.route.backend_pattern.is_empty()).then(|| options.route.backend_pattern.clone())
+}
+
+fn route_backend_register_object(options: &GraphConfigOptions) -> Option<String> {
+    (!options.route.backend_register_object.is_empty())
+        .then(|| options.route.backend_register_object.clone())
 }
 
 fn add_edge(map: &mut EdgeMap, from: NodeId, to: NodeId, kind: EdgeKind) {
@@ -1524,7 +1551,8 @@ fn collect_backend_routes_from_graph_inputs(
                 file_facts
                     .backend_routes
                     .iter()
-                    .map(|(route, _line)| ((*path).clone(), route.clone()))
+                    .filter(|route| route.register_object == register_object)
+                    .map(|route| ((*path).clone(), route.route.clone()))
                     .collect::<Vec<_>>()
             })
             .collect();

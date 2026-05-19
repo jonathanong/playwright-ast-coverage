@@ -162,6 +162,76 @@ fn route_collectors_cover_configured_prefixes_and_scan_globs() {
 }
 
 #[test]
+fn route_and_http_fact_context_keep_separate_backend_matchers() {
+    let root =
+        crate::codebase::ts_resolver::normalize_path(&fixture("graph-split-route-http-config"));
+    let tsconfig =
+        crate::codebase::ts_resolver::load_tsconfig(&root.join("tsconfig.json")).unwrap();
+    let all_files = GraphFiles::discover(&root).all;
+    let client = root.join("src/client.ts");
+    let route_def = root.join("routes/users.mts");
+    let http_def = root.join("http/users.mts");
+    let config_options = graph_config_options(&root);
+    let plan = GraphBuildPlan {
+        routes: true,
+        http: true,
+        ..GraphBuildPlan::default()
+    };
+    let context = ts_fact_context_for_plan(&root, plan);
+    assert_eq!(context.backend_route_extractors.len(), 2);
+
+    let facts = collect_ts_facts_with_context(&all_files, plan.ts_fact_plan(), &context);
+    assert!(facts[&route_def].backend_routes.iter().any(|route| {
+        route.register_object == "routeApp" && route.route == "/route/users/:id"
+    }));
+    assert!(facts[&http_def].backend_routes.iter().any(|route| {
+        route.register_object == "httpApp" && route.route == "/http/users/:id"
+    }));
+    assert!(facts[&route_def]
+        .backend_routes
+        .iter()
+        .all(|route| route.register_object != "httpApp"));
+    assert!(facts[&http_def]
+        .backend_routes
+        .iter()
+        .all(|route| route.register_object != "routeApp"));
+
+    let route_edges = collect_route_edges(
+        &root,
+        &tsconfig,
+        &all_files,
+        Some(&facts),
+        config_options.as_ref(),
+    );
+    assert!(route_edges.iter().any(|(from, to, kind)| {
+        *kind == EdgeKind::RouteRef
+            && from.as_file() == Some(client.as_path())
+            && to.as_file() == Some(route_def.as_path())
+    }));
+    assert!(route_edges.iter().all(|(_from, to, kind)| {
+        *kind != EdgeKind::RouteRef || to.as_file() != Some(http_def.as_path())
+    }));
+
+    let http_edges = collect_http_call_edges(
+        &root,
+        &tsconfig,
+        Some(&facts),
+        &[],
+        &all_files,
+        &all_files,
+        config_options.as_ref(),
+    );
+    assert!(http_edges.iter().any(|(from, to, kind)| {
+        *kind == EdgeKind::HttpCall
+            && from.as_file() == Some(client.as_path())
+            && to.as_file() == Some(http_def.as_path())
+    }));
+    assert!(http_edges.iter().all(|(_from, to, kind)| {
+        *kind != EdgeKind::HttpCall || to.as_file() != Some(route_def.as_path())
+    }));
+}
+
+#[test]
 fn graph_config_helpers_require_explicit_prefixes_and_valid_globs() {
     let empty = crate::codebase::ts_resolver::normalize_path(&fixture("graph-empty-route-config"));
     let empty_options = graph_config_options(&empty).unwrap();
@@ -175,7 +245,7 @@ fn graph_config_helpers_require_explicit_prefixes_and_valid_globs() {
         ..GraphBuildPlan::default()
     };
     let context = ts_fact_context_from_options(&empty, plan, Some(&empty_options));
-    assert!(context.backend_route_glob.is_none());
+    assert!(context.backend_route_extractors.is_empty());
     assert!(context.queue_factory_glob.is_none());
     assert!(context.http_prefixes.is_empty());
 

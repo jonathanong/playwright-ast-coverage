@@ -1,0 +1,11 @@
+rules:
+  route-consistency:
+    backendPattern: "routes/**/*.mts"
+    backendRegisterObject: "routeApp"
+    backendPrefixes: ["/route/"]
+    scanPatterns: ["src/**/*.ts"]
+  http-route-static-paths:
+    backendPattern: "http/**/*.mts"
+    registerObject: "httpApp"
+  http-call-static-paths:
+    backendPrefixes: ["/http/"]

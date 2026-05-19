@@ -69,12 +69,19 @@ impl TsFactPlan {
 }
 
 #[derive(Debug, Clone, Default)]
+pub struct BackendRouteFact {
+    pub register_object: String,
+    pub route: String,
+    pub line: u32,
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct TsFileFacts {
     pub source: Option<String>,
     pub imports: Vec<ExtractedImport>,
     pub symbols: Option<FileSymbols>,
     pub route_refs: Vec<RouteRef>,
-    pub backend_routes: Vec<(String, u32)>,
+    pub backend_routes: Vec<BackendRouteFact>,
     pub queue_usage: Option<QueueUsage>,
     pub queue_create_line: Option<u32>,
     pub queue_name: Option<String>,
