@@ -354,15 +354,16 @@ fn graph_collectors_cover_defensive_empty_and_error_paths() {
     add_ci_edges(&root.join("missing"), &[], &mut forward, &mut reverse);
     assert!(forward.is_empty());
 
-    assert!(collect_route_edges(&root.join("missing"), &tsconfig, &[]).is_empty());
+    assert!(collect_route_edges(&root.join("missing"), &tsconfig, &[], None).is_empty());
     add_queue_edges(
         &root.join("missing"),
         &crate::codebase::ts_resolver::ImportResolver::new(&tsconfig),
         &[],
+        None,
         &mut forward,
         &mut reverse,
     );
-    assert!(collect_http_call_edges(&root.join("missing"), &tsconfig, &[], &[]).is_empty());
+    assert!(collect_http_call_edges(&root.join("missing"), &tsconfig, None, &[], &[]).is_empty());
 }
 
 #[test]
@@ -381,21 +382,35 @@ fn graph_collectors_cover_malformed_and_invalid_config_branches() {
         crate::codebase::ts_resolver::normalize_path(&fixture("playwright-coverage"));
     let frontend_files = GraphFiles::discover(&frontend_only).all;
 
-    assert!(collect_route_edges(&malformed, &tsconfig, &files).is_empty());
-    assert!(collect_route_edges(&invalid, &tsconfig, &files).is_empty());
-    assert!(collect_route_edges(&empty, &tsconfig, &files).is_empty());
-    assert!(collect_route_edges(&frontend_only, &tsconfig, &frontend_files).is_empty());
+    assert!(collect_route_edges(&malformed, &tsconfig, &files, None).is_empty());
+    assert!(collect_route_edges(&invalid, &tsconfig, &files, None).is_empty());
+    assert!(collect_route_edges(&empty, &tsconfig, &files, None).is_empty());
+    assert!(collect_route_edges(&frontend_only, &tsconfig, &frontend_files, None).is_empty());
 
     let mut forward = EdgeMap::new();
     let mut reverse = EdgeMap::new();
-    add_queue_edges(&malformed, &resolver, &files, &mut forward, &mut reverse);
-    add_queue_edges(&invalid, &resolver, &files, &mut forward, &mut reverse);
-    add_queue_edges(&empty, &resolver, &files, &mut forward, &mut reverse);
+    add_queue_edges(
+        &malformed,
+        &resolver,
+        &files,
+        None,
+        &mut forward,
+        &mut reverse,
+    );
+    add_queue_edges(
+        &invalid,
+        &resolver,
+        &files,
+        None,
+        &mut forward,
+        &mut reverse,
+    );
+    add_queue_edges(&empty, &resolver, &files, None, &mut forward, &mut reverse);
     assert!(forward.is_empty());
 
     let sources = vec![(files[0].clone(), "fetch('/api/users')".to_string())];
-    assert!(collect_http_call_edges(&malformed, &tsconfig, &sources, &files).is_empty());
-    assert!(collect_http_call_edges(&invalid, &tsconfig, &sources, &files).is_empty());
+    assert!(collect_http_call_edges(&malformed, &tsconfig, None, &sources, &files).is_empty());
+    assert!(collect_http_call_edges(&invalid, &tsconfig, None, &sources, &files).is_empty());
 }
 
 #[test]
@@ -475,7 +490,7 @@ fn processor_export_kind_accepts_runtime_exports_only() {
 }
 
 #[test]
-fn route_collectors_cover_default_prefixes_and_scan_globs() {
+fn route_collectors_cover_configured_prefixes_and_scan_globs() {
     let root = crate::codebase::ts_resolver::normalize_path(&fixture("graph-default-route-config"));
     let tsconfig =
         crate::codebase::ts_resolver::load_tsconfig(&root.join("tsconfig.json")).unwrap();
@@ -483,7 +498,7 @@ fn route_collectors_cover_default_prefixes_and_scan_globs() {
     let client = root.join("src/client.ts");
     let route = root.join("backend/api/users.mts");
 
-    let route_edges = collect_route_edges(&root, &tsconfig, &all_files);
+    let route_edges = collect_route_edges(&root, &tsconfig, &all_files, None);
     assert!(route_edges.iter().any(|(from, to, kind)| {
         *kind == EdgeKind::RouteRef
             && from.as_file() == Some(client.as_path())
@@ -491,7 +506,7 @@ fn route_collectors_cover_default_prefixes_and_scan_globs() {
     }));
 
     let sources = vec![(client.clone(), std::fs::read_to_string(&client).unwrap())];
-    let http_edges = collect_http_call_edges(&root, &tsconfig, &sources, &all_files);
+    let http_edges = collect_http_call_edges(&root, &tsconfig, None, &sources, &all_files);
     assert!(http_edges.iter().any(|(from, to, kind)| {
         *kind == EdgeKind::HttpCall
             && from.as_file() == Some(client.as_path())

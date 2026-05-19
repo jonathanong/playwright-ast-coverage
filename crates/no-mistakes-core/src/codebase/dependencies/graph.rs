@@ -1907,8 +1907,8 @@ fn collect_process_spawn_edges(
 
     if let Some(facts) = facts {
         return facts
-            .iter()
-            .flat_map(|(_path, file_facts)| {
+            .values()
+            .flat_map(|file_facts| {
                 file_facts.process_spawns.iter().map(|e| {
                     (
                         NodeId::File(e.spawner.clone()),
