@@ -1,6 +1,8 @@
 import { RuleTester } from "eslint";
+import assert from "node:assert/strict";
 import { afterAll, describe, it } from "vitest";
 import rule from "../src/rules/require-interactive-test-id.js";
+import { messages } from "./helpers.mjs";
 
 RuleTester.describe = describe;
 RuleTester.it = it;
@@ -111,4 +113,15 @@ tester.run("require-interactive-test-id", rule, {
       errors: [{ messageId: "missing", line: 3, column: 2 }],
     },
   ],
+});
+
+describe("messages coverage", () => {
+  it("reports anchor href and onClick controls without selectors", () => {
+    assert.deepEqual(messages("<a href='/x' />;", "require-interactive-test-id"), ["missing"]);
+    assert.deepEqual(messages("<div onClick={fn} />;", "require-interactive-test-id"), ["missing"]);
+  });
+
+  it("ignores non-interactive role without onClick", () => {
+    assert.deepEqual(messages("<div role='presentation' />;", "require-interactive-test-id"), []);
+  });
 });
