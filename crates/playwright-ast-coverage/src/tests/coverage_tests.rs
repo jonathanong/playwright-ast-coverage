@@ -16,22 +16,22 @@ fn fetch_edges_mark_fetch_apis_covered() {
     }];
     let edges = vec![
         Edge::Fetch {
-            test_file: std::sync::Arc::new("tests/e2e/app.spec.ts".to_string()),
-            test_name: Some(std::sync::Arc::new("visits home".to_string())),
-            describe_path: std::sync::Arc::new(vec!["Suite".to_string()]),
-            route_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
-            route: std::sync::Arc::new("/".to_string()),
+            test_file: "tests/e2e/app.spec.ts".to_string(),
+            test_name: Some("visits home".to_string()),
+            describe_path: vec!["Suite".to_string()],
+            route_file: "web/app/page.tsx".to_string(),
+            route: "/".to_string(),
             method: "GET".to_string(),
             path: "/api/health".to_string(),
             side: "server".to_string(),
             cached: false,
         },
         Edge::Fetch {
-            test_file: std::sync::Arc::new("tests/e2e/app.spec.ts".to_string()),
+            test_file: "tests/e2e/app.spec.ts".to_string(),
             test_name: None,
-            describe_path: std::sync::Arc::new(vec![]),
-            route_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
-            route: std::sync::Arc::new("/".to_string()),
+            describe_path: vec![],
+            route_file: "web/app/page.tsx".to_string(),
+            route: "/".to_string(),
             method: "GET".to_string(),
             path: "/api/users".to_string(),
             side: "client".to_string(),
@@ -199,10 +199,10 @@ fn selector_edges_mark_targets_covered() {
         value: AppSelectorValue::Exact("save".to_string()),
     }];
     let edges = vec![Edge::Selector {
-        test_file: std::sync::Arc::new("tests/e2e/app.spec.ts".to_string()),
+        test_file: "tests/e2e/app.spec.ts".to_string(),
         test_name: None,
-        describe_path: std::sync::Arc::new(vec![]),
-        app_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
+        describe_path: vec![],
+        app_file: "web/app/page.tsx".to_string(),
         attribute: "data-testid".to_string(),
         value: "save".to_string(),
         selector: "getByTestId(save)".to_string(),
@@ -230,12 +230,12 @@ fn route_edges_mark_routes_covered() {
         pattern: "/users/:id".to_string(),
     }];
     let edges = vec![Edge::Route {
-        test_file: std::sync::Arc::new("tests/e2e/users.spec.ts".to_string()),
+        test_file: "tests/e2e/users.spec.ts".to_string(),
         test_name: None,
-        describe_path: std::sync::Arc::new(vec![]),
-        route_file: std::sync::Arc::new("web/app/users/[id]/page.tsx".to_string()),
-        route: std::sync::Arc::new("/users/:id".to_string()),
-        url: std::sync::Arc::new("/users/42".to_string()),
+        describe_path: vec![],
+        route_file: "web/app/users/[id]/page.tsx".to_string(),
+        route: "/users/:id".to_string(),
+        url: "/users/42".to_string(),
     }];
     let settings = default_settings(vec!["data-testid".to_string()]);
     let report = build_coverage(

@@ -105,15 +105,15 @@ pub(crate) fn build_related_report(
                 test_file,
                 route_file,
                 ..
-            } if related_files.contains(route_file.as_ref()) => {
-                tests.insert(test_file.to_string());
+            } if related_files.contains(route_file) => {
+                tests.insert(test_file.clone());
             }
             Edge::Selector {
                 test_file,
                 app_file,
                 ..
-            } if related_files.contains(app_file.as_ref()) => {
-                tests.insert(test_file.to_string());
+            } if related_files.contains(app_file) => {
+                tests.insert(test_file.clone());
             }
             Edge::Fetch {
                 test_file,
@@ -121,8 +121,8 @@ pub(crate) fn build_related_report(
                 method,
                 path,
                 ..
-            } if related_files.contains(route_file.as_ref()) => {
-                tests.insert(test_file.to_string());
+            } if related_files.contains(route_file) => {
+                tests.insert(test_file.clone());
                 fetch_apis.insert(format!("{method} {path}"));
             }
             _ => {}

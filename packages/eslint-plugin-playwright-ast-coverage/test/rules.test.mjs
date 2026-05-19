@@ -143,6 +143,18 @@ describe("unique", () => {
   });
 });
 
+describe("no-empty", () => {
+  it("reports empty literal test IDs", () => {
+    assert.deepEqual(
+      messages(
+        "<><button data-pw='' /><button data-pw /><button data-pw={'ok'} /></>;",
+        "no-empty",
+      ),
+      ["empty"],
+    );
+  });
+});
+
 describe("consistent-attribute", () => {
   it("requires the configured canonical attribute", () => {
     assert.deepEqual(messages("<button data-testid='save' />;", "consistent-attribute"), [
@@ -185,13 +197,9 @@ describe("naming-convention", () => {
       messages(
         "<><button data-pw='SaveButton' /><button data-pw='save-button' /></>;",
         "naming-convention",
-        { pattern: "^[A-Z][A-Za-z]+$" },
       ),
       ["naming"],
     );
-  });
-
-  it("checks literal values against default pattern", () => {
     assert.deepEqual(
       messages("<button data-pw='SaveButton' />;", "naming-convention", {
         pattern: "^[A-Z][A-Za-z]+$",

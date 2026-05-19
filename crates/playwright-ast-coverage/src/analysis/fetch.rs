@@ -6,17 +6,10 @@ use no_mistakes_core::fetch::types::{FetchOccurrence, FetchSide};
 use no_mistakes_core::routes::Route;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
-use std::sync::Arc;
 
 pub(crate) type FetchKey = (String, String);
-pub(crate) type FetchCoverageEntry = BTreeMap<
-    FetchKey,
-    (
-        BTreeSet<Arc<String>>,
-        BTreeSet<TestRef>,
-        BTreeSet<Arc<String>>,
-    ),
->;
+pub(crate) type FetchCoverageEntry =
+    BTreeMap<FetchKey, (BTreeSet<String>, BTreeSet<TestRef>, BTreeSet<String>)>;
 
 pub(crate) fn seed_fetch_coverage(fetch_index: &FetchIndex) -> FetchCoverageEntry {
     let mut by_fetch: FetchCoverageEntry = BTreeMap::new();
@@ -30,7 +23,7 @@ pub(crate) fn seed_fetch_coverage(fetch_index: &FetchIndex) -> FetchCoverageEntr
                 .entry(key)
                 .or_insert_with(|| (Default::default(), Default::default(), Default::default()))
                 .2
-                .insert(std::sync::Arc::new(route_file.clone()));
+                .insert(route_file.clone());
         }
     }
     by_fetch
@@ -68,7 +61,7 @@ pub(crate) fn expand_fetch_edges(edges: &[Edge], fetch_index: &FetchIndex) -> Ve
         else {
             continue;
         };
-        let Some(fetches) = fetch_index.get(route_file.as_ref()) else {
+        let Some(fetches) = fetch_index.get(route_file) else {
             continue;
         };
         for fetch_occ in fetches {
@@ -89,11 +82,11 @@ pub(crate) fn expand_fetch_edges(edges: &[Edge], fetch_index: &FetchIndex) -> Ve
 }
 
 fn fetch_edge(
-    test_file: &Arc<String>,
-    test_name: &Option<Arc<String>>,
-    describe_path: &Arc<Vec<String>>,
-    route_file: &Arc<String>,
-    route: &Arc<String>,
+    test_file: &str,
+    test_name: &Option<String>,
+    describe_path: &[String],
+    route_file: &str,
+    route: &str,
     occ: &FetchOccurrence,
 ) -> Edge {
     let side = match &occ.side {
@@ -101,11 +94,11 @@ fn fetch_edge(
         FetchSide::Server => "server",
     };
     Edge::Fetch {
-        test_file: test_file.clone(),
+        test_file: test_file.to_string(),
         test_name: test_name.clone(),
-        describe_path: describe_path.clone(),
-        route_file: route_file.clone(),
-        route: route.clone(),
+        describe_path: describe_path.to_vec(),
+        route_file: route_file.to_string(),
+        route: route.to_string(),
         method: occ.method.clone(),
         path: occ.path.clone(),
         side: side.to_string(),

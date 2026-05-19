@@ -237,18 +237,6 @@ fn export_list_non_component_ignored() {
 }
 
 #[test]
-fn export_function_declaration_default_export_resolves_default_and_named() {
-    let names = check_names("export-function-declaration-default-export");
-    assert_eq!(names, vec!["Foo", "default"]);
-}
-
-#[test]
-fn export_class_declaration_default_export_resolves_default_and_named() {
-    let names = check_names("export-class-declaration-default-export");
-    assert_eq!(names, vec!["Foo", "default"]);
-}
-
-#[test]
 fn export_class_extends_component() {
     let names = check_names("export-class-extends-component");
     assert_eq!(names, vec!["Foo"]);
@@ -279,24 +267,6 @@ fn local_class_component_resolves_via_export_list() {
 }
 
 #[test]
-fn local_function_declaration_default_export() {
-    let names = check_names("local-function-declaration");
-    assert_eq!(names, vec!["default"]);
-}
-
-#[test]
-fn local_class_declaration_default_export() {
-    let names = check_names("local-class-declaration");
-    assert_eq!(names, vec!["default"]);
-}
-
-#[test]
-fn local_class_declaration_lowercase_ignored() {
-    let names = check_names("local-class-declaration-lowercase");
-    assert!(names.is_empty());
-}
-
-#[test]
 fn export_default_function_decl_resolved() {
     let names = check_names("export-default-function-decl-resolved");
     assert_eq!(names, vec!["default"]);
@@ -306,24 +276,6 @@ fn export_default_function_decl_resolved() {
 fn export_list_resolves_function_decl() {
     let names = check_names("export-list-resolves-function-decl");
     assert_eq!(names, vec!["Foo"]);
-}
-
-#[test]
-fn export_function_declaration_only() {
-    let names = check_names("export-function-declaration-only");
-    assert_eq!(names, vec!["Foo"]);
-}
-
-#[test]
-fn export_class_declaration_only() {
-    let names = check_names("export-class-declaration-only");
-    assert_eq!(names, vec!["Foo"]);
-}
-
-#[test]
-fn export_class_declaration_no_superclass_ignored() {
-    let names = check_names("export-class-no-superclass");
-    assert!(names.is_empty());
 }
 
 #[test]

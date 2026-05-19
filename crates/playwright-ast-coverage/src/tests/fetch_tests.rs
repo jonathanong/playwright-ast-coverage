@@ -38,20 +38,20 @@ fn collect_fetches_for_routes_surfaces_route_parse_errors() {
 #[test]
 fn expand_skips_non_route_edges() {
     let selector_edge = Edge::Selector {
-        test_file: std::sync::Arc::new("tests/app.spec.ts".to_string()),
+        test_file: "tests/app.spec.ts".to_string(),
         test_name: None,
-        describe_path: std::sync::Arc::new(vec![]),
-        app_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
+        describe_path: vec![],
+        app_file: "web/app/page.tsx".to_string(),
         attribute: "data-testid".to_string(),
         value: "save".to_string(),
         selector: "getByTestId(save)".to_string(),
     };
     let fetch_edge = Edge::Fetch {
-        test_file: std::sync::Arc::new("tests/app.spec.ts".to_string()),
+        test_file: "tests/app.spec.ts".to_string(),
         test_name: None,
-        describe_path: std::sync::Arc::new(vec![]),
-        route_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
-        route: std::sync::Arc::new("/".to_string()),
+        describe_path: vec![],
+        route_file: "web/app/page.tsx".to_string(),
+        route: "/".to_string(),
         method: "GET".to_string(),
         path: "/api/health".to_string(),
         side: "server".to_string(),
@@ -70,12 +70,12 @@ fn expand_skips_non_route_edges() {
 #[test]
 fn expand_skips_routes_not_in_fetch_index() {
     let route_edge = Edge::Route {
-        test_file: std::sync::Arc::new("tests/app.spec.ts".to_string()),
+        test_file: "tests/app.spec.ts".to_string(),
         test_name: None,
-        describe_path: std::sync::Arc::new(vec![]),
-        route_file: std::sync::Arc::new("web/app/missing/page.tsx".to_string()),
-        route: std::sync::Arc::new("/missing".to_string()),
-        url: std::sync::Arc::new("/missing".to_string()),
+        describe_path: vec![],
+        route_file: "web/app/missing/page.tsx".to_string(),
+        route: "/missing".to_string(),
+        url: "/missing".to_string(),
     };
     let index = FetchIndex::new();
     let result = expand_fetch_edges(&[route_edge], &index);
@@ -85,12 +85,12 @@ fn expand_skips_routes_not_in_fetch_index() {
 #[test]
 fn expand_skips_dynamic_and_unsupported_fetches() {
     let route_edge = Edge::Route {
-        test_file: std::sync::Arc::new("tests/app.spec.ts".to_string()),
+        test_file: "tests/app.spec.ts".to_string(),
         test_name: None,
-        describe_path: std::sync::Arc::new(vec![]),
-        route_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
-        route: std::sync::Arc::new("/".to_string()),
-        url: std::sync::Arc::new("/".to_string()),
+        describe_path: vec![],
+        route_file: "web/app/page.tsx".to_string(),
+        route: "/".to_string(),
+        url: "/".to_string(),
     };
     let dynamic = FetchOccurrence {
         dynamic: true,
@@ -111,12 +111,12 @@ fn expand_skips_dynamic_and_unsupported_fetches() {
 #[test]
 fn expand_produces_client_side_fetch_edge() {
     let route_edge = Edge::Route {
-        test_file: std::sync::Arc::new("tests/app.spec.ts".to_string()),
-        test_name: Some(std::sync::Arc::new("clicks button".to_string())),
-        describe_path: std::sync::Arc::new(vec!["Home".to_string()]),
-        route_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
-        route: std::sync::Arc::new("/".to_string()),
-        url: std::sync::Arc::new("/".to_string()),
+        test_file: "tests/app.spec.ts".to_string(),
+        test_name: Some("clicks button".to_string()),
+        describe_path: vec!["Home".to_string()],
+        route_file: "web/app/page.tsx".to_string(),
+        route: "/".to_string(),
+        url: "/".to_string(),
     };
     let client_fetch = FetchOccurrence {
         method: "POST".to_string(),
@@ -150,9 +150,6 @@ fn expand_produces_client_side_fetch_edge() {
     assert_eq!(side, "client");
     assert_eq!(method, "POST");
     assert!(*cached);
-    assert_eq!(
-        test_name.as_deref().map(|s| s.as_str()),
-        Some("clicks button")
-    );
-    assert_eq!(describe_path.as_slice(), &["Home".to_string()]);
+    assert_eq!(test_name.as_deref(), Some("clicks button"));
+    assert_eq!(describe_path, &["Home".to_string()]);
 }

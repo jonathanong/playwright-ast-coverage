@@ -51,18 +51,18 @@ fn text_printers_cover_routes_and_selectors() {
     let edges = EdgeReport {
         edges: vec![
             Edge::Route {
-                test_file: std::sync::Arc::new("tests/e2e/app.spec.ts".to_string()),
+                test_file: "tests/e2e/app.spec.ts".to_string(),
                 test_name: None,
-                describe_path: std::sync::Arc::new(vec![]),
-                route_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
-                route: std::sync::Arc::new("/".to_string()),
-                url: std::sync::Arc::new("/".to_string()),
+                describe_path: vec![],
+                route_file: "web/app/page.tsx".to_string(),
+                route: "/".to_string(),
+                url: "/".to_string(),
             },
             Edge::Selector {
-                test_file: std::sync::Arc::new("tests/e2e/app.spec.ts".to_string()),
+                test_file: "tests/e2e/app.spec.ts".to_string(),
                 test_name: None,
-                describe_path: std::sync::Arc::new(vec![]),
-                app_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
+                describe_path: vec![],
+                app_file: "web/app/page.tsx".to_string(),
                 attribute: "data-testid".to_string(),
                 value: "save".to_string(),
                 selector: "getByTestId(save)".to_string(),
@@ -76,11 +76,11 @@ fn text_printers_cover_routes_and_selectors() {
 fn text_printer_covers_fetch_edges() {
     let edges = EdgeReport {
         edges: vec![Edge::Fetch {
-            test_file: std::sync::Arc::new("tests/e2e/app.spec.ts".to_string()),
-            test_name: Some(std::sync::Arc::new("visits home".to_string())),
-            describe_path: std::sync::Arc::new(vec!["Suite".to_string()]),
-            route_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
-            route: std::sync::Arc::new("/".to_string()),
+            test_file: "tests/e2e/app.spec.ts".to_string(),
+            test_name: Some("visits home".to_string()),
+            describe_path: vec!["Suite".to_string()],
+            route_file: "web/app/page.tsx".to_string(),
+            route: "/".to_string(),
             method: "GET".to_string(),
             path: "/api/health".to_string(),
             side: "server".to_string(),
@@ -125,19 +125,19 @@ fn related_report_includes_fetch_apis() {
     let root = std::path::Path::new("/repo");
     let edges = vec![
         Edge::Route {
-            test_file: std::sync::Arc::new("tests/e2e/app.spec.ts".to_string()),
+            test_file: "tests/e2e/app.spec.ts".to_string(),
             test_name: None,
-            describe_path: std::sync::Arc::new(vec![]),
-            route_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
-            route: std::sync::Arc::new("/".to_string()),
-            url: std::sync::Arc::new("/".to_string()),
+            describe_path: vec![],
+            route_file: "web/app/page.tsx".to_string(),
+            route: "/".to_string(),
+            url: "/".to_string(),
         },
         Edge::Fetch {
-            test_file: std::sync::Arc::new("tests/e2e/app.spec.ts".to_string()),
+            test_file: "tests/e2e/app.spec.ts".to_string(),
             test_name: None,
-            describe_path: std::sync::Arc::new(vec![]),
-            route_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
-            route: std::sync::Arc::new("/".to_string()),
+            describe_path: vec![],
+            route_file: "web/app/page.tsx".to_string(),
+            route: "/".to_string(),
             method: "GET".to_string(),
             path: "/api/health".to_string(),
             side: "server".to_string(),
@@ -163,71 +163,4 @@ fn print_tests_text_covers_html_ids() {
         }],
     };
     print_tests_text(&report);
-}
-
-#[test]
-fn edge_report_json_schema_is_stable_with_arc_fields() {
-    let report = EdgeReport {
-        edges: vec![
-            Edge::Route {
-                test_file: std::sync::Arc::new("tests/e2e/app.spec.ts".to_string()),
-                test_name: None,
-                describe_path: std::sync::Arc::new(vec![]),
-                route_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
-                route: std::sync::Arc::new("/".to_string()),
-                url: std::sync::Arc::new("/api/health".to_string()),
-            },
-            Edge::Selector {
-                test_file: std::sync::Arc::new("tests/e2e/app.spec.ts".to_string()),
-                test_name: Some(std::sync::Arc::new("visits home".to_string())),
-                describe_path: std::sync::Arc::new(vec!["Suite".to_string()]),
-                app_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
-                attribute: "data-testid".to_string(),
-                value: "save".to_string(),
-                selector: "getByTestId(save)".to_string(),
-            },
-            Edge::Fetch {
-                test_file: std::sync::Arc::new("tests/e2e/app.spec.ts".to_string()),
-                test_name: Some(std::sync::Arc::new("loads home".to_string())),
-                describe_path: std::sync::Arc::new(vec![]),
-                route_file: std::sync::Arc::new("web/app/page.tsx".to_string()),
-                route: std::sync::Arc::new("/".to_string()),
-                method: "GET".to_string(),
-                path: "/api/health".to_string(),
-                side: "server".to_string(),
-                cached: false,
-            },
-        ],
-    };
-
-    let value = serde_json::to_value(report).unwrap();
-    let edges = value["edges"].as_array().unwrap();
-
-    let route = &edges[0];
-    assert_eq!(route["kind"], "route");
-    assert_eq!(route["testFile"], "tests/e2e/app.spec.ts");
-    assert_eq!(route["routeFile"], "web/app/page.tsx");
-    assert_eq!(route["route"], "/");
-    assert_eq!(route["url"], "/api/health");
-    assert!(!route.as_object().unwrap().contains_key("testName"));
-    assert!(!route.as_object().unwrap().contains_key("describePath"));
-
-    let selector = &edges[1];
-    assert_eq!(selector["kind"], "selector");
-    assert_eq!(selector["testFile"], "tests/e2e/app.spec.ts");
-    assert_eq!(selector["testName"], "visits home");
-    assert_eq!(selector["describePath"], serde_json::json!(["Suite"]));
-    assert_eq!(selector["appFile"], "web/app/page.tsx");
-
-    let fetch = &edges[2];
-    assert_eq!(fetch["kind"], "fetch");
-    assert_eq!(fetch["testFile"], "tests/e2e/app.spec.ts");
-    assert_eq!(fetch["testName"], "loads home");
-    assert!(!fetch.as_object().unwrap().contains_key("describePath"));
-    assert_eq!(fetch["routeFile"], "web/app/page.tsx");
-    assert_eq!(fetch["route"], "/");
-    assert_eq!(fetch["method"], "GET");
-    assert_eq!(fetch["path"], "/api/health");
-    assert_eq!(fetch["side"], "server");
-    assert!(fetch["cached"].as_bool().is_some_and(|cached| !cached));
 }

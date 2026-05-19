@@ -1,6 +1,6 @@
 {
   "name": "eslint-plugin-next-to-fetch",
-  "version": "0.3.3",
+  "version": "0.3.2",
   "description": "ESLint and Oxlint rules to keep fetch() calls statically analyzable",
   "license": "MIT",
   "repository": {

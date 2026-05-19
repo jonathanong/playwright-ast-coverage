@@ -7,7 +7,6 @@ use crate::selectors;
 use crate::url::normalize_url;
 use crate::{ast, playwright_urls};
 use anyhow::{Context, Result};
-use std::collections::HashMap;
 
 pub(crate) fn analyze_test_file(
     test_file: &DiscoveredTestFile,
@@ -15,10 +14,8 @@ pub(crate) fn analyze_test_file(
 ) -> Result<Vec<Edge>> {
     let source = std::fs::read_to_string(&test_file.path)
         .context(format!("reading test file {}", test_file.path.display()))?;
-    let rel_test_file = std::sync::Arc::new(relative_string(context.root, &test_file.path));
+    let rel_test_file = relative_string(context.root, &test_file.path);
     let mut edges = Vec::new();
-    let mut route_cache =
-        HashMap::<(String, String), (std::sync::Arc<String>, std::sync::Arc<String>)>::new();
     let base_urls = test_file.base_urls();
     let test_id_attributes = test_file.test_id_attributes();
 
@@ -63,50 +60,32 @@ pub(crate) fn analyze_test_file(
         else {
             continue;
         };
-
-        let test_name_arc = raw_url.test_name.map(std::sync::Arc::new);
-        let describe_path_arc = std::sync::Arc::new(raw_url.describe_path);
-        let url_arc = std::sync::Arc::new(url);
-
         for route in matching_routes
             .into_iter()
             .filter(|route| route_specificity(&route.segments) == best_specificity)
         {
-            let (route_file, route_pattern) = route_cache
-                .entry((route.route_file.clone(), route.pattern.clone()))
-                .or_insert_with(|| {
-                    (
-                        std::sync::Arc::new(route.route_file.clone()),
-                        std::sync::Arc::new(route.pattern.clone()),
-                    )
-                });
             edges.push(Edge::Route {
                 test_file: rel_test_file.clone(),
-                test_name: test_name_arc.clone(),
-                describe_path: describe_path_arc.clone(),
-                route_file: route_file.clone(),
-                route: route_pattern.clone(),
-                url: url_arc.clone(),
+                test_name: raw_url.test_name.clone(),
+                describe_path: raw_url.describe_path.clone(),
+                route_file: route.route_file.clone(),
+                route: route.pattern.clone(),
+                url: url.clone(),
             });
         }
     }
 
     if !context.app_selector_targets.is_empty() {
-        for playwright_selector in playwright_selectors {
+        for playwright_selector in &playwright_selectors {
             if !context.test_policy.allows(playwright_selector.status) {
                 continue;
             }
-
-            let test_name_arc = playwright_selector.test_name.map(std::sync::Arc::new);
-            let describe_path_arc = std::sync::Arc::new(playwright_selector.describe_path);
-
             for app_selector in context.selector_index.matches(&playwright_selector.value) {
-                let app_file = std::sync::Arc::new(app_selector.app_file.clone());
                 edges.push(Edge::Selector {
                     test_file: rel_test_file.clone(),
-                    test_name: test_name_arc.clone(),
-                    describe_path: describe_path_arc.clone(),
-                    app_file,
+                    test_name: playwright_selector.test_name.clone(),
+                    describe_path: playwright_selector.describe_path.clone(),
+                    app_file: app_selector.app_file.clone(),
                     attribute: app_selector.selector.attribute.clone(),
                     value: app_selector.value.clone(),
                     selector: playwright_selector.value.selector.clone(),

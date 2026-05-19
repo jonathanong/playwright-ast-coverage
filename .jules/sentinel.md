@@ -1,4 +1,0 @@
-## 2024-05-18 - Missing Input Length Limit in Fetch Utility
-**Vulnerability:** A `fetchText` utility function designed to download checksums via `http`/`https` buffered responses into memory indiscriminately.
-**Learning:** Even seemingly benign operations like fetching a tiny checksum file can be vulnerable to memory-exhaustion Denial-of-Service if the target server is compromised or returns an unbounded stream.
-**Prevention:** Always enforce a hard `MAX_LENGTH` limit (e.g., 1MB) when buffering network streams into memory. If the limit is exceeded, destroy the response object (`response.destroy()`) and throw an error.
