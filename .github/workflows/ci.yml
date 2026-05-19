@@ -39,22 +39,8 @@ jobs:
       - name: Install npm dependencies
         run: npm ci --ignore-scripts
 
-      - name: Install tokei and ripgrep
-        uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2.77.6
-        with:
-          tool: tokei,ripgrep
-
-      - name: Install shell tools
-        run: sudo apt-get update && sudo apt-get install -y jq shellcheck
-
       - name: Validate Codecov config
         run: curl --data-binary @codecov.yml https://codecov.io/validate
-
-      - name: Check Rust file line limits
-        run: bash scripts/check-rust-line-limit.sh
-
-      - name: Check for inline test modules
-        run: bash scripts/check-rust-test-modules.sh
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -67,9 +53,6 @@ jobs:
 
       - name: Run Oxlint
         run: npm run lint:js
-
-      - name: Run Shellcheck
-        run: npm run lint:shell
 
       - name: Run CSpell
         run: npm run lint:spell
@@ -131,58 +114,3 @@ jobs:
           flags: javascript
           fail_ci_if_error: true
 
-  scripts:
-    name: no-mistakes-scripts (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: Install npm dependencies
-        run: npm ci --ignore-scripts
-
-      - name: Install Linux script tools
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq shellcheck
-
-      - name: Install macOS script tools
-        if: runner.os == 'macOS'
-        run: brew install jq shellcheck ripgrep tokei
-
-      - name: Install Linux Rust script tools
-        if: runner.os == 'Linux'
-        uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2.77.6
-        with:
-          tool: tokei,ripgrep
-
-      - name: Run Shellcheck
-        run: npm run lint:shell
-
-      - name: Run script package tests
-        run: npx vitest run packages/no-mistakes-scripts/scripts/bin.test.js --coverage.enabled=false
-
-      - name: Run script package tests from source archive
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          set -euo pipefail
-          archive_root="$RUNNER_TEMP/source-archive"
-          mkdir -p "$archive_root"
-          git archive --format=tar HEAD | tar -x -C "$archive_root"
-          cd "$archive_root"
-          npm ci --ignore-scripts
-          npx vitest run packages/no-mistakes-scripts/scripts/bin.test.js --coverage.enabled=false

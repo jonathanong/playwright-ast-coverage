@@ -120,21 +120,12 @@ wrapper option, for example `no-mistakes --jobs 4 check ...`.
 `no-mistakes queues check` when you want a full scan for that domain without
 adding it to `.no-mistakes.yml`.
 
-### External Script Commands
+### Filesystem Rules via `no-mistakes check`
 
-Unknown `no-mistakes` subcommands are proxied to matching `no-mistakes-*`
-executables on `PATH`. This lets packages such as `no-mistakes-scripts` extend
-the CLI without shipping native Rust subcommands.
-
-```sh
-npm install --save-dev no-mistakes-scripts
-no-mistakes rust-no-inline-tests crates/*/src
-no-mistakes rust-max-lines-per-file crates/*/src crates/*/tests
-no-mistakes agents-md-max-size
-```
-
-`no-mistakes rust-no-inline-tests` executes
-`no-mistakes-rust-no-inline-tests` and forwards all remaining arguments.
+The `rust-max-lines-per-file`, `rust-no-inline-tests`, and
+`agents-md-max-size` checks are built into `no-mistakes check` and run when
+configured in `no-mistakes.yml`. See the Global Check section above and the
+configuration reference for available options.
 
 ## `playwright-ast-coverage`
 

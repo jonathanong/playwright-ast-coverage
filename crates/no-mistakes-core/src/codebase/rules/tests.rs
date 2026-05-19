@@ -303,3 +303,17 @@ fn run_check_with_facts_reports_test_file_parse_error() {
     let error = run_check_with_facts(&root, None, None, &shared).unwrap_err();
     assert!(format!("{error:#}").contains("syntax error"));
 }
+
+#[test]
+fn filesystem_rule_ids_are_distinct() {
+    assert_ne!(AGENTS_MD_MAX_SIZE, RUST_MAX_LINES_PER_FILE);
+    assert_ne!(RUST_MAX_LINES_PER_FILE, RUST_NO_INLINE_TESTS);
+    assert_ne!(AGENTS_MD_MAX_SIZE, RUST_NO_INLINE_TESTS);
+}
+
+#[test]
+fn run_filesystem_rules_returns_empty_when_not_configured() {
+    let root = std::path::Path::new("/tmp");
+    let findings = run_filesystem_rules(root, None).unwrap();
+    assert!(findings.is_empty());
+}

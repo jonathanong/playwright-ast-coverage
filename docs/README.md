@@ -17,7 +17,6 @@ selectors, fetch calls, queue hops, server routes, and React component traits.
 | Queue producer/worker hops | `no-mistakes queues edges` or `queue-ast-hop edges` |
 | Server route graph | `no-mistakes server routes` or `server-ast-routes routes` |
 | Global project checks | `no-mistakes check` |
-| Portable shell checks | `no-mistakes <script>` with `no-mistakes-scripts` installed |
 | Playwright route/selector coverage | `playwright-ast-coverage check` |
 | Tests related to a page/component | `playwright-ast-coverage related <file>` |
 | Playwright assertions grouped by test | `playwright-ast-coverage tests` |

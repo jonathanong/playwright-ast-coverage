@@ -71,7 +71,7 @@ jobs:
           npm version "${{ inputs.bump }}" --no-git-tag-version
           version="$(node -p "require('./package.json').version")"
 
-          for pkg in eslint-plugin-next-to-fetch eslint-plugin-playwright-ast-coverage no-mistakes no-mistakes-core no-mistakes-scripts next-to-fetch playwright-ast-coverage queue-ast-hop react-traits server-ast-routes; do
+          for pkg in eslint-plugin-next-to-fetch eslint-plugin-playwright-ast-coverage no-mistakes no-mistakes-core next-to-fetch playwright-ast-coverage queue-ast-hop react-traits server-ast-routes; do
             npm pkg set "version=$version" --workspace "$pkg"
             if [[ "$pkg" == "no-mistakes" || "$pkg" == "playwright-ast-coverage" || "$pkg" == "next-to-fetch" || "$pkg" == "queue-ast-hop" || "$pkg" == "react-traits" || "$pkg" == "server-ast-routes" ]]; then
               npm pkg set "dependencies.no-mistakes-core=^$version" --workspace "$pkg"
@@ -168,14 +168,6 @@ jobs:
       - name: Install npm dependencies
         run: SKIP_BINARY_DOWNLOAD=1 npm ci
 
-      - name: Install tokei and ripgrep
-        uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2.77.6
-        with:
-          tool: tokei,ripgrep
-
-      - name: Install shell tools
-        run: sudo apt-get update && sudo apt-get install -y jq shellcheck
-
       - name: Verify versions
         shell: bash
         run: |
@@ -214,12 +206,6 @@ jobs:
           }
           NODE
 
-      - name: Check Rust file line limits
-        run: bash scripts/check-rust-line-limit.sh
-
-      - name: Check for inline test modules
-        run: bash scripts/check-rust-test-modules.sh
-
       - name: Check formatting
         run: cargo fmt --all -- --check
 
@@ -231,9 +217,6 @@ jobs:
 
       - name: Run Oxlint
         run: npm run lint:js
-
-      - name: Run Shellcheck
-        run: npm run lint:shell
 
       - name: Run CSpell
         run: npm run lint:spell
@@ -256,7 +239,7 @@ jobs:
 
       - name: Check npm packages
         run: |
-          for pkg in no-mistakes-core no-mistakes no-mistakes-scripts playwright-ast-coverage next-to-fetch queue-ast-hop react-traits server-ast-routes eslint-plugin-next-to-fetch eslint-plugin-playwright-ast-coverage; do
+          for pkg in no-mistakes-core no-mistakes playwright-ast-coverage next-to-fetch queue-ast-hop react-traits server-ast-routes eslint-plugin-next-to-fetch eslint-plugin-playwright-ast-coverage; do
             npm pack --dry-run --workspace "$pkg"
           done
 
@@ -501,7 +484,7 @@ jobs:
             echo "Publishing npm packages with OIDC trusted publishing"
           fi
           version="${{ needs.prepare.outputs.version }}"
-          for pkg in no-mistakes-core no-mistakes no-mistakes-scripts playwright-ast-coverage next-to-fetch queue-ast-hop react-traits server-ast-routes eslint-plugin-next-to-fetch eslint-plugin-playwright-ast-coverage; do
+          for pkg in no-mistakes-core no-mistakes playwright-ast-coverage next-to-fetch queue-ast-hop react-traits server-ast-routes eslint-plugin-next-to-fetch eslint-plugin-playwright-ast-coverage; do
             if npm view "$pkg@$version" version >/dev/null 2>&1; then
               echo "$pkg $version is already published on npm; skipping"
             else

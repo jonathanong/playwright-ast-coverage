@@ -128,6 +128,31 @@ pub(crate) fn queues_configured(config: &NoMistakesConfig) -> bool {
         .any(|project| !project.queues.enqueues.is_empty() || !project.queues.workers.is_empty())
 }
 
+pub(crate) fn run_filesystem_rules_check(
+    root: PathBuf,
+    config: Option<PathBuf>,
+    enabled: bool,
+    files: Vec<PathBuf>,
+) -> Result<CheckTask<Vec<RuleFinding>>> {
+    let start = Instant::now();
+    let findings = if enabled {
+        rules::run_filesystem_rules_with_files(&root, config.as_deref(), &files)?
+    } else {
+        Vec::new()
+    };
+    Ok(CheckTask {
+        findings,
+        warning: None,
+        duration: start.elapsed(),
+    })
+}
+
+pub(crate) fn filesystem_rules_configured(config: &NoMistakesConfig) -> bool {
+    rule_configured(config, rules::AGENTS_MD_MAX_SIZE)
+        || rule_configured(config, rules::RUST_MAX_LINES_PER_FILE)
+        || rule_configured(config, rules::RUST_NO_INLINE_TESTS)
+}
+
 pub(crate) fn unique_exports_configured(config: &NoMistakesConfig) -> bool {
     rule_configured(config, unique_exports::RULE_ID)
 }

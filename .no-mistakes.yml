@@ -1,0 +1,31 @@
+rules:
+  rust-max-lines-per-file:
+    enabled: true
+    srcMax: 200
+    testMax: 500
+    excludes:
+      - crates/no-mistakes-core/src/codebase/ts_source/jsx
+      - crates/no-mistakes-core/src/codebase/ts_source/jsx.rs
+      - crates/no-mistakes-core/src/codebase/ts_source/mod.rs
+      - crates/no-mistakes-core/src/codebase/dependencies/graph.rs
+      - crates/no-mistakes-core/src/codebase/dependencies/graph/playwright.rs
+      - crates/no-mistakes-core/src/codebase/dependencies/graph/mod.rs
+      - crates/no-mistakes-core/src/codebase/dependencies/output.rs
+      - crates/no-mistakes-core/src/codebase/dependencies/mod.rs
+      - crates/no-mistakes-core/src/codebase/ts_resolver.rs
+      - crates/no-mistakes-core/src/codebase/symbols/output.rs
+      - crates/no-mistakes-core/src/codebase/symbols/mod.rs
+      - crates/no-mistakes-core/src/codebase/workspaces.rs
+      - crates/no-mistakes-core/src/codebase/playwright_coverage.rs
+      - crates/no-mistakes-core/src/codebase/ts_process_spawn.rs
+      - crates/no-mistakes-core/src/codebase/ts_queues/factory.rs
+      - crates/no-mistakes-core/src/codebase/ts_queues/usage.rs
+      - crates/no-mistakes-core/src/codebase/ts_symbols.rs
+      - crates/no-mistakes-core/src/codebase/ts_routes/defs_backend.rs
+      - crates/no-mistakes-core/src/codebase/ts_routes/refs.rs
+  rust-no-inline-tests:
+    enabled: true
+  agents-md-max-size:
+    enabled: true
+    maxLines: 200
+    maxChars: 12000

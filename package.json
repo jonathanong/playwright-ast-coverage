@@ -22,7 +22,6 @@
     "fmt:js": "oxfmt --write packages/ vitest.config.js",
     "fmt:js:check": "oxfmt --check packages/ vitest.config.js",
     "lint:js": "oxlint packages/ vitest.config.js",
-    "lint:shell": "shellcheck packages/no-mistakes-scripts/bin/*",
     "lint:spell": "cspell lint README.md \"docs/**/*.md\" \"packages/no-mistakes*/README.md\" cspell.config.yaml package.json --no-progress --no-gitignore --show-suggestions --no-must-find-files",
     "pack:check": "npm --workspaces pack --dry-run",
     "prepare": "husky"
