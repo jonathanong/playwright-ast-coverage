@@ -99,8 +99,7 @@ pub(crate) fn collect_domain_facts<'a>(
     let queue_usage = plan
         .queue_usage
         .then(|| extract_queue_usage_from_program(program, source));
-    let (queue_create_line, queue_name) =
-        queue_factory_facts(program, path, source, plan, context);
+    let (queue_create_line, queue_name) = queue_factory_facts(program, path, source, plan, context);
     let http_prefixes: Vec<&str> = context.http_prefixes.iter().map(String::as_str).collect();
     let http_calls = if plan.http_calls {
         extract_http_calls_from_program(program, source, &http_prefixes)
