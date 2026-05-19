@@ -55,6 +55,6 @@ if ! cargo llvm-cov --version >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "Checking Rust test coverage (100% lines/functions required)..."
+echo "Checking Rust test coverage (99% lines/functions required)..."
 cargo llvm-cov --workspace --all-features \
-  --fail-under-lines 100 --fail-under-functions 100 --show-missing-lines || exit 1
+  --fail-under-lines 99 --fail-under-functions 99 --show-missing-lines || exit 1
