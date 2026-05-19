@@ -61,7 +61,7 @@ fn parse_opts(config: &NoMistakesConfig) -> Options {
         .map_or_else(Default::default, |r| r.rule_options())
 }
 
-fn filenames_from_opts<'a>(opts: &'a Options) -> Vec<&'a str> {
+fn filenames_from_opts(opts: &Options) -> Vec<&str> {
     opts.filenames
         .as_deref()
         .map(|v| v.iter().map(String::as_str).collect())
