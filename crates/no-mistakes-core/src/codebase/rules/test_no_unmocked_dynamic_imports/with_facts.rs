@@ -3,14 +3,16 @@ use super::{config, manual_mocks, matching_test_files, reachable, resolve_mock_s
 use super::{resolve_tsconfig, RuleFinding, RULE_ID};
 use crate::codebase::check_facts::CheckFactMap;
 use crate::codebase::dependencies::graph::{DepGraph, GraphBuildPlan};
+use crate::codebase::rules::test_no_unmocked_dynamic_imports::runtime::runtime_deps;
 use crate::codebase::ts_resolver::ImportResolver;
 use crate::codebase::ts_source::{has_disable_comment, has_disable_file_comment};
 use crate::config::v2::NoMistakesConfig;
 use anyhow::Result;
+use dashmap::DashMap;
 use rayon::prelude::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 pub fn check_with_facts(
     root: &Path,
@@ -30,9 +32,19 @@ pub fn check_with_facts(
         &ts_facts,
     );
     let manual_mocks = manual_mocks::discover(root, &config.filesystem.skip_directories);
-    let dependency_cache: Mutex<HashMap<PathBuf, Arc<Vec<PathBuf>>>> = Mutex::new(HashMap::new());
+    let test_files = matching_test_files(root, &files, config)?;
+    let setup_data = config::precompute_setup_data(root, config)?;
 
-    let per_test: Vec<Vec<RuleFinding>> = matching_test_files(root, &files, config)?
+    // Pre-populate the dependency cache for all test files in parallel so that
+    // `reachable::check` hits the cache instead of re-running BFS per test.
+    let dependency_cache: DashMap<PathBuf, Arc<Vec<PathBuf>>> = DashMap::new();
+    test_files.par_iter().for_each(|file| {
+        dependency_cache
+            .entry(file.clone())
+            .or_insert_with(|| Arc::new(runtime_deps(&graph, file.clone())));
+    });
+
+    let per_test: Vec<Vec<RuleFinding>> = test_files
         .into_par_iter()
         .map(|file| {
             let Some(file_facts) = shared.ts.get(&file) else {
@@ -52,7 +64,11 @@ pub fn check_with_facts(
             };
             let mut mocks = manual_mocks.clone();
             mocks.extend(setup_mocks_with_facts(
-                root, config, &file, &resolver, shared,
+                root,
+                &setup_data,
+                &file,
+                &resolver,
+                shared,
             )?);
             mocks.extend(resolve_mock_specifiers(
                 &facts.mock_specifiers,
@@ -83,6 +99,7 @@ pub fn check_with_facts(
                     resolver: &resolver,
                     graph: &graph,
                     shared: Some(shared),
+                    file_cache: None,
                 },
                 &file,
                 &mocks,
@@ -100,14 +117,14 @@ pub fn check_with_facts(
 
 fn setup_mocks_with_facts(
     root: &Path,
-    config: &NoMistakesConfig,
+    setup_data: &[config::ConfigSetupData],
     test_file: &Path,
     resolver: &ImportResolver<'_>,
     shared: &CheckFactMap,
 ) -> Result<HashSet<PathBuf>> {
     let mut mocks = HashSet::new();
     let rel_path = crate::codebase::ts_source::relative_slash_path(root, test_file);
-    for setup in config::setup_files_for_test(root, config, rel_path)? {
+    for setup in config::setup_files_for_test_precomputed(&rel_path, setup_data) {
         let Some(file_facts) = shared.ts.get(&setup) else {
             anyhow::bail!("missing shared facts for {}", setup.display());
         };

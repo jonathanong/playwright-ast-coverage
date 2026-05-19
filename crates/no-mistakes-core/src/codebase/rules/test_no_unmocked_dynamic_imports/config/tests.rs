@@ -1,6 +1,43 @@
 use super::*;
 use crate::config::v2::schema::Project;
 
+fn setup_files(root: &Path, config: &NoMistakesConfig) -> Result<Vec<PathBuf>> {
+    let cfg_files = config_files(root, config)
+        .into_iter()
+        .map(|config| config.path)
+        .collect::<Vec<_>>();
+    setup_files_from_configs(root, cfg_files)
+}
+
+fn setup_files_for_test(
+    root: &Path,
+    config: &NoMistakesConfig,
+    rel_path: String,
+) -> Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+    for config_file in config_files(root, config) {
+        let source = std::fs::read_to_string(&config_file.path)?;
+        let base = config_file.path.parent().unwrap_or(root);
+        let includes = normalize_matcher_patterns(root, base, config_file.includes(&source));
+        let excludes = normalize_matcher_patterns(
+            root,
+            base,
+            extract_test_property_strings(&source, "exclude"),
+        );
+        let filter = TestFilter {
+            include: build_globset(&includes)?,
+            include_regex: build_regexes(&extract_test_regexes(&source))?,
+            exclude: build_globset(&excludes)?,
+        };
+        if filter.is_match(&rel_path) {
+            files.extend(setup_files_from_configs(root, vec![config_file.path])?);
+        }
+    }
+    files.sort();
+    files.dedup();
+    Ok(files)
+}
+
 #[test]
 fn extracts_setup_files_and_include_exclude_strings() {
     let source = "export default { coverage: { exclude: ['ignored.mts'] }, test: { include: ['a.test.mts'], exclude: ['b.test.mts'], setupFiles: ['./setup.mts'] } }";
@@ -25,10 +62,10 @@ fn extracts_setup_files_and_include_exclude_strings() {
 fn default_filter_matches_vitest_and_jest_test_files() {
     let config = NoMistakesConfig::default();
     let filter = test_filter(Path::new("."), &config).unwrap();
-    assert!(filter.is_match("src/a.test.mts".to_string()));
-    assert!(filter.is_match("src/a.spec.ts".to_string()));
-    assert!(filter.is_match("src/__tests__/a.js".to_string()));
-    assert!(!filter.is_match("src/a.mts".to_string()));
+    assert!(filter.is_match("src/a.test.mts"));
+    assert!(filter.is_match("src/a.spec.ts"));
+    assert!(filter.is_match("src/__tests__/a.js"));
+    assert!(!filter.is_match("src/a.mts"));
 }
 
 #[test]
@@ -60,10 +97,10 @@ fn project_include_restricts_default_test_globs() {
         },
     );
     let filter = test_filter(Path::new("."), &config).unwrap();
-    assert!(filter.is_match("web/storybook/__tests__/a.test.tsx".to_string()));
-    assert!(filter.is_match("tests/a.test.ts".to_string()));
-    assert!(!filter.is_match("web/components/a.test.tsx".to_string()));
-    assert!(!filter.is_match("other/a.test.ts".to_string()));
+    assert!(filter.is_match("web/storybook/__tests__/a.test.tsx"));
+    assert!(filter.is_match("tests/a.test.ts"));
+    assert!(!filter.is_match("web/components/a.test.tsx"));
+    assert!(!filter.is_match("other/a.test.ts"));
 }
 
 #[test]
@@ -87,8 +124,8 @@ fn project_include_does_not_widen_to_config_test_globs() {
     ));
 
     let filter = test_filter(&root, &config).unwrap();
-    assert!(filter.is_match("tests/good.test.mts".to_string()));
-    assert!(!filter.is_match("tests/bad.test.mts".to_string()));
+    assert!(filter.is_match("tests/good.test.mts"));
+    assert!(!filter.is_match("tests/bad.test.mts"));
 }
 
 #[test]
@@ -113,9 +150,9 @@ fn scoped_glob_leaves_root_project_includes_unprefixed() {
         },
     );
     let filter = test_filter(Path::new("."), &config).unwrap();
-    assert!(filter.is_match("tests/example.test.ts".to_string()));
-    assert!(filter.is_match("web/storybook/example.test.tsx".to_string()));
-    assert!(!filter.is_match("web/storybook/example.test.ts".to_string()));
+    assert!(filter.is_match("tests/example.test.ts"));
+    assert!(filter.is_match("web/storybook/example.test.tsx"));
+    assert!(!filter.is_match("web/storybook/example.test.ts"));
 }
 
 #[test]
@@ -386,9 +423,9 @@ fn test_filter_matches_jest_regex_includes() {
         "jest.regex.config.cjs".to_string(),
     ));
     let filter = test_filter(&root, &config).unwrap();
-    assert!(filter.is_match("tests/example.regex-test.mts".to_string()));
-    assert!(!filter.is_match("tests/example.regex-test.ts".to_string()));
-    assert!(!filter.is_match("tests/plain.test.ts".to_string()));
+    assert!(filter.is_match("tests/example.regex-test.mts"));
+    assert!(!filter.is_match("tests/example.regex-test.ts"));
+    assert!(!filter.is_match("tests/plain.test.ts"));
 }
 
 #[test]

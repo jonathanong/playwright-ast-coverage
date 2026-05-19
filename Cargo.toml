@@ -3,3 +3,8 @@ members = [
     "crates/*"
 ]
 resolver = "2"
+
+# Full LTO + single codegen unit for maximum runtime perf (trades ~60–90 s link time).
+[profile.release]
+lto = true
+codegen-units = 1

@@ -586,7 +586,7 @@ fn load_tsconfig_extends_nonstring_toplevel_errors() {
 }
 
 #[test]
-fn resolver_falls_back_when_cache_is_poisoned() {
+fn resolver_caches_results_and_returns_consistent_value() {
     let dir = TempDir::new().unwrap();
     let file = dir.path().join("src").join("main.mts");
     let dep = dir.path().join("src").join("dep.mts");
@@ -599,17 +599,12 @@ fn resolver_falls_back_when_cache_is_poisoned() {
         base_url: None,
     };
     let resolver = ImportResolver::new(&tc);
-    std::thread::scope(|scope| {
-        let cache = &resolver.cache;
-        let _ = scope
-            .spawn(move || {
-                let _guard = cache.lock().unwrap();
-                panic!("poison resolver cache");
-            })
-            .join();
-    });
-
-    assert_eq!(resolver.resolve("./dep.mts", &file), Some(dep));
+    // First call populates the cache.
+    let first = resolver.resolve("./dep.mts", &file);
+    // Second call must hit the cache and return the same result.
+    let second = resolver.resolve("./dep.mts", &file);
+    assert_eq!(first, second);
+    assert_eq!(first, Some(dep));
 }
 
 // ── normalize_path ────────────────────────────────────────────────────

@@ -106,7 +106,15 @@ fn normalize_configs(configs: Vec<ConfigFile>) -> Vec<ConfigFile> {
 }
 
 fn expand_config_patterns(root: &Path, patterns: Vec<String>, runner: Runner) -> Vec<ConfigFile> {
-    let files = crate::codebase::ts_source::discover_files(root, &[]);
+    if patterns.is_empty() {
+        return Vec::new();
+    }
+    let has_globs = patterns.iter().any(|p| is_glob(p));
+    let files = if has_globs {
+        crate::codebase::ts_source::discover_files(root, &[])
+    } else {
+        Vec::new()
+    };
     let mut configs = Vec::new();
     for pattern in patterns {
         if is_glob(&pattern) {

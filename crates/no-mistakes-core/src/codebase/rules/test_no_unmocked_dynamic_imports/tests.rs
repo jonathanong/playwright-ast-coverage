@@ -1,5 +1,6 @@
 use super::*;
-use std::sync::{Arc, Mutex};
+use dashmap::DashMap;
+use std::collections::HashMap;
 
 fn fixture() -> PathBuf {
     crate::codebase::ts_resolver::normalize_path(
@@ -52,7 +53,7 @@ fn next_line_disable_and_unresolved_import_branches_are_reported() {
     let resolver = ImportResolver::new(&tsconfig);
     let graph = DepGraph::from_raw_maps(root.clone(), Default::default(), Default::default());
     let mocks = HashSet::new();
-    let dependency_cache = Mutex::new(HashMap::new());
+    let dependency_cache = DashMap::new();
     let mut findings = Vec::new();
     let mut context = DynamicCheckContext {
         root: &root,
@@ -87,7 +88,7 @@ fn mocked_dynamic_import_target_skips_transitive_dependency_checks() {
     let target = root.join("src").join("lazy.mts");
     let mut mocks = HashSet::new();
     mocks.insert(target);
-    let dependency_cache = Mutex::new(HashMap::new());
+    let dependency_cache = DashMap::new();
     let mut findings = Vec::new();
     let mut context = DynamicCheckContext {
         root: &root,
@@ -139,7 +140,7 @@ fn reachable_dependencies_respect_skips_and_disable_comments() {
         let graph = DepGraph::from_raw_maps(root.clone(), forward, Default::default());
         let mut config = NoMistakesConfig::default();
         config.filesystem.skip_directories = skip_directories;
-        let dependency_cache = Mutex::new(HashMap::new());
+        let dependency_cache = DashMap::new();
         let mut findings = Vec::new();
 
         reachable::check(
@@ -149,6 +150,7 @@ fn reachable_dependencies_respect_skips_and_disable_comments() {
                 resolver: &resolver,
                 graph: &graph,
                 shared: None,
+                file_cache: None,
             },
             &test_file,
             &mocks,
@@ -171,7 +173,7 @@ fn repeated_dynamic_import_target_uses_dependency_cache() {
             .unwrap();
     let test_file = root.join("tests").join("bad.test.mts");
     let mocks = HashSet::new();
-    let dependency_cache = Mutex::new(HashMap::new());
+    let dependency_cache = DashMap::new();
     let mut findings = Vec::new();
     let mut context = DynamicCheckContext {
         root: &root,
@@ -191,15 +193,13 @@ fn repeated_dynamic_import_target_uses_dependency_cache() {
     );
     let target = root.join("src").join("lazy.mts");
     let cached_deps = dependency_cache
-        .lock()
-        .unwrap()
         .get(&target)
-        .map(Arc::clone)
+        .map(|r| r.clone())
         .expect("target should be cached after first call");
     let expected_deps = runtime_deps(&graph, target.clone());
     assert_eq!(*cached_deps, expected_deps);
 
-    let cache_len = dependency_cache.lock().unwrap().len();
+    let cache_len = dependency_cache.len();
     check_dynamic_import(
         &mut context,
         ast::DynamicImport {
@@ -207,7 +207,7 @@ fn repeated_dynamic_import_target_uses_dependency_cache() {
             line: 1,
         },
     );
-    assert_eq!(dependency_cache.lock().unwrap().len(), cache_len);
+    assert_eq!(dependency_cache.len(), cache_len);
     assert!(!context.findings.is_empty());
 }
 
@@ -243,7 +243,7 @@ fn reachable_check_shared_skips_dep_with_disable_file_comment() {
         ..Default::default()
     };
     let mocks = HashSet::new();
-    let dependency_cache = Mutex::new(HashMap::new());
+    let dependency_cache = DashMap::new();
     let mut findings = Vec::new();
     let config = crate::config::v2::NoMistakesConfig::default();
     reachable::check(
@@ -253,6 +253,7 @@ fn reachable_check_shared_skips_dep_with_disable_file_comment() {
             resolver: &resolver,
             graph: &graph,
             shared: Some(&shared),
+            file_cache: None,
         },
         &test_file,
         &mocks,
@@ -296,7 +297,7 @@ fn reachable_check_uses_shared_facts_without_disk_read() {
         ..Default::default()
     };
     let mocks = HashSet::new();
-    let dependency_cache = Mutex::new(HashMap::new());
+    let dependency_cache = DashMap::new();
     let mut findings = Vec::new();
     let config = crate::config::v2::NoMistakesConfig::default();
     reachable::check(
@@ -306,6 +307,7 @@ fn reachable_check_uses_shared_facts_without_disk_read() {
             resolver: &resolver,
             graph: &graph,
             shared: Some(&shared),
+            file_cache: None,
         },
         &test_file,
         &mocks,
@@ -350,7 +352,7 @@ fn reachable_check_falls_back_to_disk_when_dep_facts_incomplete() {
         ..Default::default()
     };
     let mocks = HashSet::new();
-    let dependency_cache = Mutex::new(HashMap::new());
+    let dependency_cache = DashMap::new();
     let mut findings = Vec::new();
     let config = crate::config::v2::NoMistakesConfig::default();
     reachable::check(
@@ -360,6 +362,7 @@ fn reachable_check_falls_back_to_disk_when_dep_facts_incomplete() {
             resolver: &resolver,
             graph: &graph,
             shared: Some(&shared),
+            file_cache: None,
         },
         &test_file,
         &mocks,

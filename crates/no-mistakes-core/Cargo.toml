@@ -9,6 +9,7 @@ repository = "https://github.com/jonathanong/no-mistakes"
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+dashmap = "6.2.1"
 globset = "0.4"
 ignore = "0.4"
 is-terminal = "0.4"
