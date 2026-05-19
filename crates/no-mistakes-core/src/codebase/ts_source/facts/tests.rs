@@ -18,6 +18,50 @@ fn plan_constructors_select_expected_fact_sets() {
 }
 
 #[test]
+fn plan_domain_fact_detection_tracks_domain_flags() {
+    assert!(!TsFactPlan::default().has_domain_facts());
+    assert!(!TsFactPlan {
+        imports: true,
+        symbols: true,
+        ..TsFactPlan::default()
+    }
+    .has_domain_facts());
+
+    for plan in [
+        TsFactPlan {
+            source: true,
+            ..TsFactPlan::default()
+        },
+        TsFactPlan {
+            route_refs: true,
+            ..TsFactPlan::default()
+        },
+        TsFactPlan {
+            backend_routes: true,
+            ..TsFactPlan::default()
+        },
+        TsFactPlan {
+            queue_usage: true,
+            ..TsFactPlan::default()
+        },
+        TsFactPlan {
+            queue_factory: true,
+            ..TsFactPlan::default()
+        },
+        TsFactPlan {
+            http_calls: true,
+            ..TsFactPlan::default()
+        },
+        TsFactPlan {
+            process_spawns: true,
+            ..TsFactPlan::default()
+        },
+    ] {
+        assert!(plan.has_domain_facts());
+    }
+}
+
+#[test]
 fn collect_ts_facts_skips_non_indexable_and_unreadable_files() {
     let ts = fixture("imports.ts");
     let txt = fixture("plain.txt");
