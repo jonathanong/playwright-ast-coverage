@@ -85,7 +85,7 @@ fn invalid_global_filter_surfaces_main_error_exit() {
     ]);
 
     assert_eq!(output.status.code(), Some(2));
-    assert!(String::from_utf8(output.stderr).unwrap().contains("error:"));
+    assert!(stderr(&output).contains("error:"));
 }
 
 #[test]
@@ -271,7 +271,7 @@ fn react_run_check_in_process_exercises_run_check_function() {
 
     // Trigger error paths (config not found) to cover the `?` error branches
     // in this binary instantiation.
-    let bad_config = std::path::Path::new("/nonexistent/config.yaml");
+    let bad_config = std::path::Path::new("nonexistent-config.yaml");
     assert!(
         no_mistakes_core::react_traits::run_check(&root, Some(bad_config), &[], false).is_err()
     );
