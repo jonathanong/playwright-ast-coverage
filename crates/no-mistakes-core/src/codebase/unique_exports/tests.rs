@@ -423,6 +423,9 @@ fn scan_helpers_cover_filter_and_parse_edges() {
     assert!(!lookup.contains_file(&root.join("src/direct.ts")));
     let lookup = scan::NextJsProjectLookup::new(&root, &[PathBuf::from("loose.ts")]);
     assert!(!lookup.contains_file(Path::new("loose.ts")));
+    // PathBuf::from("/") has parent() == None, exercising the unwrap_or_else fallback.
+    let lookup = scan::NextJsProjectLookup::new(&root, &[PathBuf::from("/")]);
+    assert!(!lookup.contains_file(Path::new("/")));
 
     assert!(!scan::package_json_has_next_dependency(
         &fixture("unique-exports-malformed-package").join("package.json")

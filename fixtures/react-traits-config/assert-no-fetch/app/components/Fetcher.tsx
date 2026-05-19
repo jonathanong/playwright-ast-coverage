@@ -1,4 +1,8 @@
 export default async function Fetcher() {
-  const res = await fetch('/api/users');
+  try {
+    await fetch('/api/users');
+  } catch {
+    return <div>Error</div>;
+  }
   return <div>Users</div>;
 }

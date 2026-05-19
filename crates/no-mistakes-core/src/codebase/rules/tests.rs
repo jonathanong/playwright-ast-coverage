@@ -380,3 +380,17 @@ fn run_filesystem_rules_executes_enabled_rust_no_inline_tests_rule() {
     assert!(!findings.is_empty());
     assert!(findings.iter().any(|f| f.rule == RUST_NO_INLINE_TESTS));
 }
+
+#[test]
+fn run_check_with_facts_surfaces_invalid_tsconfig() {
+    let root = dynamic_import_fixture();
+    let invalid_tsconfig = root.join("nonexistent-tsconfig.json");
+    let shared = crate::codebase::check_facts::CheckFactMap::default();
+
+    let error = run_check_with_facts(&root, None, Some(&invalid_tsconfig), &shared).unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("nonexistent-tsconfig.json"),
+        "expected tsconfig path in error, got: {error:#}"
+    );
+}

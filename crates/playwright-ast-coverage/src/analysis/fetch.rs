@@ -28,7 +28,7 @@ pub(crate) fn seed_fetch_coverage(fetch_index: &FetchIndex) -> FetchCoverageEntr
             let key = (fetch_occ.method.clone(), fetch_occ.path.clone());
             by_fetch
                 .entry(key)
-                .or_insert_with(|| (Default::default(), Default::default(), Default::default()))
+                .or_insert((Default::default(), Default::default(), Default::default()))
                 .2
                 .insert(std::sync::Arc::new(route_file.clone()));
         }

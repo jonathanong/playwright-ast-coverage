@@ -60,6 +60,17 @@ fn validate_config_names_errors_on_duplicate_names() {
 }
 
 #[test]
+fn load_many_with_matching_project_filter_selects_named_config() {
+    let dir = fixture_path(&["scan-config", "multi-playwright-config"]);
+    let config = dir.join("playwright.config.mts");
+    let storybook = dir.join("playwright.storybook.config.mts");
+    // config_name_filter=Some("web") exercises the is_some_and closure on line 53
+    let result = load_many(&dir, &[config, storybook], Some("web")).unwrap();
+    assert_eq!(result.name.as_deref(), Some("web"));
+    assert!(!result.projects.is_empty());
+}
+
+#[test]
 fn load_existing_config_reads_and_parses() {
     let dir = fixture_path(&["ast-snippets", "playwright_config", "load-existing"]);
     let config = dir.join("playwright.config.ts");

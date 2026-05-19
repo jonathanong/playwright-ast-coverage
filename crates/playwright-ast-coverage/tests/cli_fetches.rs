@@ -132,8 +132,8 @@ fn tests_json_reports_named_tests() {
     assert!(output.status.success());
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
     let tests = report["tests"].as_array().unwrap();
-    // 3 entries: unnamed (dynamic name), "also visits", "visits home page"
-    assert_eq!(tests.len(), 3);
+    // 5 entries: unnamed (dynamic name), "also visits", "visits home page", "clicks relative href", "visits with template literal"
+    assert_eq!(tests.len(), 5);
     let visits_home = tests.iter().find(|t| t["name"] == "visits home page");
     assert!(visits_home.is_some());
     assert_eq!(visits_home.unwrap()["describePath"][0], "Home");
@@ -225,6 +225,19 @@ fn tests_json_reports_html_ids() {
 }
 
 #[test]
+fn tests_text_reports_html_ids_in_human_format() {
+    Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(common::fixture("nextjs-html-ids", "html-ids-covered"))
+        .arg("tests")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("html-id: save"))
+        .stdout(predicate::str::contains("html-id: publish"));
+}
+
+#[test]
 fn tests_with_file_filter_excludes_nonmatching() {
     let output = Command::cargo_bin("playwright-ast-coverage")
         .unwrap()
@@ -273,7 +286,29 @@ fn tests_with_absolute_file_path_filter() {
         .unwrap();
     assert!(output.status.success());
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["tests"].as_array().unwrap().len(), 3);
+    assert_eq!(report["tests"].as_array().unwrap().len(), 5);
+}
+
+#[test]
+fn edges_json_client_side_fetch_edge_has_client_side() {
+    // Exercises FetchSide::Client => "client" in fetch_edge().
+    let output = Command::cargo_bin("playwright-ast-coverage")
+        .unwrap()
+        .arg("--root")
+        .arg(common::fixture("nextjs-coverage", "with-client-fetch"))
+        .arg("edges")
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let edges = report["edges"].as_array().unwrap();
+    let client_fetch = edges
+        .iter()
+        .find(|e| e["kind"] == "fetch" && e["side"] == "client");
+    assert!(client_fetch.is_some(), "expected a client-side fetch edge");
+    assert_eq!(client_fetch.unwrap()["method"], "GET");
+    assert_eq!(client_fetch.unwrap()["path"], "/api/health");
 }
 
 #[test]

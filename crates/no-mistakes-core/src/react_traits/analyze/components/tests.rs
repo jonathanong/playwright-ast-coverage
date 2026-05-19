@@ -375,6 +375,12 @@ fn export_class_extends_call_not_component() {
 }
 
 #[test]
+fn local_class_non_component_not_tracked() {
+    let names = check_names("local-class-non-component");
+    assert_eq!(names, vec!["Foo"]);
+}
+
+#[test]
 fn is_component_expr_non_react_static_member_not_component() {
     assert!(!check_is_expr("is-component-expr-non-react-static-member"));
 }

@@ -1,0 +1,3 @@
+export default function Page() {
+  return <main><button type="button" data-testid="save">Save</button></main>;
+}

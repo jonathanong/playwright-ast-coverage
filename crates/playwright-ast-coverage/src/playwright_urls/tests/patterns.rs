@@ -1,7 +1,7 @@
 use crate::playwright_urls::callee::is_candidate_url;
 use crate::playwright_urls::normalize::glob_url_sample;
 use crate::playwright_urls::regex_sample::regex_path_sample;
-use crate::playwright_urls::statics::source_offset_is_code;
+use crate::playwright_urls::statics::{collect_static_zero_arg_paths, source_offset_is_code};
 
 #[test]
 fn regex_path_sample_edge_cases() {
@@ -126,4 +126,46 @@ fn source_offset_filter_ignores_comments_and_strings() {
         "'unterminated",
         "'unterminated".len()
     ));
+
+    let double_quoted = r#"const x = "foo: () => \"/bar\""; const real = 1;"#;
+    assert!(!source_offset_is_code(
+        double_quoted,
+        double_quoted.find("bar").unwrap()
+    ));
+    assert!(source_offset_is_code(
+        double_quoted,
+        double_quoted.find("real").unwrap()
+    ));
+
+    let template = "const x = `foo: () => '/bar'`; const real = 1;";
+    assert!(!source_offset_is_code(
+        template,
+        template.find("bar").unwrap()
+    ));
+    assert!(source_offset_is_code(
+        template,
+        template.find("real").unwrap()
+    ));
+    assert!(!source_offset_is_code(
+        "`unterminated",
+        "`unterminated".len()
+    ));
+}
+
+#[test]
+fn collect_static_zero_arg_paths_handles_various_quote_styles() {
+    let source = r#"
+        const routes = {
+            home: () => "/home",
+            about: () => '/about',
+            help: () => `/help`,
+        };
+    "#;
+    let paths = collect_static_zero_arg_paths(source);
+    assert!(paths.contains_key("home"), "double-quoted route not found");
+    assert!(paths.contains_key("about"), "single-quoted route not found");
+    assert!(
+        paths.contains_key("help"),
+        "template-literal route not found"
+    );
 }

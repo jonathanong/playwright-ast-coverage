@@ -5,5 +5,7 @@ test.describe('App', () => {
     await page.goto('/');
     await page.getByTestId('save').click();
     await page.locator('[data-pw="publish"]').click();
+    await (page.getByTestId)('save').click();
+    await page.locator(`[data-testid="save"]`).click();
   });
 });

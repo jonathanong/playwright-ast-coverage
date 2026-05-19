@@ -287,3 +287,40 @@ fn discovery_skips_dependency_and_build_directories() {
         );
     }
 }
+
+#[test]
+fn missing_root_with_shared_facts_returns_empty_report() {
+    let root = fixture("does-not-exist");
+    let facts = crate::codebase::check_facts::CheckFactMap::default();
+    let report = analyze_project_with_facts(&root, None, &[], &facts).unwrap();
+    assert!(report.edges.is_empty());
+    assert!(report.producers.is_empty());
+    assert!(report.workers.is_empty());
+}
+
+#[test]
+fn shared_facts_filter_excludes_non_matching_files() {
+    let root = fixture("basic");
+    let files = crate::codebase::ts_source::discover_files(&root, &[]);
+    let facts = crate::codebase::check_facts::collect_check_facts(
+        &root,
+        files,
+        crate::codebase::check_facts::CheckFactPlan {
+            queue: true,
+            ..Default::default()
+        },
+    );
+
+    // Filter to only worker.ts so that enqueue.ts and queues.ts are excluded.
+    // This causes the `continue` branch inside the filter block (graph.rs lines 62-64)
+    // to execute for each skipped file.
+    let report =
+        analyze_project_with_facts(&root, None, &["worker.ts".to_string()], &facts).unwrap();
+
+    // With no queue definitions visible (queues.ts was filtered out) the worker cannot
+    // resolve its queue, so job_keys() returns empty and no edges or check findings appear.
+    assert!(report.edges.is_empty());
+    assert!(report.check.is_empty());
+    // worker.ts itself is still present in the workers list.
+    assert!(!report.workers.is_empty());
+}
