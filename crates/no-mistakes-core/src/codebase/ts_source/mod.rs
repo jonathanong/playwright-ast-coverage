@@ -215,6 +215,7 @@ fn git_ls_files(root: &Path, others: bool) -> Option<Vec<String>> {
     let mut cmd = Command::new("git");
     cmd.arg("-C").arg(root).arg("ls-files");
     cmd.env_remove("GIT_DIR")
+        .env_remove("GIT_COMMON_DIR")
         .env_remove("GIT_WORK_TREE")
         .env_remove("GIT_INDEX_FILE");
     if others {

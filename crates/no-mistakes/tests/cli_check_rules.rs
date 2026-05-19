@@ -30,6 +30,19 @@ fn stdout(o: &Output) -> String {
     String::from_utf8_lossy(&o.stdout).into_owned()
 }
 
+fn git(root: &std::path::Path, args: &[&str]) -> bool {
+    Command::new("git")
+        .args(["-C", root.to_str().unwrap()])
+        .args(args)
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_COMMON_DIR")
+        .env_remove("GIT_INDEX_FILE")
+        .env_remove("GIT_WORK_TREE")
+        .status()
+        .unwrap()
+        .success()
+}
+
 // ── agents-md-max-size ────────────────────────────────────────────────────────
 
 #[test]
@@ -243,20 +256,11 @@ fn agents_md_max_size_skips_gitignored_files() {
     std::fs::write(root.join(".gitignore"), "ignored/\n").unwrap();
 
     // Initialise a git repo and commit so git ls-files is the source of truth
-    assert!(Command::new("git")
-        .args(["-C", root.to_str().unwrap(), "init", "-q"])
-        .status()
-        .unwrap()
-        .success());
-    assert!(Command::new("git")
-        .args(["-C", root.to_str().unwrap(), "add", "."])
-        .status()
-        .unwrap()
-        .success());
-    assert!(Command::new("git")
-        .args([
-            "-C",
-            root.to_str().unwrap(),
+    assert!(git(root, &["init", "-q"]));
+    assert!(git(root, &["add", "."]));
+    assert!(git(
+        root,
+        &[
             "-c",
             "user.email=t@t",
             "-c",
@@ -264,10 +268,8 @@ fn agents_md_max_size_skips_gitignored_files() {
             "commit",
             "-qm",
             "init"
-        ])
-        .status()
-        .unwrap()
-        .success());
+        ]
+    ));
 
     let config = tempfile::Builder::new().suffix(".yml").tempfile().unwrap();
     std::fs::write(
@@ -303,20 +305,11 @@ fn rust_no_inline_tests_skips_gitignored_files() {
     std::fs::write(root.join("clean.rs"), "pub fn ok() {}\n").unwrap();
     std::fs::write(root.join(".gitignore"), "generated/\n").unwrap();
 
-    assert!(Command::new("git")
-        .args(["-C", root.to_str().unwrap(), "init", "-q"])
-        .status()
-        .unwrap()
-        .success());
-    assert!(Command::new("git")
-        .args(["-C", root.to_str().unwrap(), "add", "."])
-        .status()
-        .unwrap()
-        .success());
-    assert!(Command::new("git")
-        .args([
-            "-C",
-            root.to_str().unwrap(),
+    assert!(git(root, &["init", "-q"]));
+    assert!(git(root, &["add", "."]));
+    assert!(git(
+        root,
+        &[
             "-c",
             "user.email=t@t",
             "-c",
@@ -324,10 +317,8 @@ fn rust_no_inline_tests_skips_gitignored_files() {
             "commit",
             "-qm",
             "init"
-        ])
-        .status()
-        .unwrap()
-        .success());
+        ]
+    ));
 
     let config = tempfile::Builder::new().suffix(".yml").tempfile().unwrap();
     std::fs::write(
