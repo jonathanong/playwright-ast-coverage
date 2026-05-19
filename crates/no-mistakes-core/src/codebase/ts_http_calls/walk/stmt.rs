@@ -1,4 +1,4 @@
-use super::{collect_from_expr, HttpCall};
+use super::{assignment_target::collect_from_assignment_target, collect_from_expr, HttpCall};
 use oxc::ast::ast::{Declaration, ExportDefaultDeclarationKind, ForStatementInit, Statement};
 
 pub(super) fn collect_from_stmt(
@@ -102,6 +102,7 @@ fn collect_from_for_stmt(
                 }
             }
             ForStatementInit::AssignmentExpression(assign) => {
+                collect_from_assignment_target(&assign.left, source, prefixes, out);
                 collect_from_expr(&assign.right, source, prefixes, out);
             }
             other => {

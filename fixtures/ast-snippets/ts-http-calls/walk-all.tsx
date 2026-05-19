@@ -37,6 +37,8 @@ for (fetch("/api/for-call-init"); ready; ready = false) {
   fetch("/api/for-call-body");
 }
 
+for (target[fetch("/api/for-assignment-target")] = value; ready; ready = false) {}
+
 for (const key in fetch("/api/for-in-right")) {
   fetch("/api/for-in");
 }

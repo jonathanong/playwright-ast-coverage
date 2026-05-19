@@ -3,4 +3,11 @@ pub fn value() -> usize {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::value;
+
+    #[test]
+    fn value_returns_one() {
+        assert_eq!(value(), 1);
+    }
+}

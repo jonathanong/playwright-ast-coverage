@@ -3,6 +3,7 @@ use crate::codebase::ts_routes::refs::normalize_template;
 use crate::codebase::ts_source::{byte_offset_to_line, unwrap_ts_wrappers};
 use oxc::ast::ast::{Argument, Expression, Program};
 
+mod assignment_target;
 mod stmt;
 
 const HTTP_VERBS: &[&str] = &["get", "post", "put", "patch", "delete", "head", "options"];

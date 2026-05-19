@@ -163,7 +163,7 @@ filters exposed by the CLI:
 
 1. Enable only the edge producers needed by the requested relationships.
 2. Reuse the same discovered file universe for every producer.
-3. Reuse `TsFactMap` when any enabled producer needs parsed TS/JS facts.
+3. Reuse `TsFactMap` when any enabled producer needs TS/JS facts to be parsed.
 4. Avoid domain-specific rediscovery.
 
 Adding a relationship kind requires updating:
