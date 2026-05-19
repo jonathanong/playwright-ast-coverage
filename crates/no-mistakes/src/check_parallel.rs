@@ -19,6 +19,7 @@ pub(crate) type DomainResults = (
     anyhow::Result<CheckTask<Vec<RuleFinding>>>,
 );
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn run_domain_checks(
     root: &Path,
     config_path: &Option<PathBuf>,
