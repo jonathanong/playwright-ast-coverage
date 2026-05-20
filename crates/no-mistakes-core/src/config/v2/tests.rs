@@ -61,8 +61,7 @@ fn basic_v2_config_parsed() {
     let backend = &cfg.projects["backend"];
     assert_eq!(backend.type_, Some(ProjectType::Server));
     assert_eq!(backend.root.as_deref(), Some("backend"));
-    assert_eq!(backend.rules, vec!["http-route-static-paths"]);
-    assert!(cfg.rules.contains_key("http-route-static-paths"));
+    assert!(cfg.rule_configured("http-route-static-paths"));
 }
 
 #[test]
@@ -114,14 +113,10 @@ fn legacy_guardrails_converted() {
     let cfg = load_v2_config(&fixture("legacy-guardrails"), None).unwrap();
     assert_eq!(cfg.projects["backend"].root.as_deref(), Some("backend"));
     assert_eq!(
-        cfg.projects["backend"].rules,
-        vec!["http-route-static-paths"]
-    );
-    assert_eq!(
         cfg.filesystem.skip_directories,
         vec![".next", "node_modules"]
     );
-    assert!(cfg.rules.contains_key("http-route-static-paths"));
+    assert!(cfg.rule_configured("http-route-static-paths"));
 }
 
 #[test]
@@ -163,7 +158,7 @@ fn rule_def_enabled_defaults_to_true() {
 #[test]
 fn rule_def_options_deserialized() {
     let cfg = load_v2_config(&fixture("multi-project"), None).unwrap();
-    let rule = cfg.rules.get("http-route-static-paths").unwrap();
+    let rule = cfg.rule_applications("http-route-static-paths")[0];
     assert_eq!(
         rule.message.as_deref(),
         Some("Route paths must be static literals")
@@ -286,7 +281,6 @@ fn config_view_filesystem() {
     let cfg = load_v2_config(&fixture("multi-project"), None).unwrap();
     let view = ConfigView::new(&cfg);
     assert_eq!(view.skip_directories(), &[".next", "node_modules"]);
-    assert!(view.skip_file_patterns().is_empty());
 }
 
 #[test]
@@ -295,7 +289,7 @@ fn config_view_project_rules() {
     let view = ConfigView::new(&cfg);
     assert!(view
         .project_rules("backend")
-        .contains(&"http-route-static-paths".to_string()));
+        .contains(&"http-route-static-paths"));
     assert!(view.project_rules("nonexistent").is_empty());
 }
 
@@ -386,12 +380,22 @@ fn legacy_guardrails_disabled_rule_converted() {
 }
 
 #[test]
-fn config_view_unknown_rule_id_is_skipped() {
+fn legacy_guardrails_project_rule_without_top_level_options_converted() {
+    let cfg = load_v2_config(&fixture("legacy-guardrails-project-rule-only"), None).unwrap();
+    assert!(cfg.rule_configured("unique-exports"));
+    assert!(cfg
+        .rule_applications("unique-exports")
+        .iter()
+        .any(|rule| rule.projects == vec!["app"]));
+}
+
+#[test]
+fn config_view_rule_applications_are_project_scoped() {
     let cfg = load_v2_config(&fixture("project-unknown-rule"), None).unwrap();
     let view = ConfigView::new(&cfg);
     let rules = view.enabled_rules_for("backend");
     assert!(rules.iter().any(|(id, _)| *id == "known-rule"));
-    assert!(!rules.iter().any(|(id, _)| *id == "ghost-rule"));
+    assert!(rules.iter().any(|(id, _)| *id == "ghost-rule"));
 }
 
 // ── parse error propagation ───────────────────────────────────────────────────

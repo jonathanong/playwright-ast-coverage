@@ -1,5 +1,7 @@
 projects:
   shared:
     root: ../shared
-    rules:
-      - unique-exports
+rules:
+  - rule: unique-exports
+    projects:
+      - shared

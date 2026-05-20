@@ -161,8 +161,18 @@ fn test_dynamic_imports_configured(
 }
 
 fn integration_configured(config: &no_mistakes_core::config::v2::NoMistakesConfig) -> bool {
-    let vitest_configured = !config.tests.vitest.suites.is_empty();
-    let playwright_configured = !config.tests.playwright.suites.is_empty();
+    let vitest_configured = config
+        .tests
+        .vitest
+        .projects
+        .values()
+        .any(|project| !project.integration_suites.is_empty());
+    let playwright_configured = config
+        .tests
+        .playwright
+        .projects
+        .values()
+        .any(|project| !project.integration_suites.is_empty());
     if vitest_configured {
         return true;
     }

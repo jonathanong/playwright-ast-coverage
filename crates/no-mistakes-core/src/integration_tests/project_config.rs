@@ -7,16 +7,31 @@ use anyhow::{Context, Result};
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use std::path::Path;
 
-pub(super) fn load_projects(
+const PLAYWRIGHT_CONFIGS: &[&str] = &[
+    "playwright.config.ts",
+    "playwright.config.mts",
+    "playwright.config.js",
+    "playwright.config.mjs",
+];
+const VITEST_CONFIGS: &[&str] = &[
+    "vitest.config.ts",
+    "vitest.config.mts",
+    "vitest.config.js",
+    "vitest.config.mjs",
+];
+
+pub(crate) fn load_projects(
     root: &Path,
     framework: Framework,
     configs: Option<&StringOrList>,
 ) -> Result<Vec<ConfigProject>> {
-    let Some(configs) = configs else {
-        return Ok(Vec::new());
+    let config_values = if let Some(configs) = configs {
+        configs.values()
+    } else {
+        discovered_config_paths(root, framework)
     };
     let mut projects = Vec::new();
-    for raw in configs.values() {
+    for raw in config_values {
         let path = root.join(&raw);
         if !path.exists() {
             anyhow::bail!(
@@ -32,6 +47,18 @@ pub(super) fn load_projects(
         )?);
     }
     Ok(projects)
+}
+
+fn discovered_config_paths(root: &Path, framework: Framework) -> Vec<String> {
+    let names = match framework {
+        Framework::Playwright => PLAYWRIGHT_CONFIGS,
+        Framework::Vitest => VITEST_CONFIGS,
+    };
+    names
+        .iter()
+        .filter(|name| root.join(name).exists())
+        .map(|name| (*name).to_string())
+        .collect()
 }
 
 fn load_config_projects(

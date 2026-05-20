@@ -1,5 +1,5 @@
 use crate::ast;
-use oxc_ast::ast::{Expression, PropertyKey};
+use oxc_ast::ast::{ArrayExpressionElement, Expression, PropertyKey};
 
 pub(in crate::integration_tests) fn property_key_name(key: &PropertyKey<'_>) -> Option<String> {
     match key {
@@ -34,6 +34,7 @@ pub(in crate::integration_tests) fn required_string(
         .ok_or_else(|| anyhow::anyhow!("expected string literal for {name}"))
 }
 
+#[cfg(test)]
 pub(in crate::integration_tests) fn required_string_or_array(
     expression: &Expression<'_>,
     source: &str,
@@ -61,6 +62,35 @@ pub(in crate::integration_tests) fn required_string_or_array(
     }
     if values.is_empty() {
         anyhow::bail!("expected string literal or string array for {name}");
+    }
+    Ok(values)
+}
+
+pub(in crate::integration_tests) fn inferred_string_or_array(
+    expression: &Expression<'_>,
+    source: &str,
+    name: &str,
+) -> anyhow::Result<Vec<String>> {
+    if let Some(value) = optional_string(expression, source) {
+        return Ok(vec![value]);
+    }
+    let Expression::ArrayExpression(array) = parenthesized_expression(expression) else {
+        anyhow::bail!("expected string literal or string array for {name}");
+    };
+    let mut values = Vec::new();
+    for element in &array.elements {
+        match element {
+            ArrayExpressionElement::StringLiteral(literal) => {
+                values.push(literal.value.to_string())
+            }
+            ArrayExpressionElement::TemplateLiteral(template)
+                if template.expressions.is_empty() =>
+            {
+                values.push(ast::template_literal_text(template, source));
+            }
+            ArrayExpressionElement::SpreadElement(_) | ArrayExpressionElement::Elision(_) => {}
+            _ => anyhow::bail!("expected string literal array entries for {name}"),
+        }
     }
     Ok(values)
 }

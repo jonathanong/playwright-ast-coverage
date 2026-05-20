@@ -6,8 +6,8 @@ projects:
       - backend/**
     routes:
       - backend/api/**
-    rules:
-      - http-route-static-paths
 rules:
-  http-route-static-paths:
+  - rule: http-route-static-paths
+    projects:
+      - backend
     message: Route paths must be static literals

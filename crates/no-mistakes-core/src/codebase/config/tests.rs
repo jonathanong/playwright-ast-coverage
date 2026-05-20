@@ -25,7 +25,6 @@ fn augment_from_gitignore_adds_plain_directory_names_once() {
     let mut config = Config {
         filesystem: FilesystemConfig {
             skip_directories: vec!["dist".to_string()],
-            skip_file_patterns: vec![],
         },
         projects: HashMap::new(),
         rules: HashMap::new(),
@@ -137,4 +136,37 @@ projects:
     assert!(config
         .project_roots_for_rule(root, "missing-rule")
         .is_empty());
+}
+
+#[test]
+fn project_roots_for_rule_infers_nextjs_root() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/config-v2/nextjs-inferred-root");
+    let root = crate::codebase::ts_resolver::normalize_path(&root);
+
+    let config = load_codebase_config_with_path(&root, None).unwrap();
+
+    assert_eq!(
+        config.project_roots_for_rule(&root, "unique-exports"),
+        vec![root.join("web")]
+    );
+}
+
+#[test]
+fn project_roots_for_rule_falls_back_when_nextjs_root_is_not_inferred() {
+    let root = Path::new("/repo");
+    let mut projects = HashMap::new();
+    projects.insert(
+        "web".to_string(),
+        project::ProjectConfig {
+            type_: Some(crate::config::v2::schema::ProjectType::Nextjs),
+            rules: vec!["unique-exports".to_string()],
+            ..Default::default()
+        },
+    );
+
+    assert_eq!(
+        project::roots_for_rule(&projects, &HashMap::new(), root, "unique-exports"),
+        vec![PathBuf::from("/repo")]
+    );
 }

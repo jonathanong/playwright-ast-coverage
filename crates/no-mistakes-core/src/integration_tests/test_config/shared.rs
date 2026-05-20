@@ -5,8 +5,10 @@ use oxc_ast::ast::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
+#[cfg(test)]
+pub(in crate::integration_tests) use super::shared_literals::required_string_or_array;
 pub(in crate::integration_tests) use super::shared_literals::{
-    optional_string, property_key_name, required_string, required_string_or_array,
+    inferred_string_or_array, optional_string, property_key_name, required_string,
 };
 
 pub(in crate::integration_tests) fn top_level_object_bindings<'a>(

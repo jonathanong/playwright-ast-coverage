@@ -15,15 +15,11 @@ projects:
         - backend/queues/**
       workers:
         - backend/workers/**
-    rules:
-      - http-route-static-paths
   web:
     type: nextjs
     root: web
     include:
       - web/**
-    rules:
-      - no-dynamic-server-components
 tests:
   playwright:
     configs: playwright.config.ts
@@ -43,8 +39,13 @@ tests:
   vitest:
     configs: vitest.config.ts
 rules:
-  http-route-static-paths:
+  - rule: http-route-static-paths
+    projects:
+      - backend
     message: Route paths must be static literals
-    backendPattern: backend/api/**
-  no-dynamic-server-components:
+    options:
+      backendPattern: backend/api/**
+  - rule: no-dynamic-server-components
+    projects:
+      - web
     message: No dynamic server components allowed

@@ -7,7 +7,7 @@ use crate::config::parse_config;
 
 use super::schema::{
     FilesystemConfig, NoMistakesConfig, PlaywrightSelectors, PlaywrightTestConfig, Project,
-    ProjectType, RuleDef, StringOrList, Tests,
+    ProjectType, RuleDef, RuleScope, StringOrList, Tests,
 };
 use super::ToolKind;
 
@@ -55,7 +55,7 @@ fn playwright_to_v2(source: &str, path: &Path) -> Result<NoMistakesConfig> {
     );
     cfg.tests.playwright = PlaywrightTestConfig {
         configs: fc.playwright_config,
-        suites: Vec::new(),
+        projects: BTreeMap::new(),
         selectors: PlaywrightSelectors {
             html_ids: fc.html_ids,
             test_ids,
@@ -87,46 +87,61 @@ struct GuardrailsProject {
 
 fn guardrails_to_v2(source: &str, path: &Path) -> Result<NoMistakesConfig> {
     let gc: GuardrailsConfig = parse_config(source, path)?;
+    let mut project_rule_refs = Vec::new();
     let projects = gc
         .projects
         .into_iter()
         .map(|(name, gp)| {
             let root = gp.root.or(gp.root_path);
+            for rule in gp.rules {
+                project_rule_refs.push((name.clone(), rule));
+            }
             (
                 name,
                 Project {
                     root,
-                    rules: gp.rules,
                     ..Default::default()
                 },
             )
         })
         .collect();
 
-    let rules = gc
+    let rule_options = gc
         .rules
         .into_iter()
-        .map(|(id, opts)| {
-            let enabled = opts
-                .as_mapping()
-                .and_then(|m| m.get("enabled"))
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true);
-            let message = opts
-                .as_mapping()
-                .and_then(|m| m.get("message"))
-                .and_then(|v| v.as_str())
-                .map(str::to_string);
-            (
-                id,
-                RuleDef {
-                    message,
-                    enabled,
-                    options: opts,
-                },
-            )
-        })
-        .collect();
+        .map(|(id, opts)| (id, legacy_rule_def_parts(opts)))
+        .collect::<HashMap<_, _>>();
+
+    let mut referenced_rules = std::collections::HashSet::new();
+    let mut rules = Vec::new();
+    for (project, rule_id) in project_rule_refs {
+        referenced_rules.insert(rule_id.clone());
+        let (enabled, message, options) = rule_options
+            .get(&rule_id)
+            .cloned()
+            .unwrap_or_else(default_legacy_rule_parts);
+        rules.push(RuleDef {
+            rule: rule_id,
+            message,
+            enabled,
+            projects: vec![project],
+            options,
+            ..Default::default()
+        });
+    }
+    for (rule_id, (enabled, message, options)) in rule_options {
+        if referenced_rules.contains(&rule_id) {
+            continue;
+        }
+        rules.push(RuleDef {
+            rule: rule_id,
+            message,
+            enabled,
+            scope: Some(RuleScope::Repository),
+            options,
+            ..Default::default()
+        });
+    }
 
     Ok(NoMistakesConfig {
         filesystem: gc.filesystem,
@@ -134,6 +149,28 @@ fn guardrails_to_v2(source: &str, path: &Path) -> Result<NoMistakesConfig> {
         tests: Tests::default(),
         rules,
     })
+}
+
+fn legacy_rule_def_parts(opts: serde_yaml::Value) -> (bool, Option<String>, serde_yaml::Value) {
+    let enabled = opts
+        .as_mapping()
+        .and_then(|m| m.get("enabled"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let message = opts
+        .as_mapping()
+        .and_then(|m| m.get("message"))
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    (enabled, message, opts)
+}
+
+fn default_legacy_rule_parts() -> (bool, Option<String>, serde_yaml::Value) {
+    (
+        true,
+        None,
+        serde_yaml::Value::Mapping(serde_yaml::Mapping::new()),
+    )
 }
 
 // ── react-traits / next-to-fetch legacy ──────────────────────────────────────

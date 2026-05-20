@@ -1,8 +1,9 @@
 projects:
   checked:
     root: checked
-    rules:
-      - unique-exports
   ignored:
     root: ignored
-    rules: []
+rules:
+  - rule: unique-exports
+    projects:
+      - checked

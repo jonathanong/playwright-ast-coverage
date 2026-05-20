@@ -91,20 +91,7 @@ pub fn run_filesystem_rules(root: &Path, config_path: Option<&Path>) -> Result<V
 }
 
 pub(crate) fn rule_enabled(config: &crate::config::v2::NoMistakesConfig, rule_id: &str) -> bool {
-    let top_level = config
-        .rules
-        .get(rule_id)
-        .map(|rule| rule.enabled)
-        .unwrap_or(false);
-    top_level
-        || config.projects.values().any(|project| {
-            project.rules.iter().any(|rule| rule == rule_id)
-                && config
-                    .rules
-                    .get(rule_id)
-                    .map(|rule| rule.enabled)
-                    .unwrap_or(true)
-        })
+    config.rule_configured(rule_id)
 }
 
 #[cfg(test)]

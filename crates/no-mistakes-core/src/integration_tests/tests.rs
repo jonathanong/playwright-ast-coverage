@@ -3,6 +3,8 @@ use oxc_ast_visit::{walk, Visit};
 use oxc_span::Span;
 use std::path::{Path, PathBuf};
 
+mod config_parsers;
+
 fn fixture(name: &str) -> PathBuf {
     crate::codebase::ts_resolver::normalize_path(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -33,67 +35,64 @@ fn check_reports_integration_policy_violations() {
 
     assert!(messages.contains(&(
         "vitest",
-        "unit",
+        "unit.unit",
         "backend/unit.test.mts",
         Some("direct integration in unit suite"),
         Some("openai"),
     )));
     assert!(messages.contains(&(
         "vitest",
-        "unit",
+        "unit.unit",
         "backend/unit.test.mts",
         Some("helper integration in unit suite"),
         Some("openai"),
     )));
     assert!(messages.contains(&(
         "vitest",
-        "openai",
-        "integration/openai.test.mts",
-        Some("strict suite requires annotation"),
-        None,
+        "unit.unit",
+        "backend/unit.test.mts",
+        Some("expression helper integration in unit suite"),
+        Some("openai"),
     )));
     assert!(messages.contains(&(
         "vitest",
-        "mixed",
+        "mixed.openai",
         "mixed/mixed.test.mts",
         Some("wrong integration still fails in non-strict suite"),
         Some("anthropic"),
     )));
     assert!(messages.contains(&(
+        "vitest",
+        "mixed.openai",
+        "mixed/mixed.test.mts",
+        Some("wrong integration fails even when allowed integration is also called"),
+        Some("anthropic"),
+    )));
+    assert!(messages.contains(&(
         "playwright",
-        "pw-unit",
+        "pw-unit.unit",
         "playwright/unit/unit.spec.ts",
         Some("playwright helper integration in unit suite"),
         Some("openai"),
     )));
-    assert!(messages.contains(&(
-        "playwright",
-        "pw-openai",
-        "playwright/openai/openai.spec.ts",
-        Some("playwright strict requires integration"),
-        None,
-    )));
-    assert_eq!(findings.len(), 8);
+    assert_eq!(findings.len(), 6);
 }
 
 #[test]
-fn invalid_integration_true_is_rejected() {
-    let yaml = "tests:\n  vitest:\n    suites:\n      - name: bad\n        integration: true\n";
+fn empty_project_policy_is_allowed() {
+    let yaml = "tests:\n  vitest:\n    projects:\n      web: {}\n";
     let config: crate::config::v2::schema::NoMistakesConfig = serde_yaml::from_str(yaml).unwrap();
-    let err = config::validate_config(&config).unwrap_err();
-    assert!(err
-        .to_string()
-        .contains("integration: true is not supported"));
+    config::validate_config(&config).unwrap();
 }
 
 #[test]
 fn invalid_empty_integration_suites_is_rejected() {
-    let yaml = "tests:\n  vitest:\n    suites:\n      - name: bad\n        integration:\n          suites: []\n";
+    let yaml = "tests:\n  vitest:\n    projects:\n      web:\n        integration_suites:\n          openai: []\n";
     let config: crate::config::v2::schema::NoMistakesConfig = serde_yaml::from_str(yaml).unwrap();
     let err = config::validate_config(&config).unwrap_err();
     assert!(err
         .to_string()
-        .contains("integration.suites must contain at least one name"));
+        .contains("tests.vitest.projects.web.integration_suites.openai"));
 }
 
 #[test]
@@ -149,12 +148,12 @@ fn coverage_fixture_exercises_parser_and_resolution_variants() {
     let findings = check(&root, None).unwrap();
     assert!(findings.iter().any(|finding| {
         finding.framework == "vitest"
-            && finding.suite == "root-vitest"
+            && finding.suite == "root-vitest.openai"
             && finding.test_name.as_deref() == Some("uses declared function")
             && finding.integration.as_deref() == Some("openai")
     }));
     assert!(findings.iter().any(|finding| {
-        finding.suite == "default-globs"
+        finding.suite == "root-vitest.openai"
             && finding.test_name.as_deref() == Some("uses namespace function")
             && finding.integration.as_deref() == Some("openai")
     }));
@@ -171,7 +170,7 @@ fn invalid_suite_project_and_missing_config_are_rejected() {
     let unknown = check(&fixture("unknown-project"), None).unwrap_err();
     assert!(unknown
         .to_string()
-        .contains("vitest suite missing references unknown project missing"));
+        .contains("vitest integration policy references unknown project missing"));
 }
 
 #[test]
@@ -181,42 +180,50 @@ fn configured_suites_cover_matching_variants() {
 tests:
   playwright:
     configs: playwright.projects.ts
-    suites:
-      - project: inherits
-        integration: false
-      - name: by-config
-        config: playwright.projects.ts
-        include: ['custom/**/*.spec.ts']
-        integration: false
+    projects:
+      inherits:
+        integration_suites:
+          openai: [openai]
+      absolute:
+        integration_suites:
+          openai: [openai]
   vitest:
     configs: vitest.object.mts
-    suites:
-      - name: default-name
-        integration: false
+    projects:
+      root-vitest:
+        integration_suites:
+          openai: [openai]
 "#;
     let config: crate::config::v2::schema::NoMistakesConfig = serde_yaml::from_str(yaml).unwrap();
     let suites = config::configured_suites(&root, &config).unwrap();
-    assert!(suites.iter().any(|suite| suite.name == "inherits"));
+    assert!(suites.iter().any(|suite| suite.name == "inherits.openai"));
+    assert!(suites.iter().any(|suite| suite.name == "absolute.openai"
+        && suite.include == vec!["/tmp/no-mistakes-absolute-tests/**/*.spec.ts"]));
     assert!(suites
         .iter()
-        .any(|suite| suite.name == "by-config" && suite.include == vec!["custom/**/*.spec.ts"]));
-    assert!(suites.iter().any(|suite| suite.name == "default-name"));
+        .any(|suite| suite.name == "root-vitest.openai"));
 
     let missing_config = r#"
 tests:
   playwright:
-    configs: playwright.projects.ts
-    suites:
-      - config: missing.ts
-        integration: false
+    configs: missing.ts
+    projects:
+      inherits:
+        integration_suites:
+          openai: [openai]
 "#;
     let config: crate::config::v2::schema::NoMistakesConfig =
         serde_yaml::from_str(missing_config).unwrap();
     let err = config::configured_suites(&root, &config).unwrap_err();
-    assert!(err.to_string().contains("config missing.ts"));
+    assert!(err.to_string().contains("config does not exist"));
 
     assert!(
         project_config::load_projects(&root, types::Framework::Vitest, None)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        !project_config::load_projects(&fixture("basic"), types::Framework::Playwright, None)
             .unwrap()
             .is_empty()
     );
@@ -225,10 +232,6 @@ tests:
         .base_url
         .is_some());
     assert!(project_config::build_globset(&["[".to_string()]).is_err());
-    assert_eq!(
-        config::policy_target(&crate::config::v2::schema::TestSuitePolicy::default()),
-        "suite"
-    );
     assert!(!project_config::load_projects(
         &root,
         types::Framework::Playwright,
@@ -250,18 +253,16 @@ tests:
     let missing_config_and_project = r#"
 tests:
   playwright:
-    configs: playwright.projects.ts
-    suites:
-      - config: missing.ts
-        project: missing
-        integration: false
+    configs: missing.ts
+    projects:
+      missing:
+        integration_suites:
+          openai: [openai]
 "#;
     let config: crate::config::v2::schema::NoMistakesConfig =
         serde_yaml::from_str(missing_config_and_project).unwrap();
     let err = config::configured_suites(&root, &config).unwrap_err();
-    assert!(err
-        .to_string()
-        .contains("config missing.ts project missing"));
+    assert!(err.to_string().contains("config does not exist"));
 }
 
 #[test]
@@ -368,114 +369,6 @@ fn call_helpers_cover_non_test_and_member_variants() {
         assert!(collector.saw_function_callback);
         assert!(collector.saw_imported_member_call);
         assert!(collector.saw_non_callback_argument);
-    })
-    .unwrap();
-}
-
-#[test]
-fn config_parsers_reject_invalid_literals() {
-    let root = fixture("coverage");
-    let pw_path = root.join("playwright.invalid.ts");
-    let pw_source = std::fs::read_to_string(&pw_path).unwrap();
-    let pw_err = match test_config::playwright::parse_from_path(&pw_source, &pw_path, &root) {
-        Ok(_) => panic!("expected invalid Playwright config to fail"),
-        Err(err) => err,
-    };
-    assert!(pw_err.to_string().contains("expected string literal"));
-
-    let vitest_path = root.join("vitest.invalid.mts");
-    let vitest_source = std::fs::read_to_string(&vitest_path).unwrap();
-    let vitest_err =
-        test_config::vitest::parse_from_path(&vitest_source, &vitest_path, &root, &root)
-            .unwrap_err();
-    assert!(vitest_err
-        .to_string()
-        .contains("expected string literal array entries"));
-}
-
-#[test]
-fn shared_config_helpers_cover_ast_edge_shapes() {
-    let path = fixture_file("coverage", "parser-helpers.ts");
-    let source = std::fs::read_to_string(&path).unwrap();
-    crate::ast::with_program(&path, &source, |program, source| {
-        let bindings = test_config::shared::top_level_object_bindings(program);
-        assert!(bindings.contains_key("nested"));
-        assert!(!bindings.contains_key("noInit"));
-        assert!(!bindings.contains_key("destructured"));
-
-        let object = test_config::shared::default_export_object(program, &bindings, true).unwrap();
-        assert_eq!(
-            test_config::shared::property_expression(object, "name")
-                .and_then(|expr| test_config::shared::optional_string(expr, source))
-                .as_deref(),
-            Some("nested")
-        );
-
-        let fixture_object = test_config::shared::property_object(object, "missing", &bindings);
-        assert!(fixture_object.is_none());
-        let oxc_ast::ast::Expression::ObjectExpression(object) = bindings.get("object").unwrap()
-        else {
-            panic!("expected object binding");
-        };
-        assert_eq!(
-            test_config::shared::property_expression(object, "name")
-                .map(|expr| test_config::shared::required_string(expr, source, "name").unwrap())
-                .as_deref(),
-            Some("literal")
-        );
-        assert!(test_config::shared::property_expression(object, "computed").is_none());
-        assert!(test_config::shared::property_expression(object, "quoted").is_some());
-        assert_eq!(test_config::shared::project_objects(object).len(), 1);
-
-        let list = test_config::shared::property_expression(object, "list").unwrap();
-        assert_eq!(
-            test_config::shared::required_string_or_array(list, source, "list").unwrap(),
-            vec!["one".to_string(), "two".to_string()]
-        );
-        let wrapped_list = test_config::shared::property_expression(object, "wrappedList").unwrap();
-        assert_eq!(
-            test_config::shared::required_string_or_array(wrapped_list, source, "wrappedList")
-                .unwrap(),
-            vec!["three".to_string()]
-        );
-        let non_array = test_config::shared::property_expression(object, "nonArray").unwrap();
-        assert!(
-            test_config::shared::required_string_or_array(non_array, source, "nonArray").is_err()
-        );
-        let bad_list = test_config::shared::property_expression(object, "badList").unwrap();
-        assert!(
-            test_config::shared::required_string_or_array(bad_list, source, "badList").is_err()
-        );
-    })
-    .unwrap();
-
-    let path = fixture_file("coverage", "parser-edge.ts");
-    let source = std::fs::read_to_string(&path).unwrap();
-    crate::ast::with_program(&path, &source, |program, _| {
-        let bindings = test_config::shared::top_level_object_bindings(program);
-        assert!(test_config::shared::default_export_object(program, &bindings, true).is_none());
-        let oxc_ast::ast::Expression::ObjectExpression(object) = bindings.get("object").unwrap()
-        else {
-            panic!("expected object binding");
-        };
-        assert!(test_config::shared::property_expression(object, "quoted").is_some());
-        assert!(test_config::shared::property_object(object, "cyclic", &bindings).is_none());
-    })
-    .unwrap();
-
-    let path = fixture_file("coverage", "parser-cycle.ts");
-    let source = std::fs::read_to_string(&path).unwrap();
-    crate::ast::with_program(&path, &source, |program, _| {
-        let bindings = test_config::shared::top_level_object_bindings(program);
-        assert!(test_config::shared::default_export_object(program, &bindings, true).is_none());
-    })
-    .unwrap();
-
-    let path = fixture_file("coverage", "playwright.call-invalid.ts");
-    let source = std::fs::read_to_string(&path).unwrap();
-    crate::ast::with_program(&path, &source, |program, _| {
-        let bindings = test_config::shared::top_level_object_bindings(program);
-        assert!(test_config::shared::default_export_object(program, &bindings, true).is_none());
     })
     .unwrap();
 }

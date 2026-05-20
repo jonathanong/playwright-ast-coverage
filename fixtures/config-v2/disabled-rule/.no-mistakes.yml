@@ -2,12 +2,13 @@ projects:
   backend:
     type: server
     root: backend
-    rules:
-      - active-rule
-      - disabled-rule
 rules:
-  active-rule:
+  - rule: active-rule
+    projects:
+      - backend
     message: This rule is active
-  disabled-rule:
+  - rule: disabled-rule
+    projects:
+      - backend
     enabled: false
     message: This rule is disabled

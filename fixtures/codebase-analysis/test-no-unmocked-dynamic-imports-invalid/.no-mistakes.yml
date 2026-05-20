@@ -1,12 +1,7 @@
-projects:
-  tests:
-    type: tests
-    root: .
-    rules:
-      - test-no-unmocked-dynamic-imports
 tests:
   vitest:
     configs: vitest.config.mts
 rules:
-  test-no-unmocked-dynamic-imports:
+  - rule: test-no-unmocked-dynamic-imports
+    scope: repository
     message: Dynamic imports in tests must be mocked

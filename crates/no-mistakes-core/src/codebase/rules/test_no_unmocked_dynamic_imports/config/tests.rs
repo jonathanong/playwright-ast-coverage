@@ -1,5 +1,18 @@
 use super::*;
-use crate::config::v2::schema::Project;
+use crate::config::v2::schema::{Project, RuleDef};
+
+mod rule_targets;
+
+fn apply_rule_to_projects(config: &mut NoMistakesConfig, projects: &[&str]) {
+    config.rules.push(RuleDef {
+        rule: super::super::RULE_ID.to_string(),
+        projects: projects
+            .iter()
+            .map(|project| (*project).to_string())
+            .collect(),
+        ..Default::default()
+    });
+}
 
 fn setup_files(root: &Path, config: &NoMistakesConfig) -> Result<Vec<PathBuf>> {
     let cfg_files = config_files(root, config)
@@ -76,7 +89,6 @@ fn project_include_restricts_default_test_globs() {
         Project {
             root: Some("web/storybook".to_string()),
             include: vec!["**/*.test.tsx".to_string()],
-            rules: vec![super::super::RULE_ID.to_string()],
             ..Default::default()
         },
     );
@@ -84,7 +96,6 @@ fn project_include_restricts_default_test_globs() {
         "root-tests".to_string(),
         Project {
             include: vec!["tests/**/*.test.ts".to_string()],
-            rules: vec![super::super::RULE_ID.to_string()],
             ..Default::default()
         },
     );
@@ -92,10 +103,10 @@ fn project_include_restricts_default_test_globs() {
         "other".to_string(),
         Project {
             include: vec!["other/**/*.test.ts".to_string()],
-            rules: vec!["different-rule".to_string()],
             ..Default::default()
         },
     );
+    apply_rule_to_projects(&mut config, &["storybook", "root-tests"]);
     let filter = test_filter(Path::new("."), &config).unwrap();
     assert!(filter.is_match("web/storybook/__tests__/a.test.tsx"));
     assert!(filter.is_match("tests/a.test.ts"));
@@ -115,10 +126,10 @@ fn project_include_does_not_widen_to_config_test_globs() {
         Project {
             root: Some("tests".to_string()),
             include: vec!["good.test.mts".to_string()],
-            rules: vec![super::super::RULE_ID.to_string()],
             ..Default::default()
         },
     );
+    apply_rule_to_projects(&mut config, &["focused"]);
     config.tests.vitest.configs = Some(crate::config::v2::schema::StringOrList::One(
         "vitest.config.mts".to_string(),
     ));
@@ -136,7 +147,6 @@ fn scoped_glob_leaves_root_project_includes_unprefixed() {
         Project {
             root: Some(".".to_string()),
             include: vec!["tests/**/*.test.ts".to_string()],
-            rules: vec![super::super::RULE_ID.to_string()],
             ..Default::default()
         },
     );
@@ -145,10 +155,10 @@ fn scoped_glob_leaves_root_project_includes_unprefixed() {
         Project {
             root: Some("web/storybook".to_string()),
             include: vec!["./**/*.test.tsx".to_string()],
-            rules: vec![super::super::RULE_ID.to_string()],
             ..Default::default()
         },
     );
+    apply_rule_to_projects(&mut config, &["root-tests", "storybook"]);
     let filter = test_filter(Path::new("."), &config).unwrap();
     assert!(filter.is_match("tests/example.test.ts"));
     assert!(filter.is_match("web/storybook/example.test.tsx"));

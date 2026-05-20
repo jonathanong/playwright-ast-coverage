@@ -222,44 +222,6 @@ fn collect_report_from_files_surfaces_malformed_guardrails_config() {
 }
 
 #[test]
-fn skip_file_patterns_match_normalized_relative_paths() {
-    let root = PathBuf::from("/repo");
-    let files = vec![
-        root.join("web\\app\\generated\\page.tsx"),
-        root.join("web/app/page.tsx"),
-    ];
-
-    let filtered = filter_skip_file_patterns(&root, files, &["^web/app/generated/".to_string()]);
-
-    assert_eq!(filtered, vec![root.join("web/app/page.tsx")]);
-}
-
-#[test]
-fn skip_file_patterns_ignore_invalid_regexes_and_keep_external_paths() {
-    let root = PathBuf::from("/repo");
-    let external = PathBuf::from("/outside/page.tsx");
-    let file = root.join("web/app/page.tsx");
-    let files = vec![external.clone(), file.clone()];
-
-    let filtered = filter_skip_file_patterns(&root, files, &["[".to_string()]);
-
-    assert_eq!(filtered, vec![external, file]);
-}
-
-#[test]
-fn skip_file_patterns_keep_external_paths_with_valid_patterns() {
-    let root = PathBuf::from("/repo");
-    let external = PathBuf::from("/outside/page.tsx");
-    let generated = root.join("web/app/generated/page.tsx");
-    let regular = root.join("web/app/page.tsx");
-    let files = vec![external.clone(), generated, regular.clone()];
-
-    let filtered = filter_skip_file_patterns(&root, files, &["^web/app/generated/".to_string()]);
-
-    assert_eq!(filtered, vec![external, regular]);
-}
-
-#[test]
 fn route_coverage_sort_uses_file_as_tiebreaker() {
     let mut routes = [
         RouteCoverage {

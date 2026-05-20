@@ -1,3 +1,3 @@
-filesystem:
-  skipFilePatterns:
-    - invalid\.ts$
+rules:
+  - rule: unique-exports
+    scope: repository

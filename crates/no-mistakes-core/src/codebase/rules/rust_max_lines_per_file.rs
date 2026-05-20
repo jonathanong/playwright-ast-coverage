@@ -57,10 +57,7 @@ pub(crate) fn check_with_files(
 }
 
 fn parse_opts(config: &NoMistakesConfig) -> Options {
-    config
-        .rules
-        .get(RULE_ID)
-        .map_or_else(Default::default, |r| r.rule_options())
+    config.rule_options(RULE_ID)
 }
 
 fn normalize_roots(opts: &Options, root: &Path) -> Vec<PathBuf> {

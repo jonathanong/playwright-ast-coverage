@@ -1,13 +1,15 @@
 use super::*;
+use crate::config::v2::schema::{RuleDef, RuleScope};
 
 #[test]
 fn rule_enabled_requires_configured_rule() {
     let mut config = crate::config::v2::NoMistakesConfig::default();
     assert!(!rule_enabled(&config, TEST_NO_UNMOCKED_DYNAMIC_IMPORTS));
-    config.rules.insert(
-        TEST_NO_UNMOCKED_DYNAMIC_IMPORTS.to_string(),
-        serde_yaml::from_str("{}").unwrap(),
-    );
+    config.rules.push(RuleDef {
+        rule: TEST_NO_UNMOCKED_DYNAMIC_IMPORTS.to_string(),
+        scope: Some(RuleScope::Repository),
+        ..Default::default()
+    });
     assert!(rule_enabled(&config, TEST_NO_UNMOCKED_DYNAMIC_IMPORTS));
 }
 
@@ -16,11 +18,13 @@ fn rule_enabled_accepts_project_rule_without_top_level_options() {
     let mut config = crate::config::v2::NoMistakesConfig::default();
     config.projects.insert(
         "tests".to_string(),
-        crate::config::v2::schema::Project {
-            rules: vec![TEST_NO_UNMOCKED_DYNAMIC_IMPORTS.to_string()],
-            ..Default::default()
-        },
+        crate::config::v2::schema::Project::default(),
     );
+    config.rules.push(RuleDef {
+        rule: TEST_NO_UNMOCKED_DYNAMIC_IMPORTS.to_string(),
+        projects: vec!["tests".to_string()],
+        ..Default::default()
+    });
     assert!(rule_enabled(&config, TEST_NO_UNMOCKED_DYNAMIC_IMPORTS));
 }
 
@@ -330,7 +334,7 @@ fn run_filesystem_rules_executes_enabled_agents_md_rule() {
         .unwrap();
     std::fs::write(
         config_file.path(),
-        "rules:\n  agents-md-max-size:\n    enabled: true\n    maxLines: 5\n",
+        "rules:\n  - rule: agents-md-max-size\n    scope: repository\n    options:\n      maxLines: 5\n",
     )
     .unwrap();
     let findings = run_filesystem_rules(root, Some(config_file.path())).unwrap();
@@ -350,7 +354,7 @@ fn run_filesystem_rules_executes_enabled_rust_max_lines_rule() {
         .unwrap();
     std::fs::write(
         config_file.path(),
-        "rules:\n  rust-max-lines-per-file:\n    enabled: true\n    srcMax: 3\n",
+        "rules:\n  - rule: rust-max-lines-per-file\n    scope: repository\n    options:\n      srcMax: 3\n",
     )
     .unwrap();
     let findings = run_filesystem_rules(root, Some(config_file.path())).unwrap();
@@ -373,7 +377,7 @@ fn run_filesystem_rules_executes_enabled_rust_no_inline_tests_rule() {
         .unwrap();
     std::fs::write(
         config_file.path(),
-        "rules:\n  rust-no-inline-tests:\n    enabled: true\n",
+        "rules:\n  - rule: rust-no-inline-tests\n    scope: repository\n",
     )
     .unwrap();
     let findings = run_filesystem_rules(root, Some(config_file.path())).unwrap();

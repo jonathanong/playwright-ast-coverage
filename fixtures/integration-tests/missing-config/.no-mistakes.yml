@@ -1,6 +1,7 @@
 tests:
   vitest:
     configs: missing.config.mts
-    suites:
-      - name: unit
-        integration: false
+    projects:
+      unit:
+        integration_suites:
+          openai: [openai]
