@@ -10,6 +10,7 @@ use globset::GlobSet;
 use regex::Regex;
 use std::path::{Path, PathBuf};
 
+#[derive(Clone)]
 pub struct TestFilter {
     include: GlobSet,
     include_regex: Vec<Regex>,

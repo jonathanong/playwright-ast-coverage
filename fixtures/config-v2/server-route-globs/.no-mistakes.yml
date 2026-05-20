@@ -1,0 +1,12 @@
+projects:
+  backend:
+    type: server
+    root: backend
+    routes:
+      - api/**
+      - backend/legacy/**
+  web:
+    type: nextjs
+    root: web
+    routes:
+      - app/**

@@ -36,6 +36,7 @@ pub(super) struct ServerRouteVisitor<'a> {
     pub(super) koa_router_names: HashSet<String>,
     pub(super) path_match_names: HashSet<String>,
     pub(super) api_server_names: HashSet<String>,
+    pub(super) client_http_names: HashSet<String>,
 }
 
 impl<'a> Visit<'a> for ServerRouteVisitor<'a> {
@@ -57,6 +58,9 @@ impl<'a> Visit<'a> for ServerRouteVisitor<'a> {
         if let Some(init) = &decl.init {
             if let Some(value) = const_string(init) {
                 self.const_strings.insert(name.clone(), value);
+            }
+            if self.client_http_from_expr(init) {
+                self.client_http_names.insert(name.clone());
             }
             if let Some(binding) = self.binding_from_expr(init) {
                 self.facts.bindings.insert(name, binding);
@@ -143,6 +147,7 @@ impl<'a> ServerRouteVisitor<'a> {
             koa_router_names: HashSet::new(),
             path_match_names: HashSet::new(),
             api_server_names: HashSet::new(),
+            client_http_names: HashSet::new(),
         }
     }
 }

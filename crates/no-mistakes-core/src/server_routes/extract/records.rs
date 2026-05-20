@@ -25,6 +25,9 @@ impl ServerRouteVisitor<'_> {
     }
 
     fn record_verb(&mut self, call: &CallExpression<'_>, object: &Expression<'_>, method: &str) {
+        if self.client_http_from_expr(object) {
+            return;
+        }
         if let Some((binding, path)) = self.path_from_chain(object) {
             self.push_route(call, &binding, method, &path);
             return;

@@ -6,6 +6,7 @@ pub mod md_links;
 pub mod playwright_coverage;
 pub mod rules;
 pub mod symbols;
+pub(crate) mod test_filter;
 pub mod timing;
 pub mod ts_http_calls;
 pub mod ts_process_spawn;

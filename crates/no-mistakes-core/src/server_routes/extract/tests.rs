@@ -54,6 +54,23 @@ fn extract_file_covers_import_binding_route_and_mount_shapes() {
             "missing route {expected:?}"
         );
     }
+    for skipped in [
+        ("get", "/client-supertest-chain"),
+        ("get", "/client-supertest-variable"),
+        ("get", "/client-axios"),
+        ("post", "/client-axios-create"),
+        ("get", "/client-got"),
+        ("put", "/client-ky"),
+        ("get", "/client-superagent"),
+        ("get", "/client-playwright"),
+        ("get", "/client-axios-static-object"),
+        ("get", "/client-node-http"),
+    ] {
+        assert!(
+            !route_pairs.contains(&skipped),
+            "client request should not be a route definition {skipped:?}"
+        );
+    }
 
     assert!(facts
         .mounts

@@ -1,0 +1,12 @@
+projects:
+  backend:
+    type: server
+    root: backend
+    routes:
+      - api/**
+tests:
+  vitest:
+    suites:
+      - name: backend
+        include:
+          - backend/**/*.test.mts

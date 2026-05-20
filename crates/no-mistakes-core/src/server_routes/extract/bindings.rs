@@ -28,6 +28,9 @@ impl ServerRouteVisitor<'_> {
             }
             _ => {}
         }
+        if is_client_http_module(source) {
+            self.client_http_names.insert(local.clone());
+        }
         self.facts.imports.push(ImportBinding {
             local,
             imported,
@@ -58,6 +61,30 @@ impl ServerRouteVisitor<'_> {
                 }
             }
             _ => None,
+        }
+    }
+
+    pub(super) fn client_http_from_expr(&self, expr: &Expression<'_>) -> bool {
+        match expr {
+            Expression::Identifier(id) => self.client_http_names.contains(id.name.as_str()),
+            Expression::ParenthesizedExpression(expr) => {
+                self.client_http_from_expr(&expr.expression)
+            }
+            Expression::CallExpression(call) => self.client_http_from_call(call),
+            Expression::StaticMemberExpression(member) => {
+                self.client_http_from_expr(&member.object)
+            }
+            _ => false,
+        }
+    }
+
+    fn client_http_from_call(&self, call: &CallExpression<'_>) -> bool {
+        match &call.callee {
+            Expression::Identifier(id) => self.client_http_names.contains(id.name.as_str()),
+            Expression::StaticMemberExpression(member) => {
+                self.client_http_from_expr(&member.object)
+            }
+            _ => false,
         }
     }
 
@@ -99,4 +126,22 @@ impl ServerRouteVisitor<'_> {
         }
         self.binding_from_expr(object)
     }
+}
+
+fn is_client_http_module(source: &str) -> bool {
+    matches!(
+        source,
+        "axios"
+            | "got"
+            | "ky"
+            | "supertest"
+            | "superagent"
+            | "undici"
+            | "node-fetch"
+            | "http"
+            | "https"
+            | "node:http"
+            | "node:https"
+            | "@playwright/test"
+    )
 }

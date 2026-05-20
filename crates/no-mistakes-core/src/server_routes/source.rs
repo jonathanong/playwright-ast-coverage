@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
-pub(crate) fn discover_source_files(root: &Path) -> Vec<PathBuf> {
-    crate::codebase::ts_source::discover_source_files(root, &[])
+pub(crate) fn discover_source_files(root: &Path, extra_skip: &[String]) -> Vec<PathBuf> {
+    crate::codebase::ts_source::discover_source_files(root, extra_skip)
 }
 
 pub(crate) fn relative_string(root: &Path, path: &Path) -> String {

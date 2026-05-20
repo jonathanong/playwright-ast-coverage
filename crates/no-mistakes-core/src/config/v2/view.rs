@@ -27,6 +27,30 @@ impl<'a> ConfigView<'a> {
             .collect()
     }
 
+    /// Server route definition globs, normalized relative to the config root.
+    pub fn server_route_globs(&self) -> Vec<String> {
+        let mut routes = Vec::new();
+        for project in self.config.projects.values() {
+            if project.routes.is_empty() {
+                continue;
+            }
+            if project
+                .type_
+                .as_ref()
+                .is_some_and(|type_| type_ != &ProjectType::Server)
+            {
+                continue;
+            }
+            let root = project.root.as_deref().unwrap_or(".");
+            for route in &project.routes {
+                routes.push(project_relative_glob(root, route));
+            }
+        }
+        routes.sort();
+        routes.dedup();
+        routes
+    }
+
     /// The first `nextjs` project's root path (or `"app"` if none configured).
     pub fn nextjs_root(&self) -> &str {
         self.config
@@ -124,5 +148,18 @@ impl<'a> ConfigView<'a> {
                 }
             })
             .collect()
+    }
+}
+
+fn project_relative_glob(root: &str, pattern: &str) -> String {
+    let root = root.trim().trim_matches('/').trim_start_matches("./");
+    let pattern = pattern
+        .trim()
+        .trim_start_matches('/')
+        .trim_start_matches("./");
+    if root.is_empty() || root == "." || pattern.starts_with(&format!("{root}/")) {
+        pattern.to_string()
+    } else {
+        format!("{root}/{pattern}")
     }
 }

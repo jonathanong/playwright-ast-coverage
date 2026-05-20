@@ -1,0 +1,11 @@
+tests:
+  vitest:
+    suites:
+      - name: backend
+        include:
+          - backend/**/*.test.mts
+        exclude:
+          - backend/**/*.mock.test.mts
+      - name: integration
+        include:
+          - integration/**/*.test.mts

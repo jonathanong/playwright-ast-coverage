@@ -219,6 +219,20 @@ fn config_view_nextjs_root_default() {
 }
 
 #[test]
+fn config_view_server_route_globs_are_project_root_relative() {
+    let cfg = load_v2_config(&fixture("server-route-globs"), None).unwrap();
+    let view = ConfigView::new(&cfg);
+
+    assert_eq!(
+        view.server_route_globs(),
+        vec![
+            "backend/api/**".to_string(),
+            "backend/legacy/**".to_string()
+        ]
+    );
+}
+
+#[test]
 fn config_view_playwright_configs() {
     let cfg = load_v2_config(&fixture("multi-project"), None).unwrap();
     let view = ConfigView::new(&cfg);

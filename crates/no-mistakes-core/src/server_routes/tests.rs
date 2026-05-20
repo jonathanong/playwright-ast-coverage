@@ -77,6 +77,38 @@ fn filters_limit_discovered_sources() {
 }
 
 #[test]
+fn configured_project_routes_constrain_sources_and_skip_tests() {
+    let report = analyze_project(&fixture("configured-routes"), None, &[]).unwrap();
+
+    assert_eq!(report.summary.total_files, 1);
+    assert!(report
+        .routes
+        .iter()
+        .any(|route| route.route == "/api/users/*" && route.method == "get"));
+    assert!(!report
+        .routes
+        .iter()
+        .any(|route| route.route == "/api/test-only"));
+    assert!(!report
+        .routes
+        .iter()
+        .any(|route| route.route == "/api/ignored"));
+}
+
+#[test]
+fn explicit_filters_narrow_configured_project_routes() {
+    let report = analyze_project(
+        &fixture("configured-routes"),
+        None,
+        &["backend/services/ignored.ts".to_string()],
+    )
+    .unwrap();
+
+    assert_eq!(report.summary.total_files, 0);
+    assert!(report.routes.is_empty());
+}
+
+#[test]
 fn mixed_framework_shapes_are_supported() {
     let report = analyze_project(&fixture("mixed"), None, &[]).unwrap();
     for expected in [

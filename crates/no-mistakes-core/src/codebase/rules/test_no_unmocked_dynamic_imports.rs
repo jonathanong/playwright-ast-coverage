@@ -1,6 +1,6 @@
 pub(crate) mod ast;
 mod checker;
-mod config;
+pub(crate) mod config;
 mod manual_mocks;
 mod reachable;
 mod runtime;
