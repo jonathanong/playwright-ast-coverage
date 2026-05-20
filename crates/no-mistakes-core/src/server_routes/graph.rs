@@ -27,10 +27,10 @@ pub fn analyze_project(
     let root = root.canonicalize().unwrap_or(root.to_path_buf());
     let tsconfig = resolve_tsconfig(&root, tsconfig_path)?;
     let v2_config = load_v2_config(&root, None).ok();
-    let config_route_filter = match v2_config.as_ref() {
-        Some(config) => build_filter(&ConfigView::new(config).server_route_globs())?,
-        None => None,
-    };
+    let config_route_filter = v2_config
+        .as_ref()
+        .and_then(|config| build_filter(&ConfigView::new(config).server_route_globs()).ok())
+        .flatten();
     let test_filter = v2_config
         .as_ref()
         .map(|config| crate::codebase::test_filter::TestFileFilter::new(&root, config));

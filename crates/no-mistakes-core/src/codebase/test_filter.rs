@@ -9,8 +9,13 @@ type RunnerTestFilter =
 #[derive(Clone)]
 pub(crate) struct TestFileFilter {
     config_filter: Option<RunnerTestFilter>,
-    suite_include: Option<GlobSet>,
-    suite_exclude: Option<GlobSet>,
+    suites: Vec<TestSuiteFilter>,
+}
+
+#[derive(Clone)]
+struct TestSuiteFilter {
+    include: Option<GlobSet>,
+    exclude: Option<GlobSet>,
 }
 
 impl TestFileFilter {
@@ -21,12 +26,7 @@ impl TestFileFilter {
                     root, config,
                 )
                 .ok(),
-            suite_include: compile_optional_globset(&configured_suite_includes(config))
-                .ok()
-                .flatten(),
-            suite_exclude: compile_optional_globset(&configured_suite_excludes(config))
-                .ok()
-                .flatten(),
+            suites: configured_suite_filters(config),
         }
     }
 
@@ -36,48 +36,62 @@ impl TestFileFilter {
     }
 
     pub(crate) fn is_match_rel(&self, rel_path: &str) -> bool {
-        if self.matches_configured_suite_exclude(rel_path) {
-            return false;
+        if let Some(is_match) = self.configured_suite_match(rel_path) {
+            return is_match;
         }
-        self.config_filter
+        if self
+            .config_filter
             .as_ref()
             .is_some_and(|filter| filter.is_match(rel_path))
-            || self.matches_configured_suite(rel_path)
-            || fallback_test_path(rel_path)
+        {
+            return true;
+        }
+        fallback_test_path(rel_path)
     }
 
-    fn matches_configured_suite(&self, rel_path: &str) -> bool {
-        self.suite_include
+    fn configured_suite_match(&self, rel_path: &str) -> Option<bool> {
+        let mut excluded_by_matching_suite = false;
+        for suite in &self.suites {
+            if !suite.matches_include(rel_path) {
+                continue;
+            }
+            if suite.matches_exclude(rel_path) {
+                excluded_by_matching_suite = true;
+            } else {
+                return Some(true);
+            }
+        }
+        excluded_by_matching_suite.then_some(false)
+    }
+}
+
+impl TestSuiteFilter {
+    fn matches_include(&self, rel_path: &str) -> bool {
+        self.include
             .as_ref()
             .is_some_and(|include| include.is_match(rel_path))
     }
 
-    fn matches_configured_suite_exclude(&self, rel_path: &str) -> bool {
-        self.suite_exclude
+    fn matches_exclude(&self, rel_path: &str) -> bool {
+        self.exclude
             .as_ref()
             .is_some_and(|exclude| exclude.is_match(rel_path))
     }
 }
 
-fn configured_suite_includes(config: &NoMistakesConfig) -> Vec<String> {
+fn configured_suite_filters(config: &NoMistakesConfig) -> Vec<TestSuiteFilter> {
     config
         .tests
         .vitest
         .suites
         .iter()
         .chain(config.tests.playwright.suites.iter())
-        .flat_map(|suite| suite.include.iter().cloned())
-        .collect()
-}
-
-fn configured_suite_excludes(config: &NoMistakesConfig) -> Vec<String> {
-    config
-        .tests
-        .vitest
-        .suites
-        .iter()
-        .chain(config.tests.playwright.suites.iter())
-        .flat_map(|suite| suite.exclude.iter().cloned())
+        .filter_map(|suite| {
+            let include = compile_optional_globset(&suite.include).ok().flatten();
+            include.as_ref()?;
+            let exclude = compile_optional_globset(&suite.exclude).ok().flatten();
+            Some(TestSuiteFilter { include, exclude })
+        })
         .collect()
 }
 

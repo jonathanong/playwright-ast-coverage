@@ -35,3 +35,23 @@ fn implicit_invalid_tsconfig_falls_back_but_explicit_errors() {
     let err = analyze_project(&root, Some(&root.join("tsconfig.json")), &[]).unwrap_err();
     assert!(format!("{err:#}").contains("loading tsconfig"));
 }
+
+#[test]
+fn malformed_v2_config_falls_back_to_unconfigured_scan() {
+    let report = analyze_project(&fixture("malformed-config"), None, &[]).unwrap();
+
+    assert!(report
+        .routes
+        .iter()
+        .any(|route| route.route == "/api/users/*" && route.method == "get"));
+}
+
+#[test]
+fn invalid_project_route_globs_fall_back_to_unconfigured_scan() {
+    let report = analyze_project(&fixture("invalid-route-glob"), None, &[]).unwrap();
+
+    assert!(report
+        .routes
+        .iter()
+        .any(|route| route.route == "/api/users/*" && route.method == "get"));
+}

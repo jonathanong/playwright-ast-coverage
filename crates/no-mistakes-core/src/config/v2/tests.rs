@@ -220,21 +220,7 @@ fn config_view_nextjs_root_default() {
 
 #[test]
 fn config_view_server_route_globs_are_project_root_relative() {
-    let yaml = r#"
-projects:
-  backend:
-    type: server
-    root: backend
-    routes:
-      - api/**
-      - backend/legacy/**
-  web:
-    type: nextjs
-    root: web
-    routes:
-      - app/**
-"#;
-    let cfg: NoMistakesConfig = serde_yaml::from_str(yaml).unwrap();
+    let cfg = load_v2_config(&fixture("server-route-globs"), None).unwrap();
     let view = ConfigView::new(&cfg);
 
     assert_eq!(
