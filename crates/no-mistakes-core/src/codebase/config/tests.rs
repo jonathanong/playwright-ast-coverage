@@ -106,6 +106,34 @@ fn load_codebase_config_finds_parent_no_mistakes_config() {
 }
 
 #[test]
+fn v2_duplicate_rule_applications_enable_rule_when_any_application_is_enabled() {
+    let config: NoMistakesConfig = serde_yaml::from_str(
+        r#"
+projects:
+  disabled:
+    root: disabled
+  web:
+    root: web
+rules:
+  - rule: unique-exports
+    enabled: false
+    projects: [disabled]
+  - rule: unique-exports
+    projects: [web]
+"#,
+    )
+    .unwrap();
+
+    let config = config_from_v2(config);
+
+    assert!(config.is_rule_enabled("unique-exports"));
+    assert_eq!(
+        config.project_roots_for_rule(Path::new("/repo"), "unique-exports"),
+        vec![PathBuf::from("/repo/web")]
+    );
+}
+
+#[test]
 fn load_codebase_config_rejects_duplicate_parent_configs() {
     let root =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/config-v2/duplicate-stems");

@@ -92,7 +92,7 @@ impl<'a> ConfigView<'a> {
         &self.config.filesystem.skip_directories
     }
 
-    /// Rules enabled for a named project (returns empty slice if unknown).
+    /// Rules enabled for a named project.
     pub fn project_rules(&self, project: &str) -> Vec<&str> {
         self.config
             .rules

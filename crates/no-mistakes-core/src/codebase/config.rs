@@ -178,10 +178,21 @@ fn config_from_v2(v2: NoMistakesConfig) -> Config {
         .collect();
     let mut rules = HashMap::new();
     for def in v2.rules {
-        rules.entry(def.rule.clone()).or_insert_with(|| RuleConfig {
-            enabled: def.enabled,
+        if !def.enabled {
+            rules.entry(def.rule.clone()).or_insert_with(|| RuleConfig {
+                enabled: false,
+                options: def.options.clone(),
+            });
+            continue;
+        }
+        let entry = rules.entry(def.rule.clone()).or_insert_with(|| RuleConfig {
+            enabled: true,
             options: def.options.clone(),
         });
+        if !entry.enabled {
+            entry.enabled = true;
+            entry.options = def.options.clone();
+        }
         for project in def.projects {
             projects
                 .entry(project)
