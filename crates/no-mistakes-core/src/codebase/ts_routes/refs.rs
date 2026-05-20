@@ -3,8 +3,8 @@ use oxc::allocator::Allocator;
 use oxc::ast::ast::{
     Argument, BindingPattern, Expression, ForStatementInit, ForStatementLeft,
     ImportDeclarationSpecifier, JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXChild,
-    JSXElement, JSXExpression, ObjectPropertyKind, PropertyKey, Statement, TemplateLiteral,
-    VariableDeclarationKind,
+    JSXElement, JSXExpression, ObjectPropertyKind, Program, PropertyKey, Statement,
+    TemplateLiteral, VariableDeclarationKind,
 };
 use oxc::parser::Parser;
 use oxc::span::SourceType;
@@ -25,11 +25,19 @@ pub fn extract_route_refs(source: &str, file: &str) -> Vec<RouteRef> {
     let source_type = SourceType::from_path(Path::new(file)).unwrap_or(SourceType::tsx());
     let ret = Parser::new(&allocator, source, source_type).parse();
 
-    let mut router_bindings = collect_import_bindings(&ret.program.body);
-    collect_router_bindings_for_scope(&ret.program.body, &mut router_bindings);
+    extract_route_refs_from_program(&ret.program, source, file)
+}
+
+pub fn extract_route_refs_from_program<'a>(
+    program: &Program<'a>,
+    source: &str,
+    file: &str,
+) -> Vec<RouteRef> {
+    let mut router_bindings = collect_import_bindings(&program.body);
+    collect_router_bindings_for_scope(&program.body, &mut router_bindings);
 
     let mut refs = Vec::new();
-    for stmt in &ret.program.body {
+    for stmt in &program.body {
         collect_from_statement(stmt, source, file, &mut router_bindings, &mut refs);
     }
 

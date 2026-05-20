@@ -80,6 +80,12 @@ fn count_code_lines_char_with_slash() {
 }
 
 #[test]
+fn count_code_lines_escaped_char_literal() {
+    let src = "let c = '\\n';\n";
+    assert_eq!(count_code_lines(src), 1);
+}
+
+#[test]
 fn is_test_file_tests_dir() {
     let root = Path::new("/project");
     let path = Path::new("/project/crates/foo/tests/integration.rs");
@@ -123,6 +129,21 @@ fn check_fails_over_src_limit() {
     let findings = check(tmp.path(), &config).unwrap();
     assert_eq!(findings.len(), 1);
     assert!(findings[0].message.contains("code lines"));
+}
+
+#[test]
+fn check_sorts_multiple_findings_by_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    let content = "fn a() {}\nfn b() {}\n";
+    std::fs::write(tmp.path().join("b.rs"), content).unwrap();
+    std::fs::write(tmp.path().join("a.rs"), content).unwrap();
+    let config = config_with_rule("{srcMax: 1}");
+
+    let findings = check(tmp.path(), &config).unwrap();
+
+    assert_eq!(findings.len(), 2);
+    assert_eq!(findings[0].file, "a.rs");
+    assert_eq!(findings[1].file, "b.rs");
 }
 
 #[test]

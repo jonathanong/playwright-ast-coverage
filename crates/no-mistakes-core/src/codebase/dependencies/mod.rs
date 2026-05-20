@@ -168,8 +168,22 @@ fn parse_entrypoint(s: &str) -> Entrypoint {
 }
 
 pub fn run(args: TraverseArgs, direction: Direction) -> Result<()> {
-    let mut timings = crate::codebase::timing::PhaseTimings::start();
     let cwd_early = std::env::current_dir().context("reading current directory")?;
+    let stdout = io::stdout();
+    let stdout_is_terminal = stdout.is_terminal();
+    let mut out = stdout.lock();
+
+    run_with_cwd_and_writer(args, direction, cwd_early, stdout_is_terminal, &mut out)
+}
+
+fn run_with_cwd_and_writer(
+    args: TraverseArgs,
+    direction: Direction,
+    cwd_early: PathBuf,
+    stdout_is_terminal: bool,
+    out: &mut dyn Write,
+) -> Result<()> {
+    let mut timings = crate::codebase::timing::PhaseTimings::start();
     let root = resolve_root(&args, &cwd_early);
     let root = crate::codebase::ts_resolver::normalize_path(&root);
 
@@ -223,12 +237,9 @@ pub fn run(args: TraverseArgs, direction: Direction) -> Result<()> {
     timings.mark("analysis");
 
     // Resolve output format.
-    let format = resolve_format(args.json, args.format, io::stdout().is_terminal());
+    let format = resolve_format(args.json, args.format, stdout_is_terminal);
 
-    let stdout = io::stdout();
-    let mut out = stdout.lock();
-
-    write_entries(format, &root_strs, &entries, &root, &mut out)?;
+    write_entries(format, &root_strs, &entries, &root, out)?;
 
     timings.mark("output");
     if args.timings {
@@ -353,9 +364,14 @@ fn dependents_entries(
 ) -> Vec<graph::NodeEntry> {
     let any_symbol = entrypoints.iter().any(|e| e.symbol.is_some());
     let symbol_facts = any_symbol.then(|| {
-        crate::codebase::ts_source::facts::collect_ts_facts(
+        let mut fact_plan = ctx.build_plan.ts_fact_plan();
+        fact_plan.imports = true;
+        fact_plan.symbols = true;
+        let fact_context = graph::ts_fact_context_for_plan(ctx.root, ctx.build_plan);
+        crate::codebase::ts_source::facts::collect_ts_facts_with_context(
             ctx.graph_files.indexable(),
-            crate::codebase::ts_source::facts::TsFactPlan::imports_and_symbols(),
+            fact_plan,
+            &fact_context,
         )
     });
     let graph = build_dependents_graph(ctx, symbol_facts.as_ref());

@@ -59,14 +59,21 @@ test("wrapper helpers resolve binary paths and return statuses", () => {
 
 test("entrypoint exits with run status", () => {
   const originalExit = process.exit;
+  const originalBinary = process.env.PLAYWRIGHT_AST_COVERAGE_BINARY;
   const exits = [];
   process.exit = (code) => {
     exits.push(code);
   };
+  process.env.PLAYWRIGHT_AST_COVERAGE_BINARY = join(tmpdir(), "missing-pac-entrypoint");
   try {
     entrypoint.main();
   } finally {
     process.exit = originalExit;
+    if (originalBinary === undefined) {
+      delete process.env.PLAYWRIGHT_AST_COVERAGE_BINARY;
+    } else {
+      process.env.PLAYWRIGHT_AST_COVERAGE_BINARY = originalBinary;
+    }
   }
   assert.deepEqual(exits, [1]);
 });

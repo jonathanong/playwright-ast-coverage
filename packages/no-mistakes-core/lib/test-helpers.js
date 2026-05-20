@@ -28,7 +28,7 @@ async function testInstallerFailures(main, assert) {
   const exits = [];
   const errors = [];
 
-  const logger = () => {};
+  const logger = errors.push.bind(errors);
   await main(
     async () => {
       throw new Error("install failed");

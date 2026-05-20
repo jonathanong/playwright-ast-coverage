@@ -1,7 +1,7 @@
 use crate::fetch::cache_opts::cache_wrapper_name;
 use crate::fetch::types::{CacheKind, FetchOccurrence};
 use crate::fetch::visit_helpers::{enter_cache_wrapper, leave_cache_wrapper, try_extract_fetch};
-use oxc_ast::ast::{CallExpression, ImportDeclarationSpecifier};
+use oxc_ast::ast::{CallExpression, FunctionType, ImportDeclarationSpecifier};
 use oxc_ast_visit::{walk, Visit};
 use oxc_span::Span;
 use std::collections::HashSet;
@@ -131,12 +131,11 @@ impl<'a> Visit<'a> for FetchVisitor<'a> {
         function: &oxc_ast::ast::Function<'a>,
         flags: oxc_syntax::scope::ScopeFlags,
     ) {
-        if matches!(
-            function.r#type,
-            oxc_ast::ast::FunctionType::FunctionDeclaration
-                | oxc_ast::ast::FunctionType::TSDeclareFunction
-        ) {
-            if let Some(id) = &function.id {
+        let is_function_declaration = matches!(function.r#type, FunctionType::FunctionDeclaration);
+        let is_ts_declare_function = matches!(function.r#type, FunctionType::TSDeclareFunction);
+        let declares_var_binding = is_function_declaration || is_ts_declare_function;
+        if declares_var_binding {
+            if let Some(id) = function.id.as_ref() {
                 self.mark_identifier_shadowed_in_var_scope(id.name.as_ref());
             }
         }

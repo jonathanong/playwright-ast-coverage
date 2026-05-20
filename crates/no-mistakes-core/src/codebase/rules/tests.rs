@@ -382,6 +382,19 @@ fn run_filesystem_rules_executes_enabled_rust_no_inline_tests_rule() {
 }
 
 #[test]
+fn run_filesystem_rules_with_files_executes_all_enabled_rust_rules() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/check-runner/facts-and-filesystem");
+    let config = root.join(".no-mistakes.yml");
+    let files = vec![root.join("src/lib.rs")];
+
+    let findings = run_filesystem_rules_with_files(&root, Some(&config), &files).unwrap();
+
+    assert!(findings.iter().any(|f| f.rule == RUST_MAX_LINES_PER_FILE));
+    assert!(findings.iter().any(|f| f.rule == RUST_NO_INLINE_TESTS));
+}
+
+#[test]
 fn run_check_with_facts_surfaces_invalid_tsconfig() {
     let root = dynamic_import_fixture();
     let invalid_tsconfig = root.join("nonexistent-tsconfig.json");

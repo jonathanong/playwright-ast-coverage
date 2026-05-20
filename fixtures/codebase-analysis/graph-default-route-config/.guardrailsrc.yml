@@ -2,5 +2,6 @@ rules:
   route-consistency:
     backendPattern: "backend/api/**/*.mts"
     backendRegisterObject: "app"
+    backendPrefixes: ["/api/"]
   http-call-static-paths:
     backendPrefixes: ["/api/"]

@@ -70,12 +70,26 @@ fn selector_index_matches_exact_template_and_fuzzy_selectors() {
     );
     assert!(index.matches(&missing_value[0]).is_empty());
 
+    let exact_template_miss = selectors::extract_playwright_selectors(
+        "await page.getByTestId('admin-123');",
+        &["data-testid".to_string()],
+        &["data-testid".to_string()],
+    );
+    assert!(index.matches(&exact_template_miss[0]).is_empty());
+
     let missing_attribute = selectors::extract_playwright_selectors(
         r#"await page.locator('[data-role^="save"]');"#,
         &["data-role".to_string()],
         &["data-role".to_string()],
     );
     assert!(index.matches(&missing_attribute[0]).is_empty());
+
+    let missing_fuzzy_attribute = selectors::extract_playwright_selectors(
+        r#"await page.locator('[aria-label^="save"]');"#,
+        &["aria-label".to_string()],
+        &["aria-label".to_string()],
+    );
+    assert!(index.matches(&missing_fuzzy_attribute[0]).is_empty());
 }
 
 #[test]

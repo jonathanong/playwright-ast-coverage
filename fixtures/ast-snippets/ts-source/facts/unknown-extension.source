@@ -1,0 +1,3 @@
+import { value } from "./imports";
+
+export const loaded = value;

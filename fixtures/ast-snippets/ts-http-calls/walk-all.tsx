@@ -15,7 +15,7 @@ export default function namedDefault() {
   client.delete("/api/default-function");
 }
 
-if (ready) {
+if (client.get("/api/if-test")) {
   client.head("/api/if");
 } else {
   client.options("/api/else");
@@ -25,33 +25,47 @@ try {
   fetch("/api/try");
 } catch (error) {
   fetch("/api/catch");
+} finally {
+  fetch("/api/finally");
 }
 
-for (let item = fetch("/api/for-init"); ready; ready = false) {
+try {
+  fetch("/api/try-no-finally");
+} catch (error) {
+  fetch("/api/catch-no-finally");
+}
+
+for (let item = fetch("/api/for-init"); fetch("/api/for-test"); fetch("/api/for-update")) {
   fetch("/api/for-body");
 }
 
-for (const key in keys) {
+for (fetch("/api/for-call-init"); ready; ready = false) {
+  fetch("/api/for-call-body");
+}
+
+for (target[fetch("/api/for-assignment-target")] = value; ready; ready = false) {}
+
+for (const key in fetch("/api/for-in-right")) {
   fetch("/api/for-in");
 }
 
-for (const value of values) {
+for (const value of fetch("/api/for-of-right")) {
   fetch("/api/for-of");
 }
 
-while (ready) {
+while (fetch("/api/while-test")) {
   fetch("/api/while");
 }
 
 do {
   fetch("/api/do-while");
-} while (ready);
+} while (fetch("/api/do-while-test"));
 
 const arrow = () => {
   fetch("/api/arrow");
 };
 
-const conditional = ready ? fetch("/api/conditional") : fetch("/api/alternate");
+const conditional = fetch("/api/conditional-test") ? fetch("/api/conditional") : fetch("/api/alternate");
 const logical = ready && fetch("/api/logical");
 const sequence = (fetch("/api/sequence-one"), fetch("/api/sequence-two"));
 const chained = client.wrap().get("/api/chained");

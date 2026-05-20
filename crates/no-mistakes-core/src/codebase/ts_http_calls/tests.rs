@@ -144,17 +144,31 @@ fn fixture_walks_statement_and_expression_shapes() {
         "/api/exported-function",
         "/api/default-arrow",
         "/api/default-function",
+        "/api/if-test",
         "/api/if",
         "/api/else",
         "/api/try",
         "/api/catch",
+        "/api/finally",
+        "/api/try-no-finally",
+        "/api/catch-no-finally",
         "/api/for-init",
+        "/api/for-test",
+        "/api/for-update",
         "/api/for-body",
+        "/api/for-call-init",
+        "/api/for-call-body",
+        "/api/for-assignment-target",
+        "/api/for-in-right",
         "/api/for-in",
+        "/api/for-of-right",
         "/api/for-of",
+        "/api/while-test",
         "/api/while",
         "/api/do-while",
+        "/api/do-while-test",
         "/api/arrow",
+        "/api/conditional-test",
         "/api/conditional",
         "/api/alternate",
         "/api/logical",
@@ -186,20 +200,33 @@ if (ready) {
 try {
   client.get("/api/try-only");
 } finally {
-  client.get("/api/finally-ignored");
+  client.get("/api/finally");
 }
 
-for (i = client.get("/api/for-expr-init"); i < 1; i++) {
+for (i = client.get("/api/for-expr-init"); client.get("/api/for-test"); client.get("/api/for-update")) {
   client.get("/api/for-expr-body");
+}
+
+for (; client.get("/api/for-no-init-test"); client.get("/api/for-no-init-update")) {
+  client.get("/api/for-no-init-body");
 }
 "#;
     let calls = extract_http_calls(source, API_PREFIXES);
     let paths: Vec<_> = calls.iter().map(|call| call.path.as_str()).collect();
 
-    for expected in ["/api/if-only", "/api/try-only", "/api/for-expr-body"] {
+    for expected in [
+        "/api/if-only",
+        "/api/try-only",
+        "/api/finally",
+        "/api/for-expr-init",
+        "/api/for-test",
+        "/api/for-update",
+        "/api/for-expr-body",
+        "/api/for-no-init-test",
+        "/api/for-no-init-update",
+        "/api/for-no-init-body",
+    ] {
         assert!(paths.contains(&expected), "missing {expected}");
     }
     assert!(!paths.contains(&"/api/default-expression"));
-    assert!(!paths.contains(&"/api/finally-ignored"));
-    assert!(!paths.contains(&"/api/for-expr-init"));
 }

@@ -77,10 +77,13 @@ impl<'a> SelectorIndex<'a> {
         if let Some(attribute_targets) = self.by_attribute.get(&playwright_selector.attribute) {
             for target in attribute_targets {
                 if target.selector.matches_playwright(playwright_selector) {
-                    matches.push(*target);
+                    matches.push(target);
                 }
             }
         }
         matches
     }
 }
+
+#[cfg(test)]
+mod tests;

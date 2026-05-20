@@ -24,6 +24,8 @@ ruleTester.run("prefer-get-by-test-id", rule, {
     { code: "page.locator(null)" },
     { code: 'page.locator(selector, "[data-pw=\\"ignored\\"]")' },
     { code: "page.dragAndDrop(selector, selector)" },
+    { code: "page.dragAndDrop(123, ``)" },
+    { code: 'page.locator("[data-pw]")' },
     {
       code: 'page.locator("[data-pw=\\"save\\"]", { hasText: "foo" })',
       options: [{ selectorAttributes: ["data-qa"] }],

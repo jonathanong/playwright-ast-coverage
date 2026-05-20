@@ -91,6 +91,18 @@ fn fetch_call_outside_component_span_is_excluded() {
 }
 
 #[test]
+fn fetch_call_before_component_span_is_excluded() {
+    let source = "fetch('/api/before');";
+    crate::ast::with_program(Path::new("fixture.ts"), source, |program, source| {
+        let mut visitor = FetchVisitor::new(source, "fixture.ts", false, false);
+        visitor.component_span = Some(oxc_span::Span::new(100, 120));
+        visitor.visit_program(program);
+        assert!(visitor.fetches.is_empty());
+    })
+    .unwrap();
+}
+
+#[test]
 fn mark_identifier_shadowed_in_var_scope_falls_back_when_no_var_scope_exists() {
     let mut visitor = FetchVisitor::new("", "fixture.ts", false, false);
     // Replace the base scope (which has tracks_var_bindings=true) with one that has false.

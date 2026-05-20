@@ -22,25 +22,25 @@ pub(crate) fn analyze_test_file(
     let base_urls = test_file.base_urls();
     let test_id_attributes = test_file.test_id_attributes();
 
-    let (raw_urls, playwright_selectors) =
-        ast::with_program(&test_file.path, &source, |program, source| {
-            let raw_urls = playwright_urls::extract_playwright_url_occurrences_from_program(
+    let parsed = ast::with_program(&test_file.path, &source, |program, source| {
+        let raw_urls = playwright_urls::extract_playwright_url_occurrences_from_program(
+            program,
+            source,
+            context.navigation_helpers,
+        );
+        let playwright_selectors = if context.app_selector_targets.is_empty() {
+            Vec::new()
+        } else {
+            selectors::extract_playwright_selector_occurrences_from_program(
                 program,
                 source,
-                context.navigation_helpers,
-            );
-            let playwright_selectors = if context.app_selector_targets.is_empty() {
-                Vec::new()
-            } else {
-                selectors::extract_playwright_selector_occurrences_from_program(
-                    program,
-                    source,
-                    context.selector_regexes,
-                    &test_id_attributes,
-                )
-            };
-            (raw_urls, playwright_selectors)
-        })?;
+                context.selector_regexes,
+                &test_id_attributes,
+            )
+        };
+        (raw_urls, playwright_selectors)
+    });
+    let (raw_urls, playwright_selectors) = parsed?;
 
     for raw_url in raw_urls {
         if !context.test_policy.allows(raw_url.status) {

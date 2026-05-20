@@ -1,0 +1,8 @@
+rules:
+  test-no-unmocked-dynamic-imports:
+    enabled: true
+  rust-max-lines-per-file:
+    enabled: true
+    srcMax: 1
+  rust-no-inline-tests:
+    enabled: true

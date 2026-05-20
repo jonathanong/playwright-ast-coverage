@@ -354,48 +354,20 @@ fn graph_collectors_cover_defensive_empty_and_error_paths() {
     add_ci_edges(&root.join("missing"), &[], &mut forward, &mut reverse);
     assert!(forward.is_empty());
 
-    assert!(collect_route_edges(&root.join("missing"), &tsconfig, &[]).is_empty());
+    assert!(collect_route_edges(&root.join("missing"), &tsconfig, &[], None, None).is_empty());
     add_queue_edges(
         &root.join("missing"),
         &crate::codebase::ts_resolver::ImportResolver::new(&tsconfig),
         &[],
+        None,
+        None,
         &mut forward,
         &mut reverse,
     );
-    assert!(collect_http_call_edges(&root.join("missing"), &tsconfig, &[], &[]).is_empty());
-}
-
-#[test]
-fn graph_collectors_cover_malformed_and_invalid_config_branches() {
-    let source_root = crate::codebase::ts_resolver::normalize_path(&fixture("codebase-intel"));
-    let tsconfig =
-        crate::codebase::ts_resolver::load_tsconfig(&source_root.join("tsconfig.json")).unwrap();
-    let files = vec![source_root.join("packages/api/src/index.mts")];
-    let resolver = crate::codebase::ts_resolver::ImportResolver::new(&tsconfig);
-
-    let malformed =
-        crate::codebase::ts_resolver::normalize_path(&fixture("graph-malformed-config"));
-    let invalid = crate::codebase::ts_resolver::normalize_path(&fixture("graph-invalid-globs"));
-    let empty = crate::codebase::ts_resolver::normalize_path(&fixture("graph-empty-route-config"));
-    let frontend_only =
-        crate::codebase::ts_resolver::normalize_path(&fixture("playwright-coverage"));
-    let frontend_files = GraphFiles::discover(&frontend_only).all;
-
-    assert!(collect_route_edges(&malformed, &tsconfig, &files).is_empty());
-    assert!(collect_route_edges(&invalid, &tsconfig, &files).is_empty());
-    assert!(collect_route_edges(&empty, &tsconfig, &files).is_empty());
-    assert!(collect_route_edges(&frontend_only, &tsconfig, &frontend_files).is_empty());
-
-    let mut forward = EdgeMap::new();
-    let mut reverse = EdgeMap::new();
-    add_queue_edges(&malformed, &resolver, &files, &mut forward, &mut reverse);
-    add_queue_edges(&invalid, &resolver, &files, &mut forward, &mut reverse);
-    add_queue_edges(&empty, &resolver, &files, &mut forward, &mut reverse);
-    assert!(forward.is_empty());
-
-    let sources = vec![(files[0].clone(), "fetch('/api/users')".to_string())];
-    assert!(collect_http_call_edges(&malformed, &tsconfig, &sources, &files).is_empty());
-    assert!(collect_http_call_edges(&invalid, &tsconfig, &sources, &files).is_empty());
+    assert!(
+        collect_http_call_edges(&root.join("missing"), &tsconfig, None, &[], &[], &[], None)
+            .is_empty()
+    );
 }
 
 #[test]
@@ -464,6 +436,74 @@ fn codebase_intel_graph_emits_queue_http_route_test_and_process_edges() {
 }
 
 #[test]
+fn queue_edges_cover_disk_fallback_without_precomputed_facts() {
+    let root = crate::codebase::ts_resolver::normalize_path(&fixture("codebase-intel"));
+    let tsconfig =
+        crate::codebase::ts_resolver::load_tsconfig(&root.join("tsconfig.json")).unwrap();
+    let graph_files = GraphFiles::discover(&root);
+    let resolver = crate::codebase::ts_resolver::ImportResolver::new(&tsconfig);
+    let config_options = graph_config_options(&root);
+    let mut forward = EdgeMap::new();
+    let mut reverse = EdgeMap::new();
+    let send_email = root.join("packages/api/src/send-email.mts");
+    let emails = root.join("packages/api/src/emails.mts");
+    let processors = root.join("packages/api/src/processors.mts");
+
+    add_queue_edges(
+        &root,
+        &resolver,
+        graph_files.indexable(),
+        None,
+        config_options.as_ref(),
+        &mut forward,
+        &mut reverse,
+    );
+
+    assert!(forward
+        .get(&NodeId::File(send_email))
+        .map(|edges| {
+            edges.iter().any(|(node, kind)| {
+                matches!(
+                    (node, kind),
+                    (
+                        NodeId::QueueJob { queue_file, job },
+                        EdgeKind::QueueEnqueue
+                    ) if queue_file == &emails && job == "sendWelcomeEmail"
+                )
+            })
+        })
+        .unwrap_or(false));
+    let queue_job = NodeId::QueueJob {
+        queue_file: emails,
+        job: "sendWelcomeEmail".to_string(),
+    };
+    assert!(forward
+        .get(&queue_job)
+        .map(|edges| {
+            edges.iter().any(|(node, kind)| {
+                *kind == EdgeKind::QueueWorker && node.as_file() == Some(processors.as_path())
+            })
+        })
+        .unwrap_or(false));
+}
+
+#[test]
+fn process_spawn_edges_cover_source_fallback_without_precomputed_facts() {
+    let root = crate::codebase::ts_resolver::normalize_path(&fixture("codebase-intel"));
+    let spawner = root.join("packages/api/src/spawn-runner.mts");
+    let spawn_target = root.join("packages/api/src/spawn-target.mts");
+    let source = std::fs::read_to_string(&spawner).unwrap();
+
+    let edges = collect_process_spawn_edges(&root, None, &[(spawner.clone(), source)], &[]);
+
+    assert!(edges.iter().any(|(from, to, kind)| {
+        *kind == EdgeKind::ProcessSpawn
+            && from.as_file() == Some(spawner.as_path())
+            && to.as_file() == Some(spawn_target.as_path())
+    }));
+}
+
+#[test]
 fn processor_export_kind_accepts_runtime_exports_only() {
     assert!(is_processor_export_kind(&ExportKind::Function));
     assert!(is_processor_export_kind(&ExportKind::Const));
@@ -472,29 +512,4 @@ fn processor_export_kind_accepts_runtime_exports_only() {
     assert!(!is_processor_export_kind(&ExportKind::TypeAlias));
     assert!(!is_processor_export_kind(&ExportKind::Interface));
     assert!(!is_processor_export_kind(&ExportKind::Default));
-}
-
-#[test]
-fn route_collectors_cover_default_prefixes_and_scan_globs() {
-    let root = crate::codebase::ts_resolver::normalize_path(&fixture("graph-default-route-config"));
-    let tsconfig =
-        crate::codebase::ts_resolver::load_tsconfig(&root.join("tsconfig.json")).unwrap();
-    let all_files = GraphFiles::discover(&root).all;
-    let client = root.join("src/client.ts");
-    let route = root.join("backend/api/users.mts");
-
-    let route_edges = collect_route_edges(&root, &tsconfig, &all_files);
-    assert!(route_edges.iter().any(|(from, to, kind)| {
-        *kind == EdgeKind::RouteRef
-            && from.as_file() == Some(client.as_path())
-            && to.as_file() == Some(route.as_path())
-    }));
-
-    let sources = vec![(client.clone(), std::fs::read_to_string(&client).unwrap())];
-    let http_edges = collect_http_call_edges(&root, &tsconfig, &sources, &all_files);
-    assert!(http_edges.iter().any(|(from, to, kind)| {
-        *kind == EdgeKind::HttpCall
-            && from.as_file() == Some(client.as_path())
-            && to.as_file() == Some(route.as_path())
-    }));
 }

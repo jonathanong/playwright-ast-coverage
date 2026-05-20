@@ -1,0 +1,3 @@
+projects: {}
+reactTraits:
+  assertNoFetch: "not a boolean"

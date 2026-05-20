@@ -61,6 +61,17 @@ fn load_codebase_config_uses_explicit_config_path() {
 }
 
 #[test]
+fn load_codebase_config_defaults_when_no_config_exists() {
+    let root = tempfile::tempdir().unwrap();
+
+    let config = load_codebase_config_with_path(root.path(), None).unwrap();
+
+    assert!(config.filesystem.skip_directories.is_empty());
+    assert!(config.projects.is_empty());
+    assert!(config.rules.is_empty());
+}
+
+#[test]
 fn load_config_with_explicit_config_uses_config_parent_gitignore() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/config-v2/explicit-config-parent");

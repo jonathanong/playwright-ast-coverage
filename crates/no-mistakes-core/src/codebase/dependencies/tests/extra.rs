@@ -79,6 +79,18 @@ fn deps_direction_rejects_symbol_entrypoints() {
     assert!(err.to_string().contains("#symbol targeting"));
 }
 
+struct FailingWriter;
+
+impl std::io::Write for FailingWriter {
+    fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+        Err(std::io::Error::other("synthetic write failure"))
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 fn simple_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/codebase-analysis")
@@ -126,6 +138,18 @@ fn run_covers_lazy_import_normal_graph_filters_formats_and_timings() {
     let mut paths = traverse_args(root, vec![PathBuf::from("a.mts")]);
     paths.format = Some(Format::Paths);
     run(paths, Direction::Deps).unwrap();
+}
+
+#[test]
+fn run_with_cwd_and_writer_surfaces_output_errors() {
+    let root = simple_root();
+    let args = traverse_args(root, vec![PathBuf::from("a.mts")]);
+    let cwd = std::env::current_dir().unwrap();
+    let mut out = FailingWriter;
+
+    let err = run_with_cwd_and_writer(args, Direction::Deps, cwd, false, &mut out).unwrap_err();
+
+    assert!(err.to_string().contains("synthetic write failure"));
 }
 
 #[test]

@@ -1,7 +1,7 @@
 use crate::codebase::ts_source::{byte_offset_to_line, is_skipped_dir};
 use oxc::allocator::Allocator;
 use oxc::ast::ast::{
-    Argument, BindingPattern, Expression, ForStatementInit, ForStatementLeft, Statement,
+    Argument, BindingPattern, Expression, ForStatementInit, ForStatementLeft, Program, Statement,
     TemplateLiteral, VariableDeclarationKind,
 };
 use oxc::parser::Parser;
@@ -16,9 +16,17 @@ pub fn extract_backend_routes(source: &str, register_object: &str) -> Vec<(Strin
     let allocator = Allocator::default();
     let source_type = SourceType::ts();
     let ret = Parser::new(&allocator, source, source_type).parse();
+    extract_backend_routes_from_program(&ret.program, source, register_object)
+}
+
+pub fn extract_backend_routes_from_program<'a>(
+    program: &Program<'a>,
+    source: &str,
+    register_object: &str,
+) -> Vec<(String, u32)> {
     let mut results = Vec::new();
 
-    for stmt in &ret.program.body {
+    for stmt in &program.body {
         collect_from_statement(stmt, source, register_object, true, &mut results);
     }
 

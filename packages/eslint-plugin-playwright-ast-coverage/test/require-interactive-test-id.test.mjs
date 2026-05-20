@@ -28,6 +28,7 @@ tester.run("require-interactive-test-id", rule, {
     { code: "<div {...props} />;" },
     { code: "<Comp.Button />;" },
     { code: "<a>link</a>;" },
+    { code: "<div className='x' />;" },
     { code: "<div role='button' data-pw={id} />;" },
     {
       code: `<>
@@ -46,6 +47,14 @@ tester.run("require-interactive-test-id", rule, {
   invalid: [
     {
       code: "<div role='button' />;",
+      errors: [{ messageId: "missing" }],
+    },
+    {
+      code: "<button />;",
+      errors: [{ messageId: "missing" }],
+    },
+    {
+      code: "<div className='x' role='button' />;",
       errors: [{ messageId: "missing" }],
     },
     {
@@ -123,5 +132,10 @@ describe("messages coverage", () => {
 
   it("ignores non-interactive role without onClick", () => {
     assert.deepEqual(messages("<div role='presentation' />;", "require-interactive-test-id"), []);
+  });
+
+  it("covers intrinsic controls and non-role attributes", () => {
+    assert.deepEqual(messages("<button />;", "require-interactive-test-id"), ["missing"]);
+    assert.deepEqual(messages("<span title='copy' />;", "require-interactive-test-id"), []);
   });
 });

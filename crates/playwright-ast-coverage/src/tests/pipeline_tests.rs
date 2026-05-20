@@ -206,3 +206,36 @@ fn analyze_test_file_returns_error_for_missing_file() {
     let err = analyze_test_file(&test_file, &context);
     assert!(err.is_err(), "expected error for non-existent test file");
 }
+
+#[test]
+fn analyze_test_file_returns_error_for_parse_failure() {
+    use crate::analysis::context::{RouteIndex, SelectorIndex};
+    use crate::playwright_tests::TestPolicy;
+
+    let root = fixture_path(&["react-traits-components", "bad-file"]);
+    let test_file = DiscoveredTestFile {
+        path: root.join("app/components/Broken.tsx"),
+        contexts: vec![TestProjectContext {
+            base_url: None,
+            test_id_attribute: "data-testid".to_string(),
+        }],
+    };
+    let route_index = RouteIndex::default();
+    let selector_index = SelectorIndex::default();
+    let selector_regexes = selectors::compile_selector_regexes(&[], &BTreeMap::new());
+    let context = TestAnalysisContext {
+        root: &root,
+        route_index: &route_index,
+        app_selector_targets: &[],
+        selector_index: &selector_index,
+        navigation_helpers: &[],
+        selector_regexes: &selector_regexes,
+        test_policy: TestPolicy::default(),
+    };
+
+    let err = analyze_test_file(&test_file, &context)
+        .err()
+        .expect("expected parse failure");
+
+    assert!(!err.to_string().is_empty());
+}
