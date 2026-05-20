@@ -25,7 +25,6 @@ fn augment_from_gitignore_adds_plain_directory_names_once() {
     let mut config = Config {
         filesystem: FilesystemConfig {
             skip_directories: vec!["dist".to_string()],
-            skip_file_patterns: vec![],
         },
         projects: HashMap::new(),
         rules: HashMap::new(),
@@ -107,6 +106,34 @@ fn load_codebase_config_finds_parent_no_mistakes_config() {
 }
 
 #[test]
+fn v2_duplicate_rule_applications_enable_rule_when_any_application_is_enabled() {
+    let config: NoMistakesConfig = serde_yaml::from_str(
+        r#"
+projects:
+  disabled:
+    root: disabled
+  web:
+    root: web
+rules:
+  - rule: unique-exports
+    enabled: false
+    projects: [disabled]
+  - rule: unique-exports
+    projects: [web]
+"#,
+    )
+    .unwrap();
+
+    let config = config_from_v2(config);
+
+    assert!(config.is_rule_enabled("unique-exports"));
+    assert_eq!(
+        config.project_roots_for_rule(Path::new("/repo"), "unique-exports"),
+        vec![PathBuf::from("/repo/web")]
+    );
+}
+
+#[test]
 fn load_codebase_config_rejects_duplicate_parent_configs() {
     let root =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/config-v2/duplicate-stems");
@@ -137,4 +164,37 @@ projects:
     assert!(config
         .project_roots_for_rule(root, "missing-rule")
         .is_empty());
+}
+
+#[test]
+fn project_roots_for_rule_infers_nextjs_root() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/config-v2/nextjs-inferred-root");
+    let root = crate::codebase::ts_resolver::normalize_path(&root);
+
+    let config = load_codebase_config_with_path(&root, None).unwrap();
+
+    assert_eq!(
+        config.project_roots_for_rule(&root, "unique-exports"),
+        vec![root.join("web")]
+    );
+}
+
+#[test]
+fn project_roots_for_rule_falls_back_when_nextjs_root_is_not_inferred() {
+    let root = Path::new("/repo");
+    let mut projects = HashMap::new();
+    projects.insert(
+        "web".to_string(),
+        project::ProjectConfig {
+            type_: Some(crate::config::v2::schema::ProjectType::Nextjs),
+            rules: vec!["unique-exports".to_string()],
+            ..Default::default()
+        },
+    );
+
+    assert_eq!(
+        project::roots_for_rule(&projects, &HashMap::new(), root, "unique-exports"),
+        vec![PathBuf::from("/repo")]
+    );
 }

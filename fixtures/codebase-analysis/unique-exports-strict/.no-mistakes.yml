@@ -1,3 +1,5 @@
 rules:
-  unique-exports:
-    uniqueAcrossTypesAndValues: true
+  - rule: unique-exports
+    scope: repository
+    options:
+      uniqueAcrossTypesAndValues: true

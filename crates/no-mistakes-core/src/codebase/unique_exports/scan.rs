@@ -1,37 +1,24 @@
 use super::{SourceFile, RULE_ID};
 use crate::codebase::ts_resolver::normalize_path;
 use crate::codebase::ts_source::{has_disable_file_comment, relative_slash_path, TS_JS_EXTENSIONS};
-use anyhow::{Context, Result};
+#[cfg(test)]
+use anyhow::Context;
+use anyhow::Result;
 #[cfg(test)]
 use rayon::prelude::*;
-use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-pub(super) fn filter_source_files(
-    root: &Path,
-    files: &[PathBuf],
-    skip_file_patterns: &[String],
-) -> Result<Vec<PathBuf>> {
-    let patterns: Vec<Regex> = skip_file_patterns
-        .iter()
-        .map(|pattern| {
-            Regex::new(pattern).with_context(|| format!("invalid skip file pattern: {pattern}"))
-        })
-        .collect::<Result<_>>()?;
-    Ok(files
+pub(super) fn filter_source_files(files: &[PathBuf]) -> Vec<PathBuf> {
+    files
         .iter()
         .filter(|path| {
             path.extension()
                 .and_then(|ext| ext.to_str())
                 .is_some_and(|ext| TS_JS_EXTENSIONS.contains(&ext))
         })
-        .filter(|path| {
-            let rel = relative_slash_path(root, path);
-            !patterns.iter().any(|pattern| pattern.is_match(&rel))
-        })
         .cloned()
-        .collect())
+        .collect()
 }
 
 #[cfg(test)]

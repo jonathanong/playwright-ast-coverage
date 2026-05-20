@@ -16,8 +16,6 @@ pub use project::ProjectConfig;
 pub struct FilesystemConfig {
     #[serde(default)]
     pub skip_directories: Vec<String>,
-    #[serde(default)]
-    pub skip_file_patterns: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
@@ -163,37 +161,51 @@ pub fn load_codebase_config_with_path(start: &Path, config_path: Option<&Path>) 
 }
 
 fn config_from_v2(v2: NoMistakesConfig) -> Config {
-    let rules = v2
-        .rules
+    let mut projects: HashMap<String, ProjectConfig> = v2
+        .projects
         .into_iter()
-        .map(|(id, def)| {
+        .map(|(name, project)| {
             (
-                id,
-                RuleConfig {
-                    enabled: def.enabled,
-                    options: def.options,
+                name,
+                ProjectConfig {
+                    type_: project.type_,
+                    root: project.root,
+                    include: project.include,
+                    rules: Vec::new(),
                 },
             )
         })
         .collect();
+    let mut rules = HashMap::new();
+    for def in v2.rules {
+        if !def.enabled {
+            rules.entry(def.rule.clone()).or_insert_with(|| RuleConfig {
+                enabled: false,
+                options: def.options.clone(),
+            });
+            continue;
+        }
+        let entry = rules.entry(def.rule.clone()).or_insert_with(|| RuleConfig {
+            enabled: true,
+            options: def.options.clone(),
+        });
+        if !entry.enabled {
+            entry.enabled = true;
+            entry.options = def.options.clone();
+        }
+        for project in def.projects {
+            projects
+                .entry(project)
+                .or_default()
+                .rules
+                .push(def.rule.clone());
+        }
+    }
     Config {
         filesystem: FilesystemConfig {
             skip_directories: v2.filesystem.skip_directories,
-            skip_file_patterns: v2.filesystem.skip_file_patterns,
         },
-        projects: v2
-            .projects
-            .into_iter()
-            .map(|(name, project)| {
-                (
-                    name,
-                    ProjectConfig {
-                        root: project.root,
-                        rules: project.rules,
-                    },
-                )
-            })
-            .collect(),
+        projects,
         rules,
     }
 }

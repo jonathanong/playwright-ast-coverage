@@ -9,6 +9,7 @@ use no_mistakes_core::codebase::unique_exports::UniqueExportFinding;
 use no_mistakes_core::integration_tests::IntegrationFinding;
 use no_mistakes_core::queue::CheckFinding;
 use no_mistakes_core::react_traits;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -38,6 +39,53 @@ fn run_all_keeps_filesystem_files_when_fact_collection_is_needed() {
 }
 
 #[test]
+fn run_codebase_check_uses_explicit_tsconfig_with_shared_facts() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/codebase-analysis/unique-exports-basic");
+    let config = root.join(".no-mistakes.yml");
+    let files = no_mistakes_core::codebase::ts_source::discover_files(&root, &[]);
+    let facts = no_mistakes_core::codebase::check_facts::collect_check_facts(
+        &root,
+        files,
+        no_mistakes_core::codebase::check_facts::CheckFactPlan {
+            source: true,
+            symbols: true,
+            ..Default::default()
+        },
+    );
+
+    let results = crate::check_tasks::run_codebase_check(
+        root.clone(),
+        Some(config),
+        Some(root.join("tsconfig.json")),
+        true,
+        &facts,
+    )
+    .unwrap();
+
+    assert!(!results.findings.is_empty());
+}
+
+#[test]
+fn run_codebase_check_propagates_unique_exports_errors() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/codebase-analysis/unique-exports-basic");
+    let facts = no_mistakes_core::codebase::check_facts::CheckFactMap::default();
+
+    let error = crate::check_tasks::run_codebase_check(
+        root.clone(),
+        Some(root.join("missing.no-mistakes.yml")),
+        None,
+        true,
+        &facts,
+    )
+    .err()
+    .expect("expected missing config error");
+
+    assert!(error.to_string().contains("missing.no-mistakes.yml"));
+}
+
+#[test]
 fn run_all_surfaces_react_enabled_config_errors() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/check-runner/react-config-error");
@@ -56,11 +104,24 @@ fn integration_configured_covers_vitest_and_playwright_suites() {
     assert!(!integration_configured(&empty));
 
     let mut vitest = no_mistakes_core::config::v2::NoMistakesConfig::default();
-    vitest.tests.vitest.suites.push(Default::default());
+    vitest.tests.vitest.projects.insert(
+        "web".to_string(),
+        no_mistakes_core::config::v2::schema::TestProjectPolicy {
+            integration_suites: BTreeMap::from([(
+                "openai".to_string(),
+                vec!["openai".to_string()],
+            )]),
+        },
+    );
     assert!(integration_configured(&vitest));
 
     let mut playwright = no_mistakes_core::config::v2::NoMistakesConfig::default();
-    playwright.tests.playwright.suites.push(Default::default());
+    playwright.tests.playwright.projects.insert(
+        "e2e".to_string(),
+        no_mistakes_core::config::v2::schema::TestProjectPolicy {
+            integration_suites: BTreeMap::from([("aws".to_string(), vec!["aws".to_string()])]),
+        },
+    );
     assert!(integration_configured(&playwright));
 }
 

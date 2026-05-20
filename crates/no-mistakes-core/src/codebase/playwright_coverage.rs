@@ -1,7 +1,6 @@
 use anyhow::{bail, Context, Result};
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use rayon::prelude::*;
-use regex::Regex;
 use serde::Serialize;
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
@@ -119,11 +118,7 @@ pub fn run(args: CoverageArgs) -> Result<ExitStatus> {
         .as_ref()
         .map(|config| config.filesystem.skip_directories.as_slice())
         .unwrap_or(&[]);
-    let mut all_files = crate::codebase::ts_source::discover_files(&root, extra_skip);
-    if let Some(config) = &config {
-        all_files =
-            filter_skip_file_patterns(&root, all_files, &config.filesystem.skip_file_patterns);
-    }
+    let all_files = crate::codebase::ts_source::discover_files(&root, extra_skip);
     timings.mark("ingest");
 
     let report = collect_report_with_frontend_root(
@@ -179,16 +174,11 @@ pub(crate) fn collect_report_from_files(
 ) -> Result<CoverageReport> {
     let config = load_config(root).context("loading guardrails config")?;
     let frontend_root = resolve_frontend_root(frontend_root, root, Some(&config))?;
-    let all_files = filter_skip_file_patterns(
-        root,
-        all_files.to_vec(),
-        &config.filesystem.skip_file_patterns,
-    );
     collect_report_with_frontend_root(
         root,
         &frontend_root,
         test_globs_or_default(test_globs),
-        &all_files,
+        all_files,
     )
 }
 
@@ -245,45 +235,6 @@ fn validate_frontend_root(frontend_root: PathBuf) -> Result<PathBuf> {
             frontend_root.display()
         )
     }
-}
-
-#[inline(never)]
-fn filter_skip_file_patterns(
-    root: &Path,
-    files: Vec<PathBuf>,
-    skip_file_patterns: &[String],
-) -> Vec<PathBuf> {
-    let mut patterns = Vec::new();
-    for pattern in skip_file_patterns {
-        if let Ok(pattern) = Regex::new(pattern) {
-            patterns.push(pattern);
-        }
-    }
-    if patterns.is_empty() {
-        return files;
-    }
-
-    let mut filtered = Vec::new();
-    for path in files {
-        let Ok(rel) = path.strip_prefix(root) else {
-            filtered.push(path);
-            continue;
-        };
-        let rel = rel.to_string_lossy().replace('\\', "/");
-        if !matches_any_pattern(&patterns, &rel) {
-            filtered.push(path);
-        }
-    }
-    filtered
-}
-
-fn matches_any_pattern(patterns: &[Regex], rel: &str) -> bool {
-    for pattern in patterns {
-        if pattern.is_match(rel) {
-            return true;
-        }
-    }
-    false
 }
 
 fn test_globs_or_default(globs: &[String]) -> Vec<String> {

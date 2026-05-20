@@ -6,7 +6,7 @@ pub(crate) mod analysis;
 mod calls;
 mod config;
 mod enforce;
-mod project_config;
+pub(crate) mod project_config;
 mod resolve;
 mod test_config;
 #[cfg(test)]

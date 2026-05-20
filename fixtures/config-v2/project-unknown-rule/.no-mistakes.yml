@@ -2,9 +2,11 @@ projects:
   backend:
     type: server
     root: backend
-    rules:
-      - known-rule
-      - ghost-rule
 rules:
-  known-rule:
+  - rule: known-rule
+    projects:
+      - backend
     message: Known rule
+  - rule: ghost-rule
+    projects:
+      - backend

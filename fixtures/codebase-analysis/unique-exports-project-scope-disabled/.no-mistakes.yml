@@ -1,8 +1,8 @@
 projects:
   checked:
     root: checked
-    rules:
-      - unique-exports
 rules:
-  unique-exports:
+  - rule: unique-exports
+    projects:
+      - checked
     enabled: false

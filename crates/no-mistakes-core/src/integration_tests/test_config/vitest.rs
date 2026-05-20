@@ -106,6 +106,12 @@ fn string_array_property(
     name: &str,
 ) -> Result<Option<Vec<String>>> {
     shared::property_expression(object, name)
-        .map(|value| shared::required_string_or_array(value, source, name))
+        .map(|value| {
+            let values = shared::inferred_string_or_array(value, source, name)?;
+            if values.is_empty() && name != "exclude" {
+                anyhow::bail!("expected string literal or string array for {name}");
+            }
+            Ok(values)
+        })
         .transpose()
 }

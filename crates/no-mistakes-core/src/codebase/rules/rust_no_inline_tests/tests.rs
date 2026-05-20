@@ -1,11 +1,17 @@
 use super::*;
-use crate::config::v2::NoMistakesConfig;
+use crate::config::v2::{
+    schema::{RuleDef, RuleScope},
+    NoMistakesConfig,
+};
 
 fn config_with_rule(yaml: &str) -> NoMistakesConfig {
     let mut config = NoMistakesConfig::default();
-    config
-        .rules
-        .insert(RULE_ID.to_string(), serde_yaml::from_str(yaml).unwrap());
+    config.rules.push(RuleDef {
+        rule: RULE_ID.to_string(),
+        scope: Some(RuleScope::Repository),
+        options: serde_yaml::from_str(yaml).unwrap(),
+        ..Default::default()
+    });
     config
 }
 

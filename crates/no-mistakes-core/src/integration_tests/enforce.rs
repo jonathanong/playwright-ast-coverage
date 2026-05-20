@@ -9,20 +9,8 @@ pub(super) fn enforce_policy(
     integrations: &[String],
 ) -> Vec<IntegrationFinding> {
     match &suite.policy {
-        EffectiveIntegrationPolicy::Disabled => integrations
-            .iter()
-            .map(|name| {
-                finding(
-                    root,
-                    suite,
-                    test,
-                    Some(name.clone()),
-                    disabled_message(suite, name),
-                )
-            })
-            .collect(),
-        EffectiveIntegrationPolicy::Suites { suites, strict } => {
-            enforce_suite_policy(root, suite, test, integrations, suites, *strict)
+        EffectiveIntegrationPolicy::Suites { suites } => {
+            enforce_suite_policy(root, suite, test, integrations, suites)
         }
     }
 }
@@ -33,7 +21,6 @@ fn enforce_suite_policy(
     test: &TestCase,
     integrations: &[String],
     suites: &[String],
-    strict: bool,
 ) -> Vec<IntegrationFinding> {
     let mut findings = Vec::new();
     for name in integrations {
@@ -53,29 +40,7 @@ fn enforce_suite_policy(
             ),
         ));
     }
-    if findings.is_empty() && integrations.is_empty() && strict {
-        findings.push(finding(
-            root,
-            suite,
-            test,
-            None,
-            format!(
-                "{} suite {} requires integration={}",
-                suite.framework.as_str(),
-                suite.name,
-                suites.join(",")
-            ),
-        ));
-    }
     findings
-}
-
-fn disabled_message(suite: &Suite, name: &str) -> String {
-    format!(
-        "{} suite {} does not allow integration tests; found integration={name}",
-        suite.framework.as_str(),
-        suite.name
-    )
 }
 
 fn finding(

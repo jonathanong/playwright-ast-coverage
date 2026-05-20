@@ -50,7 +50,7 @@ fn agents_md_max_size_passes_under_limits() {
     let root = fixture("agents-md-max-size", "pass");
     let out = check(
         &root,
-        "rules:\n  agents-md-max-size:\n    enabled: true\n    maxLines: 5\n    maxChars: 1000\n",
+        "rules:\n  - rule: agents-md-max-size\n    scope: repository\n    options:\n      maxLines: 5\n      maxChars: 1000\n",
     );
     assert!(out.status.success(), "exit non-zero: {}", stdout(&out));
     assert!(
@@ -65,7 +65,7 @@ fn agents_md_max_size_fails_over_line_limit() {
     let root = fixture("agents-md-max-size", "fail");
     let out = check(
         &root,
-        "rules:\n  agents-md-max-size:\n    enabled: true\n    maxLines: 2\n",
+        "rules:\n  - rule: agents-md-max-size\n    scope: repository\n    options:\n      maxLines: 2\n",
     );
     assert!(!out.status.success(), "expected exit 1 for over-limit file");
     assert!(stdout(&out).contains("3 lines"), "{}", stdout(&out));
@@ -79,7 +79,7 @@ fn agents_md_max_size_json_output_includes_rule_id() {
     let config = tempfile::Builder::new().suffix(".yml").tempfile().unwrap();
     std::fs::write(
         config.path(),
-        "rules:\n  agents-md-max-size:\n    enabled: true\n    maxLines: 2\n",
+        "rules:\n  - rule: agents-md-max-size\n    scope: repository\n    options:\n      maxLines: 2\n",
     )
     .unwrap();
     let out_json = Command::new(bin())
@@ -103,7 +103,7 @@ fn agents_md_max_size_disabled_skips_check() {
     let root = fixture("agents-md-max-size", "fail");
     let out = check(
         &root,
-        "rules:\n  agents-md-max-size:\n    enabled: false\n    maxLines: 2\n",
+        "rules:\n  - rule: agents-md-max-size\n    enabled: false\n    scope: repository\n    options:\n      maxLines: 2\n",
     );
     assert!(
         out.status.success(),
@@ -119,7 +119,7 @@ fn rust_max_lines_per_file_passes_under_limit() {
     let root = fixture("rust-max-lines-per-file", "pass");
     let out = check(
         &root,
-        "rules:\n  rust-max-lines-per-file:\n    enabled: true\n    srcMax: 20\n",
+        "rules:\n  - rule: rust-max-lines-per-file\n    scope: repository\n    options:\n      srcMax: 20\n",
     );
     assert!(out.status.success(), "exit non-zero: {}", stdout(&out));
 }
@@ -129,7 +129,7 @@ fn rust_max_lines_per_file_fails_over_limit() {
     let root = fixture("rust-max-lines-per-file", "fail");
     let out = check(
         &root,
-        "rules:\n  rust-max-lines-per-file:\n    enabled: true\n    srcMax: 3\n",
+        "rules:\n  - rule: rust-max-lines-per-file\n    scope: repository\n    options:\n      srcMax: 3\n",
     );
     assert!(!out.status.success(), "expected exit 1");
     assert!(stdout(&out).contains("code lines"), "{}", stdout(&out));
@@ -141,7 +141,7 @@ fn rust_max_lines_per_file_disabled_skips() {
     let root = fixture("rust-max-lines-per-file", "fail");
     let out = check(
         &root,
-        "rules:\n  rust-max-lines-per-file:\n    enabled: false\n    srcMax: 3\n",
+        "rules:\n  - rule: rust-max-lines-per-file\n    enabled: false\n    scope: repository\n    options:\n      srcMax: 3\n",
     );
     assert!(
         out.status.success(),
@@ -156,7 +156,7 @@ fn rust_max_lines_per_file_json_has_rule_id() {
     let config = tempfile::Builder::new().suffix(".yml").tempfile().unwrap();
     std::fs::write(
         config.path(),
-        "rules:\n  rust-max-lines-per-file:\n    enabled: true\n    srcMax: 3\n",
+        "rules:\n  - rule: rust-max-lines-per-file\n    scope: repository\n    options:\n      srcMax: 3\n",
     )
     .unwrap();
     let out = Command::new(bin())
@@ -181,7 +181,7 @@ fn rust_no_inline_tests_passes_out_of_line() {
     let root = fixture("rust-no-inline-tests", "pass");
     let out = check(
         &root,
-        "rules:\n  rust-no-inline-tests:\n    enabled: true\n",
+        "rules:\n  - rule: rust-no-inline-tests\n    scope: repository\n",
     );
     assert!(out.status.success(), "exit non-zero: {}", stdout(&out));
 }
@@ -191,7 +191,7 @@ fn rust_no_inline_tests_fails_inline_block() {
     let root = fixture("rust-no-inline-tests", "fail");
     let out = check(
         &root,
-        "rules:\n  rust-no-inline-tests:\n    enabled: true\n",
+        "rules:\n  - rule: rust-no-inline-tests\n    scope: repository\n",
     );
     assert!(!out.status.success(), "expected exit 1");
     assert!(stdout(&out).contains("inline"), "{}", stdout(&out));
@@ -203,7 +203,7 @@ fn rust_no_inline_tests_disabled_skips() {
     let root = fixture("rust-no-inline-tests", "fail");
     let out = check(
         &root,
-        "rules:\n  rust-no-inline-tests:\n    enabled: false\n",
+        "rules:\n  - rule: rust-no-inline-tests\n    enabled: false\n    scope: repository\n",
     );
     assert!(
         out.status.success(),
@@ -218,7 +218,7 @@ fn rust_no_inline_tests_json_has_rule_id() {
     let config = tempfile::Builder::new().suffix(".yml").tempfile().unwrap();
     std::fs::write(
         config.path(),
-        "rules:\n  rust-no-inline-tests:\n    enabled: true\n",
+        "rules:\n  - rule: rust-no-inline-tests\n    scope: repository\n",
     )
     .unwrap();
     let out = Command::new(bin())
@@ -274,7 +274,7 @@ fn agents_md_max_size_skips_gitignored_files() {
     let config = tempfile::Builder::new().suffix(".yml").tempfile().unwrap();
     std::fs::write(
         config.path(),
-        "rules:\n  agents-md-max-size:\n    enabled: true\n    maxLines: 5\n",
+        "rules:\n  - rule: agents-md-max-size\n    scope: repository\n    options:\n      maxLines: 5\n",
     )
     .unwrap();
     let out = Command::new(bin())
@@ -323,7 +323,7 @@ fn rust_no_inline_tests_skips_gitignored_files() {
     let config = tempfile::Builder::new().suffix(".yml").tempfile().unwrap();
     std::fs::write(
         config.path(),
-        "rules:\n  rust-no-inline-tests:\n    enabled: true\n",
+        "rules:\n  - rule: rust-no-inline-tests\n    scope: repository\n",
     )
     .unwrap();
     let out = Command::new(bin())

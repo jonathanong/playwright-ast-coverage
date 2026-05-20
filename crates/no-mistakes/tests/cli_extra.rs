@@ -275,11 +275,11 @@ fn global_check_reports_integration_suite_findings() {
         "human",
     ]);
     assert_eq!(human.status.code(), Some(1));
-    assert!(stdout(&human).contains("integration[vitest:unit]"));
+    assert!(stdout(&human).contains("integration[vitest:unit.unit]"));
 
     let markdown = run(&["check", "--root", root.to_str().unwrap(), "--format", "md"]);
     assert_eq!(markdown.status.code(), Some(1));
-    assert!(stdout(&markdown).contains("vitest suite unit does not allow integration tests"));
+    assert!(stdout(&markdown).contains("vitest suite unit.unit allows only integration=aws"));
 }
 
 #[test]
@@ -338,12 +338,13 @@ fn global_check_skips_disabled_unique_exports_rule() {
 }
 
 #[test]
-fn global_check_surfaces_unique_exports_config_errors() {
+fn global_check_reports_unique_exports_without_skip_file_patterns() {
     let root = fixture("codebase-analysis", "unique-exports-invalid-skip");
     let output = run(&["check", "--root", root.to_str().unwrap()]);
 
     assert!(!output.status.success());
-    assert!(stderr(&output).contains("invalid skip file pattern"));
+    assert!(!stderr(&output).contains("invalid skip file pattern"));
+    assert!(stdout(&output).contains("unique-exports[value]"));
 }
 
 #[test]

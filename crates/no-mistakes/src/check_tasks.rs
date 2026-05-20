@@ -105,12 +105,9 @@ pub(crate) fn run_codebase_check(
 ) -> Result<CheckTask<Vec<UniqueExportFinding>>> {
     let start = Instant::now();
     let findings = if enabled {
-        unique_exports::analyze_project_with_facts(
-            &root,
-            config.as_deref(),
-            tsconfig.as_deref(),
-            facts,
-        )?
+        let config_path = config.as_deref();
+        let tsconfig_path = tsconfig.as_deref();
+        unique_exports::analyze_project_with_facts(&root, config_path, tsconfig_path, facts)?
     } else {
         Vec::new()
     };
@@ -158,12 +155,5 @@ pub(crate) fn unique_exports_configured(config: &NoMistakesConfig) -> bool {
 }
 
 pub(crate) fn rule_configured(config: &NoMistakesConfig, rule_id: &str) -> bool {
-    if config.rules.get(rule_id).is_some_and(|rule| !rule.enabled) {
-        return false;
-    }
-    config.rules.contains_key(rule_id)
-        || config
-            .projects
-            .values()
-            .any(|project| project.rules.iter().any(|rule| rule == rule_id))
+    config.rule_configured(rule_id)
 }

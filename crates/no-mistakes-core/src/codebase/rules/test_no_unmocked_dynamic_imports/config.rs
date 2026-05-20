@@ -1,4 +1,5 @@
 mod discovery;
+mod rule_targets;
 
 use crate::config::v2::NoMistakesConfig;
 use anyhow::Result;
@@ -9,6 +10,8 @@ use discovery::{
 use globset::GlobSet;
 use regex::Regex;
 use std::path::{Path, PathBuf};
+
+use rule_targets::rule_test_project_globs;
 
 pub struct TestFilter {
     include: GlobSet,
@@ -43,9 +46,8 @@ impl TestFilter {
 }
 
 pub fn test_filter(root: &Path, config: &NoMistakesConfig) -> Result<TestFilter> {
-    let mut includes = project_rule_includes(config);
-    let has_project_includes = !includes.is_empty();
-    let mut excludes = Vec::new();
+    let (mut includes, mut excludes) = rule_test_project_globs(root, config)?;
+    let has_rule_target_includes = !includes.is_empty();
     let mut include_regex = Vec::new();
     let mut config_includes = Vec::new();
     for config_file in config_files(root, config) {
@@ -68,7 +70,7 @@ pub fn test_filter(root: &Path, config: &NoMistakesConfig) -> Result<TestFilter>
             extract_test_property_strings(&source, "exclude"),
         ));
     }
-    if has_project_includes {
+    if has_rule_target_includes {
         include_regex.clear();
     } else if !config_includes.is_empty() || !include_regex.is_empty() {
         includes = config_includes;
@@ -128,28 +130,6 @@ pub fn setup_files_for_test_precomputed(
     files.sort();
     files.dedup();
     files
-}
-
-fn project_rule_includes(config: &NoMistakesConfig) -> Vec<String> {
-    let mut includes = Vec::new();
-    for project in config.projects.values() {
-        if !project.rules.iter().any(|rule| rule == super::RULE_ID) {
-            continue;
-        }
-        let root = project.root.as_deref().unwrap_or(".").trim_matches('/');
-        for include in &project.include {
-            if root.is_empty() || root == "." {
-                includes.push(include.to_string());
-            } else {
-                includes.push(format!(
-                    "{}/{}",
-                    root.trim_start_matches("./"),
-                    include.trim_start_matches("./")
-                ));
-            }
-        }
-    }
-    includes
 }
 
 fn normalize_matcher_patterns(root: &Path, base: &Path, patterns: Vec<String>) -> Vec<String> {

@@ -92,36 +92,29 @@ impl<'a> ConfigView<'a> {
         &self.config.filesystem.skip_directories
     }
 
-    /// Skip file patterns from the filesystem config.
-    pub fn skip_file_patterns(&self) -> &[String] {
-        &self.config.filesystem.skip_file_patterns
-    }
-
-    /// Rules enabled for a named project (returns empty slice if unknown).
-    pub fn project_rules(&self, project: &str) -> &[String] {
+    /// Rules enabled for a named project.
+    pub fn project_rules(&self, project: &str) -> Vec<&str> {
         self.config
-            .projects
-            .get(project)
-            .map(|p| p.rules.as_slice())
-            .unwrap_or(&[])
-    }
-
-    /// Look up a rule definition by ID.
-    pub fn rule(&self, id: &str) -> Option<&RuleDef> {
-        self.config.rules.get(id)
-    }
-
-    /// All rule IDs enabled for a project that have a top-level definition.
-    pub fn enabled_rules_for(&self, project: &str) -> Vec<(&str, &RuleDef)> {
-        self.project_rules(project)
+            .rules
             .iter()
-            .filter_map(|id| {
-                let def = self.config.rules.get(id.as_str())?;
-                if def.enabled {
-                    Some((id.as_str(), def))
-                } else {
-                    None
-                }
+            .filter(|rule| rule.applies_to_project(project))
+            .map(|rule| rule.rule.as_str())
+            .collect()
+    }
+
+    /// Look up the first enabled rule application by rule ID.
+    pub fn rule(&self, id: &str) -> Option<&RuleDef> {
+        self.config.rule_applications(id).into_iter().next()
+    }
+
+    /// All rule applications enabled for a project.
+    pub fn enabled_rules_for(&self, project: &str) -> Vec<(&str, &RuleDef)> {
+        self.config
+            .rules
+            .iter()
+            .filter_map(|rule| {
+                rule.applies_to_project(project)
+                    .then_some((rule.rule.as_str(), rule))
             })
             .collect()
     }

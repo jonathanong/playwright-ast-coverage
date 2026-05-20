@@ -19,13 +19,13 @@ pub struct IntegrationFinding {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Framework {
+pub(crate) enum Framework {
     Playwright,
     Vitest,
 }
 
 impl Framework {
-    pub(super) fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Playwright => "playwright",
             Self::Vitest => "vitest",
@@ -44,8 +44,7 @@ pub(super) struct Suite {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum EffectiveIntegrationPolicy {
-    Disabled,
-    Suites { suites: Vec<String>, strict: bool },
+    Suites { suites: Vec<String> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,9 +96,9 @@ pub(crate) struct FileAnalysis {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct ConfigProject {
-    pub config: Option<String>,
-    pub name: Option<String>,
-    pub include: Vec<String>,
-    pub exclude: Vec<String>,
+pub(crate) struct ConfigProject {
+    pub(crate) config: Option<String>,
+    pub(crate) name: Option<String>,
+    pub(crate) include: Vec<String>,
+    pub(crate) exclude: Vec<String>,
 }

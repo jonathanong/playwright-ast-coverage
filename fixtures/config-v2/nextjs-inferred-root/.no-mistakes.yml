@@ -1,0 +1,8 @@
+projects:
+  web:
+    type: nextjs
+
+rules:
+  - rule: unique-exports
+    projects:
+      - web

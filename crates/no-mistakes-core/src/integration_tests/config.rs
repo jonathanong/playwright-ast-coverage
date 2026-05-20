@@ -1,45 +1,22 @@
 use super::project_config;
 use super::types::{ConfigProject, EffectiveIntegrationPolicy, Framework, Suite};
-use crate::config::v2::schema::{
-    IntegrationPolicy, IntegrationSuitesPolicy, NoMistakesConfig, StringOrList, TestSuitePolicy,
-};
+use crate::config::v2::schema::{NoMistakesConfig, StringOrList, TestProjectPolicy};
 use anyhow::Result;
+use std::collections::BTreeMap;
 use std::path::Path;
 
-const DEFAULT_TEST_GLOBS: &[&str] = &[
-    "**/*.test.ts",
-    "**/*.test.tsx",
-    "**/*.test.js",
-    "**/*.test.jsx",
-    "**/*.test.mts",
-    "**/*.test.cts",
-    "**/*.test.mjs",
-    "**/*.test.cjs",
-    "**/*.spec.ts",
-    "**/*.spec.tsx",
-    "**/*.spec.js",
-    "**/*.spec.jsx",
-    "**/*.spec.mts",
-    "**/*.spec.cts",
-    "**/*.spec.mjs",
-    "**/*.spec.cjs",
-];
-
 pub(super) fn validate_config(config: &NoMistakesConfig) -> Result<()> {
-    for (framework, suites) in [
-        ("playwright", config.tests.playwright.suites.as_slice()),
-        ("vitest", config.tests.vitest.suites.as_slice()),
+    for (framework, projects) in [
+        ("playwright", &config.tests.playwright.projects),
+        ("vitest", &config.tests.vitest.projects),
     ] {
-        for suite in suites {
-            match &suite.integration {
-                IntegrationPolicy::Disabled(false) => {}
-                IntegrationPolicy::Disabled(true) => anyhow::bail!(
-                    "tests.{framework}.suites integration: true is not supported; use integration.suites"
-                ),
-                IntegrationPolicy::Suites(policy) if policy.suites.is_empty() => anyhow::bail!(
-                    "tests.{framework}.suites integration.suites must contain at least one name"
-                ),
-                IntegrationPolicy::Suites(_) => {}
+        for (project, policy) in projects {
+            for (suite, integrations) in &policy.integration_suites {
+                if integrations.is_empty() {
+                    anyhow::bail!(
+                        "tests.{framework}.projects.{project}.integration_suites.{suite} must contain at least one integration"
+                    );
+                }
             }
         }
     }
@@ -52,13 +29,13 @@ pub(super) fn configured_suites(root: &Path, config: &NoMistakesConfig) -> Resul
         root,
         Framework::Playwright,
         config.tests.playwright.configs.as_ref(),
-        &config.tests.playwright.suites,
+        &config.tests.playwright.projects,
     )?);
     suites.extend(suites_for_framework(
         root,
         Framework::Vitest,
         config.tests.vitest.configs.as_ref(),
-        &config.tests.vitest.suites,
+        &config.tests.vitest.projects,
     )?);
     Ok(suites)
 }
@@ -67,96 +44,44 @@ fn suites_for_framework(
     root: &Path,
     framework: Framework,
     configs: Option<&StringOrList>,
-    policies: &[TestSuitePolicy],
+    policies: &BTreeMap<String, TestProjectPolicy>,
 ) -> Result<Vec<Suite>> {
+    if policies.is_empty() {
+        return Ok(Vec::new());
+    }
+
     let projects = project_config::load_projects(root, framework, configs)?;
     let mut suites = Vec::new();
-    for (index, policy) in policies.iter().enumerate() {
-        let name = policy
-            .name
-            .clone()
-            .or_else(|| policy.project.clone())
-            .unwrap_or_else(|| format!("suite-{}", index + 1));
-        let (include, exclude) = suite_globs(framework, &name, policy, &projects)?;
-        suites.push(Suite {
-            framework,
-            name,
-            include,
-            exclude,
-            policy: effective_policy(&policy.integration),
-        });
+    for (project_name, policy) in policies {
+        let project = exact_project(framework, project_name, &projects)?;
+        for (suite_name, integrations) in &policy.integration_suites {
+            suites.push(Suite {
+                framework,
+                name: format!("{project_name}.{suite_name}"),
+                include: project.include.clone(),
+                exclude: project.exclude.clone(),
+                policy: EffectiveIntegrationPolicy::Suites {
+                    suites: integrations.clone(),
+                },
+            });
+        }
     }
     Ok(suites)
 }
 
-fn suite_globs(
+fn exact_project<'a>(
     framework: Framework,
-    name: &str,
-    policy: &TestSuitePolicy,
-    projects: &[ConfigProject],
-) -> Result<(Vec<String>, Vec<String>)> {
-    let mut include = policy.include.clone();
-    let mut exclude = policy.exclude.clone();
-    if policy.project.is_some() || policy.config.is_some() {
-        let matched = matched_projects(policy, projects);
-        if matched.is_empty() {
-            anyhow::bail!(
-                "{} suite {} references unknown {}",
-                framework.as_str(),
-                name,
-                policy_target(policy)
-            );
-        }
-        if include.is_empty() {
-            include.extend(matched.iter().flat_map(|project| project.include.clone()));
-        }
-        exclude.extend(matched.iter().flat_map(|project| project.exclude.clone()));
-    }
-    if include.is_empty() {
-        include = DEFAULT_TEST_GLOBS
-            .iter()
-            .map(|glob| glob.to_string())
-            .collect();
-    }
-    Ok((include, exclude))
-}
-
-fn matched_projects<'a>(
-    policy: &TestSuitePolicy,
+    project_name: &str,
     projects: &'a [ConfigProject],
-) -> Vec<&'a ConfigProject> {
+) -> Result<&'a ConfigProject> {
     projects
         .iter()
-        .filter(|project| {
-            policy
-                .project
-                .as_ref()
-                .is_none_or(|name| project.name.as_deref() == Some(name.as_str()))
-                && policy
-                    .config
-                    .as_ref()
-                    .is_none_or(|config| project.config.as_deref() == Some(config.as_str()))
+        .find(|project| project.name.as_deref() == Some(project_name))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "{} integration policy references unknown project {}",
+                framework.as_str(),
+                project_name
+            )
         })
-        .collect()
-}
-
-pub(in crate::integration_tests) fn policy_target(policy: &TestSuitePolicy) -> String {
-    match (&policy.config, &policy.project) {
-        (Some(config), Some(project)) => format!("config {config} project {project}"),
-        (Some(config), None) => format!("config {config}"),
-        (None, Some(project)) => format!("project {project}"),
-        (None, None) => "suite".to_string(),
-    }
-}
-
-fn effective_policy(policy: &IntegrationPolicy) -> EffectiveIntegrationPolicy {
-    match policy {
-        IntegrationPolicy::Disabled(_) => EffectiveIntegrationPolicy::Disabled,
-        IntegrationPolicy::Suites(IntegrationSuitesPolicy { suites, strict }) => {
-            EffectiveIntegrationPolicy::Suites {
-                suites: suites.clone(),
-                strict: *strict,
-            }
-        }
-    }
 }

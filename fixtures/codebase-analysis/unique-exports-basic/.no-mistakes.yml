@@ -1,2 +1,3 @@
 rules:
-  unique-exports: {}
+  - rule: unique-exports
+    scope: repository
