@@ -168,6 +168,7 @@ fn fixture_backend_walker_covers_statement_shadowing_and_route_shapes() {
 fn collect_backend_routes_helpers_filter_files_and_directories() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/ast-snippets");
     let source = root.join("ts-routes/backend-walk-all.ts");
+    let unmatched = root.join("server-routes/default-function.ts");
     let outside = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
     let mut builder = globset::GlobSetBuilder::new();
     builder.add(globset::Glob::new("ts-routes/**/*.ts").unwrap());
@@ -175,7 +176,7 @@ fn collect_backend_routes_helpers_filter_files_and_directories() {
 
     let from_files = collect_backend_routes_from_files(
         &root,
-        &[root.clone(), outside, source.clone()],
+        &[root.clone(), outside, unmatched, source.clone()],
         "app",
         &globset,
     );

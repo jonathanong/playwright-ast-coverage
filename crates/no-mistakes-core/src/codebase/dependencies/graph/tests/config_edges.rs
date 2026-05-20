@@ -203,6 +203,14 @@ fn project_route_globs_drive_graph_route_edges_without_guardrails() {
 }
 
 #[test]
+fn project_route_def_collection_returns_empty_for_invalid_config_globs() {
+    let root =
+        crate::codebase::ts_resolver::normalize_path(&fixture("graph-invalid-project-route-glob"));
+
+    assert!(collect_project_server_route_defs(&root).is_empty());
+}
+
+#[test]
 fn route_and_http_fact_context_keep_separate_backend_matchers() {
     let root =
         crate::codebase::ts_resolver::normalize_path(&fixture("graph-split-route-http-config"));

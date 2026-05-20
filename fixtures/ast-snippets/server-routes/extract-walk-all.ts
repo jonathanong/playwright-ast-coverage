@@ -88,6 +88,7 @@ gotClient.get("/client-got");
 kyClient.put("/client-ky");
 superagent.get("/client-superagent");
 playwrightRequest.get("/client-playwright");
+axios.defaults.get("/client-axios-static-object");
 http.get("/client-node-http");
 
 export const exported = router;

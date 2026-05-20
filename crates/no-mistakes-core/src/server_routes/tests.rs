@@ -109,6 +109,16 @@ fn explicit_filters_narrow_configured_project_routes() {
 }
 
 #[test]
+fn malformed_v2_config_falls_back_to_unconfigured_scan() {
+    let report = analyze_project(&fixture("malformed-config"), None, &[]).unwrap();
+
+    assert!(report
+        .routes
+        .iter()
+        .any(|route| route.route == "/api/users/*" && route.method == "get"));
+}
+
+#[test]
 fn mixed_framework_shapes_are_supported() {
     let report = analyze_project(&fixture("mixed"), None, &[]).unwrap();
     for expected in [

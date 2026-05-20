@@ -36,6 +36,9 @@ impl TestFileFilter {
     }
 
     pub(crate) fn is_match_rel(&self, rel_path: &str) -> bool {
+        if self.matches_configured_suite_exclude(rel_path) {
+            return false;
+        }
         self.config_filter
             .as_ref()
             .is_some_and(|filter| filter.is_match(rel_path))
@@ -47,10 +50,12 @@ impl TestFileFilter {
         self.suite_include
             .as_ref()
             .is_some_and(|include| include.is_match(rel_path))
-            && !self
-                .suite_exclude
-                .as_ref()
-                .is_some_and(|exclude| exclude.is_match(rel_path))
+    }
+
+    fn matches_configured_suite_exclude(&self, rel_path: &str) -> bool {
+        self.suite_exclude
+            .as_ref()
+            .is_some_and(|exclude| exclude.is_match(rel_path))
     }
 }
 
@@ -96,3 +101,6 @@ fn fallback_test_path(rel_path: &str) -> bool {
             .next()
             .is_some_and(|name| name.contains(".test.") || name.contains(".spec."))
 }
+
+#[cfg(test)]
+mod tests;
